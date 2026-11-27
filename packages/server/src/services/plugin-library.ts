@@ -50,7 +50,8 @@ export function resolveLibraryPlugins(
 
 /**
  * The plugins a new Agent is seeded with: the picked names in pick order, then each
- * default-install plugin not among them (see `AgentCreation.defaultPlugins`).
+ * default-install plugin the caller asked for (see `AgentCreation.defaultPlugins` — a
+ * caller that sends nothing gets none).
  */
 export function seedPluginNames(
   picked: readonly string[],

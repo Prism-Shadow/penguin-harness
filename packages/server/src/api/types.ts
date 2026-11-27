@@ -1297,13 +1297,14 @@ export interface AgentCreateRequest {
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
    * otherwise, before anything is created). The library's default-install plugins join them
-   * unless `defaultPlugins` is false.
+   * only when `defaultPlugins` is true.
    */
   plugins?: string[];
   /**
    * Whether the library's default-install plugins (those whose card sets `defaultInstall`)
-   * join `plugins`; omitted = true. A client that sends the complete list it
-   * showed the user, as the Web App's create dialog does, sends false with it.
+   * join `plugins`; omitted = false — nothing is downloaded that the creator did not ask
+   * for. Send true to seed them, and send false with the complete list you showed the
+   * user, as the Web App's create dialog does.
    */
   defaultPlugins?: boolean;
   /**

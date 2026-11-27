@@ -805,8 +805,10 @@ export class AgentService implements AgentLifecycle {
    * `installPlugin` writer the plugin routes use, inside the same cleanup window as the rest
    * of initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all. The
-   * library's default-install plugins join them (seedPluginNames) unless `defaultPlugins` is
-   * false. The system Agent is provisioned by core's presets, never through here.
+   * library's default-install plugins join them (seedPluginNames) only when `defaultPlugins` is
+   * explicitly true — installing plugins the creator did not ask for is a download they did not
+   * consent to, so nothing is seeded by omission. The system Agent is provisioned by core's
+   * presets, never through here.
    *
    * `archive` is an Agent package (the import route's): the fresh Agent takes its State, name,
    * description and version instead of the template's, and its Traces land once the State is
@@ -851,7 +853,7 @@ export class AgentService implements AgentLifecycle {
       this.library,
       seedPluginNames(
         pluginNames ?? [],
-        archive === undefined && creation.defaultPlugins !== false
+        archive === undefined && creation.defaultPlugins === true
           ? this.library.defaultInstalled()
           : [],
       ),

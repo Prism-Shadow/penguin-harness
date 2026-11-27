@@ -59,7 +59,7 @@ import {
   fetchableAddress,
   fetchFirst,
   TARBALL_MAX_BYTES,
-  TARBALL_TIMEOUT_MS,
+  TARBALL_STALL_MS,
   WalkError,
 } from "./registry-fetch.js";
 import { parsePluginSource } from "./source.js";
@@ -93,6 +93,7 @@ export interface WithoutNpm {
     tarballMaxBytes: number;
     unpackedMaxBytes: number;
     timeoutMs: number;
+    stallMs: number;
   }>;
 }
 
@@ -343,7 +344,8 @@ export async function installFromRegistry(
       [dist.tarball, ...pluginProxyMirrors(dist.tarball, mirrors)],
       {
         fetch: io.fetch,
-        timeoutMs: io.limits?.timeoutMs ?? TARBALL_TIMEOUT_MS,
+        timeoutMs: io.limits?.timeoutMs ?? TARBALL_STALL_MS,
+        stallMs: io.limits?.stallMs ?? TARBALL_STALL_MS,
         maxBytes: io.limits?.tarballMaxBytes ?? TARBALL_MAX_BYTES,
         onProgress: io.onProgress,
       },
@@ -391,7 +393,8 @@ export async function installChannel(
       addresses,
       {
         fetch: io.fetch,
-        timeoutMs: io.limits?.timeoutMs ?? TARBALL_TIMEOUT_MS,
+        timeoutMs: io.limits?.timeoutMs ?? TARBALL_STALL_MS,
+        stallMs: io.limits?.stallMs ?? TARBALL_STALL_MS,
         maxBytes: io.limits?.tarballMaxBytes ?? TARBALL_MAX_BYTES,
         onProgress: io.onProgress,
       },

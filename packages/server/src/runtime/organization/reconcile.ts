@@ -198,20 +198,19 @@ export function syncApprovalMode(
 }
 
 /**
- * An employee's company plugins, brought up to the library's version.
+ * Watches the organization's employee plugins for library updates, and only watches.
  *
- * An Agent's plugins are written once, at creation, and nothing rewrites them afterwards —
- * the Agents page offers a manual per-Agent update, which nobody is there to click in an
- * organization that runs unattended for weeks. So every pass compares each employee's
- * installed {@link DEFAULT_EMPLOYEE_PLUGINS} against the library's version and reinstalls
- * the ones that have fallen behind (the same whole-plugin update the Agents page performs),
- * which is how a skill added to `agent-company` after a hire reaches the employees already
- * at work.
+ * Every pass compares each employee's installed {@link DEFAULT_EMPLOYEE_PLUGINS} against the
+ * library's version and logs the ones that have fallen behind — a version newer than what an
+ * employee carries is an update available, shown on the Plugins page, where updating it is a
+ * person's call. The pass itself installs nothing: downloading and replacing a plugin nobody
+ * asked for is a download without consent, even in an organization that runs unattended for
+ * weeks. What keeps employees current instead is the same manual per-Agent update the Agents
+ * page has always offered.
  *
- * Cheap when nothing moved: the versions match and no file is written. An employee that does
+ * Cheap when nothing moved: the versions match and nothing is written. An employee that does
  * not carry a plugin at all is left alone — the set an Agent was hired with is the CEO's
- * choice, not something a pass grows. A failed update is recorded and never stops the pass:
- * the next one tries again.
+ * choice, not something a pass grows.
  */
 async function reconcileEmployeePlugins(deps: OrgDeps, org: LoadedOrg): Promise<void> {
   for (const employee of org.chart.employees) {
@@ -224,16 +223,15 @@ async function reconcileEmployeePlugins(deps: OrgDeps, org: LoadedOrg): Promise<
         );
         if (installed === null || library === null) continue;
         if (comparePluginVersions(library, installed) <= 0) continue;
-        await deps.agents.updatePlugin(org.projectId, employee.agentId, plugin);
         deps.log?.(
-          `org: updated plugin ${plugin} on ${employee.agentId} (${installed} -> ${library})`,
+          `org: plugin ${plugin} on ${employee.agentId} has an update available (${installed} -> ${library}); installing is a person's call`,
         );
       } catch (err) {
         recordError(
           deps,
           org,
           "org_plugin_update_failed",
-          `Could not update plugin ${plugin} on ${employee.agentId}: ${err instanceof Error ? err.message : String(err)}`,
+          `Could not check plugin ${plugin} on ${employee.agentId}: ${err instanceof Error ? err.message : String(err)}`,
           employee.agentId,
         );
       }

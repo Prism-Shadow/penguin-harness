@@ -95,6 +95,7 @@ describe("organization runtime", () => {
   let costs: Map<string, number>;
   let events: ServerEvent[];
   let errors: ErrorRecordArgs[];
+  let logs: string[];
   let companyMode: boolean;
   /**
    * The one-off utility completion behind semantic id proposals: the results it hands back in
@@ -152,6 +153,7 @@ describe("organization runtime", () => {
     costs = new Map();
     events = [];
     errors = [];
+    logs = [];
     companyMode = true;
     completion = { answers: [], prompts: [] };
     seq = 0;
@@ -258,7 +260,7 @@ describe("organization runtime", () => {
       notifyProject: (_p, event) => void events.push(event),
       companyModeEnabled: () => companyMode,
       now: () => nowMs,
-      log: () => {},
+      log: (line: string) => logs.push(line),
     };
     scheduler = new OrganizationScheduler(deps, { intervalMs: 1_000_000 });
     service = new OrganizationService(deps, scheduler);
@@ -3245,12 +3247,17 @@ describe("organization runtime", () => {
       errors.length = 0;
     }
 
-    it("reinstalls a company plugin the library has moved past, and leaves the rest alone", async () => {
+    it("logs an update a library version has moved past, and installs nothing", async () => {
       await orgWithHr();
       plugins.installed.set(`${HR}:agent-company`, OLD);
       await scheduler.tickOnce();
-      expect(plugins.updated).toEqual([{ agentId: HR, plugin: "agent-company" }]);
-      expect(plugins.installed.get(`${HR}:agent-company`)).toBe(LIBRARY_VERSION);
+      // The pass watches, it does not download: nothing is written, and the update is the
+      // person's call (the Plugins page shows it; the Agents page updates it).
+      expect(plugins.updated).toEqual([]);
+      expect(plugins.installed.get(`${HR}:agent-company`)).toBe(OLD);
+      expect(
+        logs.filter((l) => l.includes("agent-company") && l.includes("update available")),
+      ).toHaveLength(1);
       expect(errors).toEqual([]);
     });
 
@@ -3258,6 +3265,7 @@ describe("organization runtime", () => {
       await orgWithHr();
       await scheduler.tickOnce();
       expect(plugins.updated).toEqual([]);
+      expect(logs.filter((l) => l.includes("update available"))).toEqual([]);
       // The same pass run twice stays a no-op: the comparison, not a one-shot flag, is what
       // makes it idempotent.
       await scheduler.tickOnce();
@@ -3272,20 +3280,20 @@ describe("organization runtime", () => {
       expect(plugins.installed.has(`${HR}:agent-development`)).toBe(false);
     });
 
-    it("records a failed update and carries on with the rest of the pass", async () => {
+    it("keeps reporting an available update across passes without installing it", async () => {
+      // The old shape of this case had a failed update: the pass retried it every tick. With
+      // installing removed from the pass there is nothing to fail — an update that stays
+      // available is logged every pass and still nothing is written.
       await orgWithHr();
       plugins.installed.set(`${HR}:agent-company`, OLD);
       plugins.installed.set(`${CEO}:agent-company`, OLD);
-      plugins.failUpdates.add(`${CEO}:agent-company`);
       await scheduler.tickOnce();
-      expect(plugins.updated).toEqual([{ agentId: HR, plugin: "agent-company" }]);
+      await scheduler.tickOnce();
+      expect(plugins.updated).toEqual([]);
+      expect(plugins.installed.get(`${HR}:agent-company`)).toBe(OLD);
       expect(plugins.installed.get(`${CEO}:agent-company`)).toBe(OLD);
-      expect(errors).toHaveLength(1);
-      expect(errors[0]).toMatchObject({
-        source: "organization",
-        code: "org_plugin_update_failed",
-        ctx: { projectId: P, agentId: CEO },
-      });
+      expect(logs.filter((l) => l.includes("update available"))).toHaveLength(4);
+      expect(errors).toEqual([]);
       // Not fatal: the calendar and the caches behind it in the pass still ran.
       expect(await service.list(P)).toHaveLength(1);
     });

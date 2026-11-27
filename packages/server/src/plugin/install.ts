@@ -19,10 +19,14 @@
  * dependency and reconciles the prefix against it on every later install. Installing runs the
  * package's install scripts exactly as installing it from the registry does — the same trust.
  * A fourth arrives through the plugin index: a version published on a github release channel
- * has its release URL installed by npm itself — the URL is a spec npm natively understands
- * (a gzipped tarball over https) — and what npm actually installed is verified after the
- * fact against the sha512 the entry pins (installPluginChannel) — npm stays the first source;
- * the channel is where an npm-missing name can still come from.
+ * has its release asset downloaded by this server itself — byte progress as it lands (the
+ * same numbers the install stream reports), and no absolute window: a slow download runs as
+ * long as it keeps moving, and a stalled one (no byte for a while) is cut and the next
+ * address tried (installPluginChannel). The bytes are verified against the sha512 the entry
+ * pins BEFORE anything installs, and npm then installs the local file — the URL is no longer
+ * npm's to fetch, so a tens-of-megabytes asset neither hides its progress nor dies on a
+ * timer. What npm actually installed is still checked after the fact (installPluginChannel).
+ * npm stays the first source; the channel is where an npm-missing name can still come from.
  *
  * npm is looked for before every operation, and when it is found it does all of it, as above.
  * A machine with no npm at all — the desktop app's server runs under Electron's utilityProcess,
@@ -31,23 +35,41 @@
  * prefix's package.json the way npm would. Which of the two runs is packages.ts's choice.
  */
 import { execFile } from "node:child_process";
-import { randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync } from "node:fs";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createWriteStream, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path, { relative } from "node:path";
 import { promisify } from "node:util";
+import { once } from "node:events";
 // `which` is CommonJS exporting the function itself (module.exports = which, plus
 // which.sync): the default import IS the function, and the sync form is what the
 // candidates check uses — a path answer or null, never a thrown ENOENT.
 import which from "which";
+import { userAgent } from "@prismshadow/penguin-core";
 import type { IndexChannel } from "./registry.js";
 const execFileAsync = promisify(execFile);
 
-/** Long enough for a cold registry fetch with dependencies; short enough not to hang a request. */
-const INSTALL_TIMEOUT_MS = 180_000;
+/**
+ * A registry install's whole npm run (metadata, a small tarball, its dependencies): a
+ * generous ceiling on a wedged npm, not on a slow download — a channel's big asset is
+ * downloaded by us (see installPluginChannel), where the only limit is whether bytes keep
+ * arriving.
+ */
+const INSTALL_TIMEOUT_MS = 600_000;
 /** One address's npm window: a dead address costs this, not a hang. */
 const CHANNEL_TIMEOUT_MS = 15_000;
+/**
+ * How long a release-asset download may go without a byte before it counts as stalled: the
+ * address is cut and the next one tried. A download that keeps moving has no ceiling at
+ * all — a slow link is slow, not dead.
+ */
+export const ASSET_STALL_MS = 30_000;
+/**
+ * The local install of an already-downloaded asset (unpacking and its dependencies): the
+ * bytes are already here, so this window is about npm working, not about the network.
+ */
+const ASSET_INSTALL_TIMEOUT_MS = 300_000;
 /** npm's own per-request window and retries (see `install`). */
 const FETCH_TIMEOUT_MS = 60_000;
 /**
@@ -824,38 +846,156 @@ export function sameDigest(actual: string, expected: string): boolean {
 }
 
 /**
- * Installs a version through an index entry's github channel: the release URL is a spec npm
- * natively understands (a gzipped tarball over https), so each address's attempt is npm
- * itself installing it — npm downloads, unpacks and records what it took. What npm actually
- * installed is verified after the fact: the prefix's package-lock.json records the integrity
- * of the tarball the install resolved to, and it has to agree with the entry's sha512 — a
- * mismatch throws the install away (npm uninstall) and the walk moves to the next address,
- * so an address serving tampered bytes is refused like any other source, and never becomes
- * the sticky start. The tarball's own package.json is checked the same way: the lockfile
- * entry must say it installed the entry's package and version — an archive that says it is
- * another package, or another version, is refused, so the caller's post-install vetting
- * cannot end up vetting, or uninstalling, the wrong one. `install` is injectable so a test
- * stands in for npm; `onProgress`, when given, is called once per address's install — npm's
- * own download is npm's to report, the caller sees the address boundaries.
+ * The tarball name an index channel's release asset is kept under, in `<prefix>/archives/`.
+ */
+function assetFileName(channel: IndexChannel): string {
+  return `${channel.name.replace(/[^a-zA-Z0-9._-]/g, "-")}-${channel.version}.tgz`;
+}
+
+/** The package npm put under the prefix for a name, as its own manifest declares it; null when it is not there. */
+async function installedManifest(
+  prefix: string,
+  name: string,
+): Promise<{ name: string; version: string } | null> {
+  try {
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(installedPackageDir(prefix, name), "package.json"), "utf8"),
+    ) as { name?: unknown; version?: unknown };
+    if (typeof manifest.name !== "string" || typeof manifest.version !== "string") return null;
+    return { name: manifest.name, version: manifest.version };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Downloads an index channel's release asset to this server itself — one address of the
+ * channel, streamed straight to disk with the bytes counted as they land, the numbers the
+ * install stream reports: `onProgress` fires on the first byte, then at most every 256 KB,
+ * and once more when the file is complete, with the total when the answer carries a
+ * Content-Length and null when it does not. There is no ceiling on how long the download
+ * may take — a slow link is slow, not dead — only on how long it may go without a byte:
+ * past `stallMs` of silence the address is cut (the fetch aborted) and the caller moves to
+ * the next one. The partial file lives under `<prefix>/${STAGING_DIR}/` and is renamed into
+ * `<prefix>/${ARCHIVES_DIR}/` only once every byte is in; an incomplete attempt leaves
+ * nothing behind. The answer is the file's sha512 digest (the base64 half of an npm
+ * integrity string), which the caller checks against the index entry's pin before anything
+ * installs.
+ */
+async function downloadChannelAsset(
+  prefix: string,
+  address: string,
+  file: string,
+  onProgress: (received: number, total: number | null) => void,
+  stallMs: number,
+): Promise<string> {
+  const staging = path.join(prefix, STAGING_DIR);
+  const partial = path.join(staging, `${file}.part`);
+  const dest = path.join(prefix, ARCHIVES_DIR, file);
+  await fs.mkdir(staging, { recursive: true });
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  const controller = new AbortController();
+  const hash = createHash("sha512");
+  let lastByte = Date.now();
+  let received = 0;
+  let reported = 0;
+  let total: number | null = null;
+  // The stall watchdog: every second, is the download still moving? A silent one is cut at
+  // its window — the abort carries the error, and the fetch and the body loop are what feel it.
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastByte > stallMs) {
+      controller.abort(
+        new PluginInstallError(
+          `the release asset download went ${Math.round(stallMs / 1000)} s without a byte and was cut`,
+        ),
+      );
+    }
+  }, 1_000);
+  const stream = createWriteStream(partial);
+  try {
+    const response = await fetch(address, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { "User-Agent": userAgent() },
+    });
+    if (!response.ok || response.body === null) {
+      throw new PluginInstallError(
+        `the release asset's address answered ${response.status}${response.body === null ? " with no body" : ""}`,
+      );
+    }
+    const length = response.headers.get("content-length");
+    total = length === null || !/^\d+$/.test(length) ? null : Number(length);
+    onProgress(0, total);
+    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      lastByte = Date.now();
+      received += chunk.byteLength;
+      hash.update(chunk);
+      if (!stream.write(chunk)) {
+        await once(stream, "drain");
+      }
+      if (received - reported >= 256 * 1024) {
+        reported = received;
+        onProgress(received, total);
+      }
+    }
+    onProgress(received, total);
+    await once(stream, "finish");
+    if (total !== null && received !== total) {
+      throw new PluginInstallError(
+        `the release asset's answer ended after ${received} of the ${total} bytes its header named`,
+      );
+    }
+    await fs.rename(partial, dest);
+    return hash.digest("base64");
+  } finally {
+    clearInterval(watchdog);
+    stream.destroy();
+    await fs.rm(partial, { force: true });
+  }
+}
+
+/**
+ * Installs a version through an index entry's github channel. The entry pins the asset's
+ * sha512, and the server downloads the asset itself: the bytes are counted as they land (the
+ * numbers `onProgress` reports, the same ones the install stream carries), a download that
+ * keeps moving has no time limit at all while one that goes `stallMs` without a byte is cut,
+ * and the downloaded file is checked against the entry's pin BEFORE npm sees it. Only then
+ * does npm install the local file — unpacking bytes that are already here, within the
+ * caller's window — so a tens-of-megabytes asset neither hides its progress nor dies on a
+ * timer, and no address can put tampered bytes into the prefix: a mismatched download is
+ * thrown away before anything installs, and the walk moves to the next address. What npm
+ * actually put in the prefix is still checked after the fact: its manifest must say it
+ * installed the entry's package and version — an archive that says it is another package, or
+ * another version, is refused — so the caller's post-install vetting cannot end up vetting,
+ * or uninstalling, the wrong one. An address that installs and verifies becomes the sticky
+ * start of the next walk; one serving tampered bytes is refused like any other source and
+ * never remembered. `install` is injectable so a test stands in for npm; when given, the
+ * address is handed to it as npm's own spec (the previous shape, npm downloading itself, npm
+ * keeping its bytes opaque — `onProgress` then only marks the address boundaries), and what
+ * npm took is read back from the lockfile by the URL.
  */
 export async function installPluginChannel(
   root: string,
   channel: IndexChannel,
   {
     npm: runNpm = npm,
-    install: run = (prefix, spec) => runNpmInstallSpec(prefix, spec, timeoutMs, runNpm),
+    install: run = undefined,
     uninstall: remove = (prefix, name) => runNpmUninstall(prefix, name, runNpm),
     onProgress = undefined,
-    timeoutMs = CHANNEL_TIMEOUT_MS,
+    timeoutMs = ASSET_INSTALL_TIMEOUT_MS,
+    stallMs = ASSET_STALL_MS,
   }: {
     /** The npm the default install and uninstall run; the real one unless a caller stands in. */
     npm?: NpmRun;
+    /** Stand npm's own install in for the download-then-install default; tests only. */
     install?: (prefix: string, spec: string) => Promise<void>;
     /** What takes a refused install out of the prefix; npm's uninstall by default. */
     uninstall?: (prefix: string, name: string) => Promise<void>;
     onProgress?: (received: number, total: number | null) => void;
-    /** One address's npm window; the walk moves on when it runs out. */
+    /** One address's npm window on the local install; the walk moves on when it runs out. */
     timeoutMs?: number;
+    /** How long an asset download may go without a byte before the address is cut. */
+    stallMs?: number;
   } = {},
 ): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
@@ -871,22 +1011,44 @@ export async function installPluginChannel(
     remembered !== undefined && canonical.includes(remembered) && remembered !== channel.url
       ? [remembered, ...canonical.filter((address) => address !== remembered)]
       : canonical;
-  // One address at a time, in the order given: the first address whose npm install lands
-  // and whose lockfile record verifies carries the install. An npm failure (a dead
-  // address, a non-ok answer — npm collapses both into its exit) moves on to the next
-  // address; so does an install whose post-check refuses it (a tampered tarball, another
-  // package's manifest). Each address carries its own timeout, so a dead one costs one
-  // window, not a hang. All of them failed: the error names the addresses that were tried
-  // and the failure it ended on.
+  // One address at a time, in the order given: the first address whose download carries,
+  // whose bytes match the entry's pin, and whose install verifies, carries the install. A
+  // download that stalls, an address that does not answer, an npm failure — all move on to
+  // the next address; so does an install whose post-check refuses it (a tampered tarball,
+  // another package's manifest). All of them failed: the error names the addresses that
+  // were tried and the failure it ended on.
   let lastError: unknown = null;
   for (const address of addresses) {
     try {
-      await run(prefix, address);
+      if (run === undefined) {
+        const expected = pinnedDigest(channel.integrity);
+        if (expected === null) {
+          throw new PluginInstallError(
+            "the index entry pins no readable sha512 for its release asset; it cannot be installed",
+          );
+        }
+        const file = assetFileName(channel);
+        const digest = await downloadChannelAsset(prefix, address, file, onProgress, stallMs);
+        if (!sameDigest(digest, expected)) {
+          throw new PluginInstallError(
+            "the release asset does not match the sha512 the index entry pins; it is not installed",
+          );
+        }
+        await runNpmInstallSpec(prefix, `./${ARCHIVES_DIR}/${file}`, timeoutMs, runNpm);
+      } else {
+        await run(prefix, address);
+      }
     } catch (err) {
       lastError = err;
       continue;
     }
-    const installed = await installedRecord(prefix, address);
+    const installed = await (async () => {
+      if (run !== undefined) return installedRecord(prefix, address);
+      // The download was verified against the pin before npm saw it, so the record's
+      // integrity IS the entry's own; npm's manifest says what it actually installed.
+      const manifest = await installedManifest(prefix, channel.name);
+      return manifest === null ? null : { integrity: channel.integrity, ...manifest };
+    })();
     if (installed === null) {
       lastError = new PluginInstallError(
         "npm recorded no install of the release asset; the address did not serve it",
@@ -908,7 +1070,7 @@ export async function installPluginChannel(
       // is where the next install of this channel starts. An address whose install
       // fails the checks throws above (or falls through) and is never remembered.
       if (address !== channel.url) lastGoodAsset.set(channel.url, address);
-      onProgress?.(0, null);
+      if (run !== undefined) onProgress?.(0, null);
       return { name: channel.name, version: channel.version };
     } else {
       lastError = new PluginInstallError(

@@ -3,10 +3,13 @@
  * (plugin/install.ts installPluginChannel, plugin/registry.ts indexChannelLookup +
  * indexChannelOf, and the install route's npm-first fallthrough):
  *
- * - The channel's release URL is a spec npm natively understands, so each address's attempt
- *   is npm itself installing it; what npm actually installed is verified after the fact —
- *   the lockfile entry's integrity against the sha512 the entry pins, the installed
- *   manifest against the entry's name and version.
+ * - The channel's release asset is downloaded by the server itself (the default path): the
+ *   bytes are counted as they land, a download that keeps moving has no time limit while a
+ *   stalled one is cut, and the file is verified against the entry's sha512 before npm
+ *   unpacks the local tarball — what npm actually installed is checked afterwards against
+ *   the entry's name and version. A caller may still stand npm's own install in (the
+ *   injected `install`, the shape the tests below exercise): the address is then handed
+ *   over as npm's spec, and the lockfile's integrity record verifies it.
  * - A mismatch, an unreadable integrity, or a channel listed without an integrity refuses the
  *   install with the reason; a refused install is uninstalled — nothing unverified stays.
  * - npm stays the first source: a name npm installs never consults the index, and a channel
@@ -28,6 +31,7 @@ import {
   npmRegistryNamed,
   PluginInstallError,
   pluginsPrefix,
+  type NpmRun,
 } from "../src/plugin/install.js";
 import {
   indexChannelLookup,
@@ -274,6 +278,140 @@ describe("installPluginChannel", () => {
     );
     expect(installed).toEqual({ name: channel.name, version: channel.version });
     expect(npm.specs).toEqual([channel.url, mirrorUrl]);
+    expect(npm.uninstalls).toEqual([]);
+  });
+});
+
+describe("installPluginChannel, the default download path (the server fetches the asset itself)", () => {
+  /**
+   * A stand-in for npm as the default path uses it: one `npm install` of the local tarball
+   * per call, the spec read off the args (`install … -- ./archives/<file>`). It "unpacks"
+   * by writing the entry's package into node_modules, so the post-check's manifest read has
+   * something to read — as npm unpacking the verified bytes would. An Error stands for npm
+   * failing on the local file, which nothing here does when the bytes verify.
+   */
+  const npmSpy = () => {
+    const specs: string[] = [];
+    const uninstalls: string[] = [];
+    const windows: number[] = [];
+    const run: NpmRun = async (prefix, args, _cwd, window) => {
+      const spec = args[args.length - 1]!;
+      specs.push(spec);
+      windows.push(window ?? Number.NaN);
+      await fs.mkdir(path.join(pluginsPrefix(prefix), "node_modules", ...channel.name.split("/")), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(
+          pluginsPrefix(prefix),
+          "node_modules",
+          ...channel.name.split("/"),
+          "package.json",
+        ),
+        JSON.stringify({ name: channel.name, version: channel.version }),
+      );
+      return "";
+    };
+    const uninstall = async (_prefix: string, name: string) => {
+      uninstalls.push(name);
+    };
+    return { run, uninstall, specs, uninstalls, windows };
+  };
+
+  /** Serves the given bytes for exactly the address asked, 404 for everything else. */
+  const serve = (byUrl: Record<string, Uint8Array | ReadableStream<Uint8Array>>) =>
+    vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((async (input: unknown) => {
+        const answer = byUrl[String(input)];
+        if (answer === undefined) return new Response("no such address", { status: 404 });
+        if (answer instanceof ReadableStream) {
+          return new Response(answer, { status: 200 });
+        }
+        return new Response(answer as unknown as BodyInit, {
+          status: 200,
+          headers: { "content-length": String(answer.byteLength) },
+        });
+      }) as unknown as typeof fetch);
+
+  it("downloads the asset itself, reports byte progress, and npm installs the local file", async () => {
+    const root = await tempRoot();
+    const bytes = await packTarball(channel.name, channel.version);
+    const npm = npmSpy();
+    const progress: Array<{ received: number; total: number | null }> = [];
+    const installed = await installPluginChannel(root, { ...channel, integrity: digest(bytes) }, {
+      npm: npm.run,
+      uninstall: npm.uninstall,
+      onProgress: (received, total) => progress.push({ received, total }),
+    });
+    expect(installed).toEqual({ name: channel.name, version: channel.version });
+    // npm never saw the URL — it unpacked the already-verified local file.
+    expect(npm.specs).toEqual([`./archives/${channel.name.replace(/[^a-zA-Z0-9._-]/g, "-")}-${channel.version}.tgz`]);
+    // The window npm ran under is the local-install one (bytes already on disk), not a
+    // network timer.
+    expect(npm.windows).toEqual([300_000]);
+    // The tarball is in the archives, the staging partial is gone.
+    const prefix = pluginsPrefix(root);
+    await fs.access(
+      path.join(prefix, "archives", `${channel.name.replace(/[^a-zA-Z0-9._-]/g, "-")}-${channel.version}.tgz`),
+    );
+    await expect(fs.readdir(path.join(prefix, ".staging"))).resolves.toEqual([]);
+    // Byte progress: a first event at zero, the completion carrying the real total.
+    expect(progress[0]).toEqual({ received: 0, total: bytes.byteLength });
+    expect(progress.at(-1)).toEqual({ received: bytes.byteLength, total: bytes.byteLength });
+    expect(npm.uninstalls).toEqual([]);
+  });
+
+  it("a stalled download is cut and the next address serves the bytes", async () => {
+    const root = await tempRoot();
+    const mirrorUrl = "https://cdn-mirror.example/o/r/releases/download/v0.0.2/x.tgz";
+    const bytes = await packTarball(channel.name, channel.version);
+    const npm = npmSpy();
+    // The first address delivers a header and three bytes, then goes quiet: it is cut at
+    // the stall window, and the mirror carries the whole file.
+    serve({
+      [channel.url]: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new Uint8Array([1, 2, 3]));
+        },
+      }),
+      [mirrorUrl]: bytes,
+    });
+    const installed = await installPluginChannel(
+      root,
+      { ...channel, integrity: digest(bytes), mirrors: [mirrorUrl] },
+      { npm: npm.run, uninstall: npm.uninstall, stallMs: 50 },
+    );
+    expect(installed).toEqual({ name: channel.name, version: channel.version });
+    // One local install, of the file the mirror's download verified.
+    expect(npm.specs).toEqual([`./archives/${channel.name.replace(/[^a-zA-Z0-9._-]/g, "-")}-${channel.version}.tgz`]);
+    expect(npm.uninstalls).toEqual([]);
+  });
+
+  it("bytes that do not match the entry's sha512 never reach npm — the address is refused", async () => {
+    const root = await tempRoot();
+    const npm = npmSpy();
+    serve({ [channel.url]: new TextEncoder().encode("tampered bytes") });
+    await expect(
+      installPluginChannel(root, channel, { npm: npm.run, uninstall: npm.uninstall }),
+    ).rejects.toThrow(/does not match the sha512/);
+    expect(npm.specs).toEqual([]);
+    expect(npm.uninstalls).toEqual([channel.name]);
+  });
+
+  it("an entry whose pin is not a sha512 digest refuses before anything is fetched", async () => {
+    const root = await tempRoot();
+    const npm = npmSpy();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(
+      installPluginChannel(
+        root,
+        { ...channel, integrity: "md5-abc" },
+        { npm: npm.run, uninstall: npm.uninstall },
+      ),
+    ).rejects.toThrow(/pins no readable sha512/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(npm.specs).toEqual([]);
     expect(npm.uninstalls).toEqual([]);
   });
 });

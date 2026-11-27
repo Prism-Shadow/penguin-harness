@@ -19,8 +19,13 @@
 export const DOCUMENT_TIMEOUT_MS = 30_000;
 /** Far past any plugin's document; the abbreviated form is kilobytes. */
 export const DOCUMENT_MAX_BYTES = 32 * 1024 * 1024;
-/** One address's window for a tarball: a slow mirror still finishes a plugin, a dead one costs this. */
-export const TARBALL_TIMEOUT_MS = 120_000;
+/**
+ * How long a package's download may go without a byte before it counts as stalled: the
+ * address is cut and the next one tried. A download that keeps moving has no ceiling at all
+ * — a slow link is slow, not dead — so the big assets this server fetches itself are bounded
+ * by movement, not by a clock (see FetchLimits.stallMs).
+ */
+export const TARBALL_STALL_MS = 30_000;
 /** Far past any plugin's tarball. */
 export const TARBALL_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -36,7 +41,18 @@ export class AddressError extends Error {
 
 export interface FetchLimits {
   fetch: typeof fetch;
+  /**
+   * The absolute window, whole answer included: set for the small registry documents, where
+   * a dead address costs one window rather than a hang. A package's bytes are fetched with
+   * `stallMs` instead — a slow download is legal, silence is not.
+   */
   timeoutMs: number;
+  /**
+   * When set, the window is not a clock but movement: the answer is cut only after it has
+   * gone this long without a byte (before the headers count too), and a download that keeps
+   * moving may take as long as it takes. Leaves `timeoutMs` unused.
+   */
+  stallMs?: number;
   maxBytes: number;
   /** The Accept header sent. */
   mediaTypes?: string;
@@ -78,7 +94,23 @@ export function fetchableAddress(address: string): boolean {
  */
 export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uint8Array> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), limits.timeoutMs);
+  // The window: an absolute clock when only `timeoutMs` is set (the registry documents), a
+  // movement check when `stallMs` is — every byte and the headers themselves count as
+  // movement, and a fetch that goes the window without one is cut, its abort carrying the
+  // AddressError the catches below hand on.
+  let lastMove = Date.now();
+  const watchdog =
+    limits.stallMs === undefined
+      ? setTimeout(() => controller.abort(), limits.timeoutMs)
+      : setInterval(() => {
+          if (Date.now() - lastMove > limits.stallMs) {
+            controller.abort(
+              new AddressError(
+                `went ${Math.round(limits.stallMs / 1000)} s without a byte and was cut`,
+              ),
+            );
+          }
+        }, 1_000);
   try {
     let res: Response;
     // Redirects are followed by hand, each hop held to the same rule as the address itself:
@@ -98,7 +130,10 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
           redirect: "manual",
           signal: controller.signal,
         });
+        lastMove = Date.now();
       } catch (err) {
+        const cut = controller.signal.reason;
+        if (cut instanceof AddressError) throw cut;
         throw new AddressError(
           controller.signal.aborted
             ? `no answer within ${Math.round(limits.timeoutMs / 1000)} s`
@@ -133,6 +168,7 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
       while (reader !== undefined) {
         const { done, value } = await reader.read();
         if (done) break;
+        lastMove = Date.now();
         received += value.byteLength;
         if (received > limits.maxBytes) {
           await reader.cancel().catch(() => undefined);
@@ -143,6 +179,8 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
       }
     } catch (err) {
       if (err instanceof AddressError) throw err;
+      const cut = controller.signal.reason;
+      if (cut instanceof AddressError) throw cut;
       throw new AddressError(
         controller.signal.aborted
           ? `did not finish within ${Math.round(limits.timeoutMs / 1000)} s`
@@ -157,7 +195,7 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
     }
     return body;
   } finally {
-    clearTimeout(timer);
+    clearTimeout(watchdog);
   }
 }
 
