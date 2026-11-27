@@ -118,7 +118,6 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-ui": "workspace:*",
-    "@prismshadow/penguin-web": "workspace:*",
     "@prismshadow/penguin-web-plugin": "workspace:*",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",

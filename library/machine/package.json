@@ -287,7 +287,6 @@
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
-    "@prismshadow/penguin-web": "workspace:*",
     "@types/react": "^19.1.0",
     "@types/ws": "^8.18.1",
     "react": "^19.1.0",
