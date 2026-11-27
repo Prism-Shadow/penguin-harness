@@ -621,10 +621,13 @@ export class BrowserBackendRuntime {
     return this.link.capabilities.sessionScoped ? sessionId : undefined;
   }
 
-  adoptSession(fromSessionId: string, sessionId: string): void {
-    this.tabs.adoptSession(fromSessionId, sessionId);
+  /** A draft's pages, handed to the Session it became — on a machine, `machineId`'s. */
+  adoptSession(fromSessionId: string, sessionId: string, machineId?: string): void {
+    const moved = this.tabs.adoptSession(fromSessionId, sessionId, machineId);
     this.deps.publish({ type: "builtin_browser_session", fromSessionId, sessionId });
     this.schedulePublish();
+    // The machine's agents can drive them now: its channel tells the machine they are its.
+    for (const tabId of moved) this.tellMachineTab(tabId);
   }
 
   private resolve(tab: string, sessionId?: string): number {

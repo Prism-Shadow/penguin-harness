@@ -407,15 +407,22 @@ export function builtinBrowserRoutes(
     const body = await jsonBody(c);
     const fromSessionId = requiredString(body, "fromSessionId").slice(0, 200);
     const sessionId = requiredString(body, "sessionId").slice(0, 200);
-    const actor = actorOf(c, sessionId);
     if (management) {
       const target = management.sessions.findById(sessionId);
       const sourceProject =
         management.sessions.findById(fromSessionId)?.projectId ?? draftProject(fromSessionId);
-      if (!target || target.projectId !== sourceProject)
-        throw new HttpError(404, "session_not_found", "Session is unavailable.");
+      if (target === null && sourceProject !== undefined) {
+        // A draft whose first send created its Session on a machine: the pages stay here, held
+        // for that machine's Session once a machine of the draft's Project vouches for it.
+        const machineId = await machineOfCall(c, sessionId, sourceProject, undefined);
+        if (machineId === null || machineId === undefined) throw sessionNotFound();
+        const own = { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin };
+        browser.adoptSession(own, fromSessionId, sessionId, machineId);
+        return c.body(null, 204);
+      }
+      if (!target || target.projectId !== sourceProject) throw sessionNotFound();
     }
-    browser.adoptSession(actor, fromSessionId, sessionId);
+    browser.adoptSession(actorOf(c, sessionId), fromSessionId, sessionId);
     return c.body(null, 204);
   });
 

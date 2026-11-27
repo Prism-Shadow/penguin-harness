@@ -533,8 +533,8 @@ export class BuiltinBrowser {
     return this.runtime(actor).activate(tab, sessionId);
   }
 
-  adoptSession(actor: Actor, fromSessionId: string, sessionId: string): void {
-    this.builtinRuntime(actor).adoptSession(fromSessionId, sessionId);
+  adoptSession(actor: Actor, fromSessionId: string, sessionId: string, machineId?: string): void {
+    this.builtinRuntime(actor).adoptSession(fromSessionId, sessionId, machineId);
   }
 
   /** POST /tabs/on-screen: the built-in browser's tab a window shows; nothing to do elsewhere. */
