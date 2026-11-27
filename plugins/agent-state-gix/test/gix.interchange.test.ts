@@ -14,7 +14,8 @@ import path from "node:path";
 import { describe, expect, beforeAll, afterAll, it } from "vitest";
 import { importStream } from "@penguinharness/agent-state-git";
 import type { AgentStateCommit } from "@prismshadow/penguin-core/plugin";
-import { gixEngine, loadNative } from "../src/engine.js";
+import { gixEngine } from "../src/engine.js";
+import { loadNative } from "../src/binary.js";
 
 const GIT = "git";
 
