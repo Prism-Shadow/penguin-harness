@@ -31,7 +31,9 @@
  *   mention stripped) as the text; a failed download degrades to a notice. A document lands in
  *   the scratchpad as a path line (caption first), past Telegram's own ceiling is a size
  *   refusal, and a nameless one gets a placeholder; video, audio and voice get the
- *   not-supported notice.
+ *   not-supported notice, caption and all. An album is one input — its caption wherever it sat,
+ *   its pictures in order, a video in it named as left out — and an item redelivered is in it
+ *   once; a voice message never takes the text after it down with it.
  * - Mentioned files leave as a photo and a document after the text; a long reply is chunked
  *   under the shared cap; formatting renders what Telegram has (degrading the rest, escaping
  *   the model's HTML), plain when renderMarkdown is off, falls back to plain on a refusal,
@@ -74,6 +76,7 @@ import {
   MESSAGING_TEST_MESSAGE,
   messagingImageFailedNotice,
   messagingInboundFileTooLargeNotice,
+  messagingPartsLeftOutNotice,
 } from "@prismshadow/penguin-library-messaging/bridge";
 import { MessagingChannelError } from "@prismshadow/penguin-library-messaging/connector";
 import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
@@ -1576,6 +1579,7 @@ describe("telegram binding routes and connector loop", () => {
     fake.push({
       message_id: 48,
       chat: { id: 42424242, type: "private" },
+      video: { file_id: "video-48" },
       caption: "transcribe this",
       from: { first_name: "Ada" },
     });
@@ -1979,6 +1983,96 @@ class ConflictTransport implements TelegramTransport {
     return client;
   }
 }
+
+/**
+ * An album: Telegram delivers it as one update per item, every item carrying the same
+ * `media_group_id`, the caption on whichever item the sender captioned — and nothing marks the
+ * last item, so the bridge composes them once the chat has been quiet for a moment. Its own app,
+ * for that moment: the shared one waits for nothing. The same moment is what a text sent right
+ * after other media could join, which a voice message must not let it do.
+ */
+describe("a telegram album, and media sent a moment apart", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let fake: FakeTelegramTransport;
+  let runs: InputPayload[][];
+  let SID: string;
+
+  const item = (
+    messageId: number,
+    media: Partial<NonNullable<TelegramUpdate["message"]>>,
+  ): TelegramUpdate["message"] => ({
+    message_id: messageId,
+    chat: { id: 42424242, type: "private" },
+    media_group_id: "13579",
+    from: { id: 7, first_name: "Ada" },
+    ...media,
+  });
+  const photo = (id: string) => ({ photo: [{ file_id: id, width: 1280, height: 960 }] });
+
+  beforeAll(async () => {
+    t = await createTestApp({
+      telegramTransport: forwardingTo(() => fake),
+      telegramRetryDelayMs: () => 1,
+      messagingInboundQuietMs: 50,
+    });
+    api = apiClient(t.app, (await provisionUser(t.app, "birder")).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(async () => {
+    fake = new FakeTelegramTransport();
+    runs = [];
+    SID = uniqueSessionId();
+    const row = sessionRow(SID, { projectId: "birder-default_project" });
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, echoFakeSession(SID, runs));
+    expect((await api.put(BASE(SID), { botToken: TOKEN })).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
+  });
+  afterEach(() => {
+    t.deps.messaging.unbindSession(SID);
+  });
+
+  it("arrives as one input: its caption, then every picture in order, the video named", async () => {
+    fake.push(item(301, photo("photo-301")));
+    fake.push(item(302, photo("photo-302")));
+    fake.push(item(303, { video: { file_id: "video-303" }, caption: "which is sharper?" }));
+    await waitFor(() => runs.length === 1 && fake.allTexts().length >= 2);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url", "image_url"]);
+    // The caption sat on the video, and it is the whole album's text all the same.
+    expect(runs[0]![0]!.text).toBe("which is sharper?");
+    expect(fake.allFileFetches().map((f) => f.fileId)).toEqual(["photo-301", "photo-302"]);
+    expect(fake.allTexts().map((s) => s.text)).toContain(
+      messagingPartsLeftOutNotice([], ["video"]),
+    );
+  });
+
+  it("an item delivered twice is in that input once", async () => {
+    const first = item(311, photo("photo-311"));
+    fake.push(first);
+    fake.push(item(312, photo("photo-312")));
+    // The same message again under a fresh update id: a redelivery, not a third picture.
+    fake.push(first);
+    await waitFor(() => runs.length === 1 && fake.allTexts().length >= 1);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.map((p) => p.type)).toEqual(["image_url", "image_url"]);
+    expect(fake.allFileFetches().map((f) => f.fileId)).toEqual(["photo-311", "photo-312"]);
+  });
+
+  it("a voice message does not swallow the text sent right after it", async () => {
+    // Nothing of a voice message reaches the Agent, so it waits for no note: joined, the
+    // message would carry no attachment that arrived and the words would be refused with it.
+    fake.push({ message_id: 321, chat: { id: 42424242, type: "private" }, voice: { file_id: "v" } });
+    fake.push(privateText("and check the logs", 322));
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]).toEqual([expect.objectContaining({ type: "text", text: "and check the logs" })]);
+    await waitFor(() => fake.allTexts().some((s) => s.text === MESSAGING_UNSUPPORTED_NOTICE));
+  });
+});
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

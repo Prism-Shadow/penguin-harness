@@ -139,7 +139,18 @@ export interface TelegramMessage {
    * handling the text gets — see the connector's stripBotMention.
    */
   caption_entities?: TelegramMessageEntity[];
+  /**
+   * "The unique identifier of a media message group this message belongs to": an album
+   * reaches the bot as one update per item, every one of them carrying the same value.
+   */
+  media_group_id?: string;
+  /** Media kinds the connector does not deliver; only their presence is read. */
+  video?: unknown;
+  video_note?: unknown;
+  audio?: unknown;
+  voice?: unknown;
   from?: {
+    id?: number;
     first_name?: string;
     username?: string;
   };

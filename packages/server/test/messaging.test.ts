@@ -43,7 +43,11 @@
  *   is bounded per binding. An inbound file lands in the scratchpad as a path line under the
  *   same rules; a redelivered image or file is dropped before any download; a nameless file
  *   gets a placeholder name. Several files in one message attach in order, compose with text
- *   and an image, return with a withdrawn follow-up, and are refused whole past the total.
+ *   and an image, return with a withdrawn follow-up; the one crossing the total is left out and
+ *   named while the rest is sent, and a message none of whose files arrives starts nothing.
+ * - A rich-text post is one input (its words, then its pictures and files; a video in it named as
+ *   left out); a file and the note sent right after it are one input, never with someone else's
+ *   text in a group; one image failing costs only itself.
  * - An approval request sends the waiting notice. The files a reply mentions follow it
  *   (pictures as pictures, a file the run wrote, never an escape or a missing file), capped by
  *   count and size, and whatever does not go out is filed under the Project — never announced
@@ -107,6 +111,7 @@ import {
   messagingInboundFilePermissionNotice,
   messagingInboundFileTooLargeNotice,
   messagingInboundFilesTooLargeNotice,
+  messagingPartsLeftOutNotice,
   splitReplyLines,
 } from "@prismshadow/penguin-library-messaging/bridge";
 import type { MessagingTaskRunner } from "@prismshadow/penguin-library-messaging/bridge";
@@ -639,6 +644,7 @@ describe("messaging binding routes and bridge", () => {
       runner,
       connectors: [new FeishuConnector(fake)],
       errors: t.deps.errors,
+      inboundQuietMs: 0,
     });
 
   /** Points the case at `app`: its own Project and Session ids, SID adopted as an echoing Session. */
@@ -1962,6 +1968,130 @@ describe("messaging binding routes and bridge", () => {
     });
     await waitFor(() => runs.length === 1);
     expect(path.basename(attachedFilePath(runs[0]![0])!)).toBe("file");
+  });
+
+  // —— Mixed messages ————————————————————————————————————————————————————————
+  // Words, pictures and files sent together reach the Agent as ONE input, the shape the web
+  // composer submits — whether Feishu delivers them in one rich-text `post` or the client sends
+  // an attachment and its note a moment apart.
+
+  it("a rich-text post becomes one input: its words, then its pictures in order", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_post_1",
+      messageType: "post",
+      content: JSON.stringify({
+        title: "",
+        content: [
+          [
+            { tag: "text", text: "which chart is ", style: [] },
+            { tag: "text", text: "wrong", style: ["bold"] },
+            { tag: "text", text: "?", style: [] },
+          ],
+          [{ tag: "img", image_key: "img_a" }],
+          [{ tag: "a", text: "the brief", href: "https://example.com/brief" }],
+          [{ tag: "img", image_key: "img_b" }],
+        ],
+      }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url", "image_url"]);
+    expect(runs[0]![0]!.text).toBe("which chart is wrong?\n[the brief](https://example.com/brief)");
+    // Both pictures are resources of the post's own message.
+    expect(fake.allImageFetches().map((f) => [f.messageId, f.fileKey])).toEqual([
+      ["om_post_1", "img_a"],
+      ["om_post_1", "img_b"],
+    ]);
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(["Reply text"]);
+  });
+
+  it("a post's video stays behind and is named, while its words, picture and file are sent", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_post_2",
+      messageType: "post",
+      content: JSON.stringify({
+        title: "",
+        content: [
+          [{ tag: "text", text: "the numbers and the demo" }],
+          [{ tag: "img", image_key: "img_c" }],
+          [{ tag: "media", file_key: "file_v2_clip", image_key: "img_cover" }],
+        ],
+        files: [{ file_key: "file_v3_sheet", file_name: "q3.csv", is_folder: false }],
+      }),
+    });
+    await waitFor(() => runs.length === 1 && fake.allTexts().length > 0);
+    expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url"]);
+    expect(runs[0]![0]!.text!.startsWith("the numbers and the demo\n\n[attached file: ")).toBe(
+      true,
+    );
+    expect(runs[0]![0]!.text).toContain("q3.csv");
+    expect(fake.allFileFetches().map((f) => f.fileKey)).toEqual(["file_v3_sheet"]);
+    // One line, naming the part that did not go: the chat is told, the rest is not held back.
+    const notice = fake.allTexts()[0]!.text;
+    expect(notice).toBe(messagingPartsLeftOutNotice([], ["video"]));
+    expect(notice).not.toContain("\n");
+  });
+
+  it("a file and the note sent right after it reach the Agent as one input", async () => {
+    // A quiet period far longer than the wait below: the run can only start in time because
+    // the note completed the message, never because the file's wait ran out.
+    await boot({ messagingInboundQuietMs: 10_000 });
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_9",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v2_9", file_name: "q3.xlsx" }),
+    });
+    expect(runs).toHaveLength(0);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_note_9",
+      messageType: "text",
+      content: JSON.stringify({ text: "check the totals" }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]).toHaveLength(1);
+    const text = runs[0]![0]!.text!;
+    expect(text.startsWith("check the totals\n\n[attached file: ")).toBe(true);
+    expect(text).toContain("q3.xlsx");
+    // Marked as finished with its newest part, once.
+    await waitFor(
+      () => t.deps.messagingRepo.find(SID, "feishu")?.lastInboundMessageId === "om_note_9",
+    );
+  });
+
+  it("in a group, someone else's text does not join the attachment waiting before it", async () => {
+    await boot({ messagingInboundQuietMs: 10_000 });
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_group_1",
+      chatType: "group",
+      messageId: "om_ada_file",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v2_ada", file_name: "ada.pdf" }),
+      senderId: "ou_ada",
+    });
+    await fake.lastConnection().fire({
+      chatId: "oc_group_1",
+      chatType: "group",
+      messageId: "om_bob_text",
+      messageType: "text",
+      content: JSON.stringify({ text: "lunch?" }),
+      senderId: "ou_bob",
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]).toEqual([expect.objectContaining({ type: "text", text: "lunch?" })]);
+    // Ada's file is still waiting for words of her own, untouched.
+    expect(fake.allFileFetches()).toHaveLength(0);
   });
 
   it("an approval_request sends the waiting-for-approval notice", async () => {
@@ -3425,15 +3555,13 @@ describe("a redelivered inbound message", () => {
  * The bridge's own loop over a message's file list, driven by a connector that hands it
  * exactly the message a test constructs.
  *
- * It is a fake at the bridge's seam rather than at a wire, deliberately and narrowly:
- * neither channel here delivers two files in ONE message — a Feishu `file` message carries
- * one `file_key`, and a Telegram media group arrives as one update per document — while the
- * seam carries a LIST, because the image seam does and a batching channel is the obvious
- * next one. What no wire can produce is therefore what this drives: the order several
- * attachments reach the Agent in, how they compose with a caption and an image, the
- * per-message byte budget spent across them, and what a message whose files were written
- * hands back when the follow-up it queued as is withdrawn again. Everything a real wire CAN
- * produce is tested against the real wire, in the two channel suites.
+ * It is a fake at the bridge's seam rather than at a wire, deliberately and narrowly: what it
+ * drives is the bridge's own arithmetic over a list, which a wire reaches only through a
+ * channel's whole fixture — the order several attachments reach the Agent in, how they compose
+ * with a caption and an image, the per-message byte budget spent across them, and what a
+ * message whose files were written hands back when the follow-up it queued as is withdrawn
+ * again. Everything a real wire produces is tested against the real wire, in the channel
+ * suites.
  */
 describe("a message carrying several files", () => {
   let t: TestApp;
@@ -3544,6 +3672,7 @@ describe("a message carrying several files", () => {
       runner: t.deps.manager,
       connectors: [connector],
       errors: t.deps.errors,
+      inboundQuietMs: 0,
     });
     await bridge.start();
   });
@@ -3556,6 +3685,9 @@ describe("a message carrying several files", () => {
 
   /** The one text part of a run's input (the path lines ride it). */
   const textOf = (run: InputPayload[]): string => run.find((p) => p.type === "text")!.text!;
+
+  /** What the scripted client sent besides the relayed reply: the notices alone. */
+  const noticesSent = (): string[] => notices.filter((n) => n !== "Reply text");
 
   it("attaches every file of one message, in the order they were sent", async () => {
     await fire({
@@ -3599,6 +3731,25 @@ describe("a message carrying several files", () => {
     expect(runs[0]![1]!.image_url).toBe(`data:image/png;base64,${IMAGE_BYTES.toString("base64")}`);
   });
 
+  it("one image that fails to download costs only itself: the rest is sent, that image named", async () => {
+    const failing: MessagingInboundImage = {
+      fetch: () => Promise.reject(new Error("resource expired (code 234003)")),
+    };
+    await fire({
+      messageId: "om_two_images",
+      text: "before and after",
+      images: [imageOf(IMAGE_BYTES), failing],
+    });
+    await waitFor(() => runs.length === 1 && noticesSent().length === 1);
+    expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url"]);
+    // Which one, and the channel's own reason, so the person resends just that picture.
+    expect(noticesSent()[0]).toContain("image 2");
+    expect(noticesSent()[0]).toContain("resource expired (code 234003)");
+    expect(t.deps.errorsRepo.recent("birder-default_project").map((r) => r.code)).toContain(
+      "messaging_image_fetch_failed",
+    );
+  });
+
   it("hands a queued message's files back when the follow-up is withdrawn", async () => {
     // A file that arrives while the Session is busy is written before its Task is queued, so
     // the queued entry is the only thing that knows where the bytes landed. Withdrawing it in
@@ -3631,24 +3782,44 @@ describe("a message carrying several files", () => {
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
-  it("refuses a batch that adds up past the per-message total, naming no file", async () => {
+  it("leaves out the file that crosses the per-message total, names it, and sends the rest", async () => {
     await fire({
       messageId: "om_overrun",
+      text: "both reports",
       files: [
         fileOf("big.bin", Buffer.alloc(35, 0x41)),
         fileOf("also-big.bin", Buffer.alloc(35, 0x42)),
       ],
     });
-    await waitFor(() => notices.length > 0);
-    // The second file crosses what is left of the message's budget, so the batch is
-    // refused as a batch: no single file is at fault, and naming one would send the sender
-    // to shrink a file that was never too big.
-    expect(notices).toEqual([messagingInboundFilesTooLargeNotice(LIMITS.totalBytes)]);
-    expect(notices[0]).not.toContain("also-big.bin");
-    // Refused at the byte that crossed, under the remaining budget rather than the
-    // per-file cap — the transfer is never completed and measured afterwards.
+    await waitFor(() => runs.length === 1 && noticesSent().length === 1);
+    // Refused at the byte that crossed, under the remaining budget rather than the per-file
+    // cap — the transfer is never completed and measured afterwards.
     expect(caps).toEqual([40, 25]);
-    // All-or-nothing: the file that did arrive starts no Task and leaves nothing behind.
+    // The file that fit reaches the Agent with the words; the one that did not stays out of
+    // the input entirely.
+    const lines = textOf(runs[0]!).split("\n");
+    expect(lines[0]).toBe("both reports");
+    const attached = lines.flatMap((line) => {
+      const p = matchAttachedFileLine(line);
+      return p === null ? [] : [path.basename(p)];
+    });
+    expect(attached).toEqual(["big.bin"]);
+    // The chat hears which part stayed behind, and why: the total, not that file's own size.
+    const [notice] = noticesSent();
+    expect(notice).toContain('"also-big.bin"');
+    expect(notice).toContain("one message may carry");
+    expect(notice).not.toContain('"big.bin"');
+  });
+
+  it("a message none of whose files arrives starts nothing and leaves nothing behind", async () => {
+    await fire({
+      messageId: "om_all_lost",
+      text: "what is in this?",
+      files: [fileOf("huge.bin", Buffer.alloc(45, 0x41))],
+    });
+    await waitFor(() => notices.length > 0);
+    // Words about an attachment the Agent never received are not run on their own.
+    expect(notices).toEqual([messagingInboundFileTooLargeNotice("huge.bin", LIMITS.maxBytes)]);
     expect(runs).toHaveLength(0);
     const dir = path.join(scratchpadDir(t.root, "birder-default_project", "default_agent"), SID);
     await expect(fs.readdir(dir)).rejects.toThrow();

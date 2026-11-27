@@ -44,6 +44,7 @@ import type {
   MessagingInboundFile,
   MessagingInboundImage,
   MessagingInboundMessage,
+  MessagingOmittedPart,
   MessagingSendNote,
 } from "./connector.js";
 import { MessagingChannelError } from "./connector.js";
@@ -389,8 +390,8 @@ function normalizeUpdate(
   // playback (a `voice` is a nameless opus blob), and handing one to the Agent as an
   // `[attached file: …]` path would offer a capability that is not there — nothing
   // downstream decodes or transcribes it. What a sender actually wants delivered arrives
-  // here the moment they attach it as a file, which is one menu item away; anything else
-  // keeps the not-supported notice, which at least says so.
+  // here the moment they attach it as a file, which is one menu item away; the rest is named
+  // in `omitted`, so the chat hears which part stayed behind.
   //
   // A picture dragged in uncompressed is a `document` too, and lands as an attachment
   // rather than as an inline image: the sender asked for the original bytes to arrive, and
@@ -415,6 +416,8 @@ function normalizeUpdate(
             },
           },
         ];
+  const omitted = omittedOf(msg);
+  const senderId = msg.from?.id;
   return {
     // The topic rides the chat id so the binding remembers the LAST one written in, the same
     // way it already remembers the last chat: a user who moves to a new topic gets the
@@ -422,21 +425,41 @@ function normalizeUpdate(
     chatId: chatRefOf(msg.chat.id, topicId),
     chatKind: msg.chat.type === "private" ? "direct" : "group",
     messageId: replyRefOf(msg.chat.id, msg.message_id, topicId),
-    // A text message carries `text`; a photo or a document carries its words in `caption`
-    // instead, which is that message's text as far as the bridge is concerned. A caption on
-    // any OTHER media kind (video, audio, voice, …) normalizes to null: those bytes are not
-    // delivered, so running the model on the caption alone would answer confidently about a
-    // file it never received.
+    // A text message carries `text`; media carries its words in `caption` instead, which is
+    // that message's text as far as the bridge is concerned. A caption on media that is not
+    // delivered rides along with the media named in `omitted`: in an album the caption sits on
+    // whichever item the sender captioned, a video included, and it is the whole album's text.
+    // The bridge never runs a message on a caption whose attachments all stayed behind. Media
+    // this connector does not even name (a sticker, a location) carries no caption.
     text:
       typeof msg.text === "string"
         ? stripBotMention(msg.text, msg.entities, me)
-        : (photo !== null || doc !== null) && typeof msg.caption === "string"
+        : (photo !== null || doc !== null || omitted.length > 0) && typeof msg.caption === "string"
           ? stripBotMention(msg.caption, msg.caption_entities, me)
           : null,
     ...(images.length > 0 ? { images } : {}),
     ...(files.length > 0 ? { files } : {}),
+    ...(omitted.length > 0 ? { omitted } : {}),
+    // Scoped to the chat like every other ref here: the album is one message of ONE chat.
+    ...(msg.media_group_id !== undefined && msg.media_group_id !== ""
+      ? { groupId: `${msg.chat.id}:${msg.media_group_id}` }
+      : {}),
+    ...(senderId !== undefined ? { senderId: String(senderId) } : {}),
     ...(senderName !== undefined ? { senderName } : {}),
   };
+}
+
+/**
+ * The media of this message that is not delivered, named for the chat's notice. A message that
+ * also carries a `document` delivers that document — an animation arrives with one beside its
+ * own field — so nothing is named for it.
+ */
+function omittedOf(msg: TelegramMessage): MessagingOmittedPart[] {
+  if (msg.document !== undefined) return [];
+  if (msg.video !== undefined || msg.video_note !== undefined) return ["video"];
+  if (msg.audio !== undefined) return ["audio"];
+  if (msg.voice !== undefined) return ["voice"];
+  return [];
 }
 
 export class TelegramConnector implements MessagingChannelConnector {

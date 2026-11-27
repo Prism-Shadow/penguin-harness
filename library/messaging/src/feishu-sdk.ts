@@ -47,14 +47,16 @@ export interface FeishuInboundEvent {
   chatType: string;
   messageId: string;
   /**
-   * Feishu message type (`text`, `image`, `file`, `sticker`, …). The connector reads the
-   * three it delivers and normalizes everything else to a message with no content.
+   * Feishu message type (`text`, `post`, `image`, `file`, `sticker`, …). The connector reads
+   * the four it delivers and normalizes everything else to a message with no content.
    */
   messageType: string;
   /** Raw message content JSON (for `text`: `{"text":"..."}`). */
   content: string;
   /** Sender display name when the event carries one (the standard event does not). */
   senderName?: string;
+  /** The sender's open id (`sender.sender_id.open_id`); absent when the event names none. */
+  senderId?: string;
   /** Everyone `@`-ed in this message, in the order Feishu lists them; absent when nobody was. */
   mentions?: FeishuMention[];
 }
@@ -300,6 +302,7 @@ interface LarkWsClient {
 interface LarkEventDispatcher {
   register(handlers: {
     "im.message.receive_v1": (data: {
+      sender?: { sender_id?: { open_id?: string } };
       message: {
         message_id: string;
         chat_id: string;
@@ -751,6 +754,7 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
             name: m.name,
             ...(m.id?.open_id !== undefined ? { openId: m.id.open_id } : {}),
           }));
+          const senderId = data.sender?.sender_id?.open_id;
           await handlers.onMessage({
             chatId: data.message.chat_id,
             chatType: data.message.chat_type,
@@ -758,6 +762,7 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
             messageType: data.message.message_type,
             content: data.message.content,
             ...(mentions !== undefined ? { mentions } : {}),
+            ...(senderId !== undefined && senderId !== "" ? { senderId } : {}),
           });
         },
       });

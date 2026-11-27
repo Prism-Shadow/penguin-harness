@@ -16,6 +16,7 @@ export abstract class MessagingTuning {
   abstract lineDelayMs?: number;
   abstract inboundImageBudgetBytes?: number;
   abstract qqTailFlushMs?: number;
+  abstract inboundQuietMs?: number;
   abstract retryDelayMs?: (failures: number) => number;
 }
 

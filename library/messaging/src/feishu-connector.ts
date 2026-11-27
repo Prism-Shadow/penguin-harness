@@ -6,7 +6,8 @@
  * `im.message.receive_v1` events to the bridge's normalized inbound shape (text extracted
  * from the content JSON and its mention placeholders resolved — see resolveFeishuMentions,
  * an `image` message's `image_key` and a `file` message's `file_key` each turned into a
- * lazy download handle; anything else reads as neither text, image nor file).
+ * lazy download handle, a rich-text `post` read into its words and its pictures — see
+ * feishu-post.ts; anything else reads as neither text, image nor file).
  */
 import type {
   MessagingChannelConnector,
@@ -18,6 +19,7 @@ import type {
   MessagingSendOptions,
 } from "./connector.js";
 import { feishuCardOf } from "./feishu-card.js";
+import { feishuPostOf } from "./feishu-post.js";
 import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
 import { FeishuApiError, createLarkSdk } from "./feishu-sdk.js";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -259,45 +261,52 @@ export class FeishuConnector implements MessagingChannelConnector {
       });
     return this.sdk.connect(creds, {
       onMessage: (evt) => {
-        // Only `text` messages carry text — a Feishu image message has no caption field of
-        // its own; every other message type normalizes to null (the bridge answers those
+        const imageOf = (imageKey: string): MessagingInboundImage => ({
+          fetch: async (maxBytes) =>
+            (await api()).fetchMessageImage({
+              messageId: evt.messageId,
+              fileKey: imageKey,
+              maxBytes,
+            }),
+        });
+        // A post's pictures are resources of the post's own message, fetched through the same
+        // endpoint (and the same resource-read scope) as an `image` message's.
+        const post = evt.messageType === "post" ? feishuPostOf(evt.content) : null;
+        // `text` and `post` carry words; a Feishu image or file message has no caption field
+        // of its own; every other message type normalizes to null (the bridge answers those
         // with the not-supported notice).
-        const raw = evt.messageType === "text" ? textOfContent(evt.content) : null;
+        const raw =
+          evt.messageType === "text"
+            ? textOfContent(evt.content)
+            : post !== null && post.text !== ""
+              ? post.text
+              : null;
         const imageKey = evt.messageType === "image" ? imageKeyOfContent(evt.content) : null;
         const images: MessagingInboundImage[] =
-          imageKey === null
-            ? []
-            : [
-                {
-                  fetch: async (maxBytes) =>
-                    (await api()).fetchMessageImage({
-                      messageId: evt.messageId,
-                      fileKey: imageKey,
-                      maxBytes,
-                    }),
-                },
-              ];
+          post !== null
+            ? post.imageKeys.map(imageOf)
+            : imageKey === null
+              ? []
+              : [imageOf(imageKey)];
         // `file` only, of the several types that carry a `file_key`. `audio` (a voice
         // recording) and `media` (a video) are re-encoded for playback and named by nothing
         // the sender chose — handing them over as `[attached file: …]` paths would offer a
         // capability that is not there, since nothing downstream decodes or transcribes
         // them. A recording the user genuinely wants the Agent to have arrives as a `file`
         // the moment they send it as one, which is a menu item away.
+        const fileOf = (file: { fileKey: string; fileName: string }): MessagingInboundFile => ({
+          fileName: file.fileName,
+          fetch: async (maxBytes) =>
+            (await api()).fetchMessageFile({
+              messageId: evt.messageId,
+              fileKey: file.fileKey,
+              maxBytes,
+            }),
+        });
         const file = evt.messageType === "file" ? fileOfContent(evt.content) : null;
         const files: MessagingInboundFile[] =
-          file === null
-            ? []
-            : [
-                {
-                  fileName: file.fileName,
-                  fetch: async (maxBytes) =>
-                    (await api()).fetchMessageFile({
-                      messageId: evt.messageId,
-                      fileKey: file.fileKey,
-                      maxBytes,
-                    }),
-                },
-              ];
+          post !== null ? post.files.map(fileOf) : file === null ? [] : [fileOf(file)];
+        const omitted = post?.omitted ?? [];
         return handlers.onMessage({
           chatId: evt.chatId,
           chatKind: evt.chatType === "p2p" ? "direct" : "group",
@@ -305,6 +314,8 @@ export class FeishuConnector implements MessagingChannelConnector {
           text: raw === null ? null : resolveFeishuMentions(raw, evt.mentions, botOpenId),
           ...(images.length > 0 ? { images } : {}),
           ...(files.length > 0 ? { files } : {}),
+          ...(omitted.length > 0 ? { omitted } : {}),
+          ...(evt.senderId !== undefined ? { senderId: evt.senderId } : {}),
           ...(evt.senderName !== undefined ? { senderName: evt.senderName } : {}),
         });
       },

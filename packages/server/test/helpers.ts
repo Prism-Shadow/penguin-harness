@@ -331,6 +331,12 @@ export interface TestAppOptions {
   messagingLineDelayMs?: number;
   /** Test hook: one binding's inbound image budget. */
   messagingInboundImageBudgetBytes?: number;
+  /**
+   * Test hook: how long an attachment on its own waits for the rest of its message. Zero unless
+   * a case asks: a positive wait would stall every attachment case on a real timer, and the
+   * composing suites set their own.
+   */
+  messagingInboundQuietMs?: number;
   /** Test double: the QQ scan-to-connect transport. */
   qqScanTransport?: QQScanTransport;
   /** Test double: the WeChat connector's long-poll + CDN transport. */
@@ -452,6 +458,7 @@ export function replacementsFor(
   if (o.messagingInboundImageBudgetBytes !== undefined)
     tuning.inboundImageBudgetBytes = o.messagingInboundImageBudgetBytes;
   if (o.qqTailFlushMs !== undefined) tuning.qqTailFlushMs = o.qqTailFlushMs;
+  tuning.inboundQuietMs = o.messagingInboundQuietMs ?? 0;
   if (o.telegramRetryDelayMs) tuning.retryDelayMs = o.telegramRetryDelayMs;
   if (o.wechatRetryDelayMs) tuning.retryDelayMs = o.wechatRetryDelayMs;
   if (Object.keys(tuning).length > 0) out.push([DefaultMessagingTuning, tuning]);
