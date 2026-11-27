@@ -37,6 +37,7 @@
       "import": "./dist/types.js"
     },
     "./web": "./src/web/index.ts",
+    "./web/page-workspace": "./src/web/page-workspace/index.ts",
     "./web/*": "./src/web/*"
   },
   "scripts": {
