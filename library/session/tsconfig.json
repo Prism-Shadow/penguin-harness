@@ -4,7 +4,6 @@
     "paths": {
       "@prismshadow/penguin-library-agent/types": ["../agent/src/types.ts"],
       "@prismshadow/penguin-library-agent/contract": ["../agent/src/contract.ts"],
-      "@prismshadow/penguin-library-agent/system-agent": ["../agent/src/system-agent.ts"],
       "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
       "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],

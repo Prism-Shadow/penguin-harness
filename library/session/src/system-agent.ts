@@ -9,7 +9,10 @@
  * re-exports it unchanged beside its sibling refusals.
  */
 import { HttpError } from "@prismshadow/penguin-library-http";
-import type { SystemAgentLookup } from "@prismshadow/penguin-library-agent/system-agent";
+import type { AgentConfig } from "@prismshadow/penguin-library-agent/contract";
+
+/** What every refusal asks: the AgentConfig mechanism's predicate (the same shape the agent package's system-agent refusals take). */
+type SystemAgentLookup = Pick<AgentConfig, "isSystemAgent">;
 
 /** Throws 409 `system_agent_no_sessions` when the Agent is the system Agent. */
 export async function refuseSystemAgentSessions(
