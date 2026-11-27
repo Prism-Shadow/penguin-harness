@@ -43,6 +43,8 @@ import {
   MessagingChannelError,
   MessagingConnectionClosedError,
 } from "@prismshadow/penguin-library-messaging/connector";
+import { createHash } from "node:crypto";
+import { MessagingMediaTooLargeError } from "@prismshadow/penguin-library-messaging/media";
 import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchCall } from "./fixtures/fetch.js";
@@ -389,6 +391,181 @@ describe("the QQ OpenAPI send", () => {
     expect(err).toContain("only a few replies");
     expect(err).toContain("40034128");
     expect(err).not.toContain("500");
+  });
+});
+
+describe("the QQ rich-media upload and send", () => {
+  const where = { kind: "c2c" as const, openid: "user_openid_aaa" };
+  const md5 = (bytes: Uint8Array) => createHash("md5").update(bytes).digest("hex");
+
+  it("registers a small file inline as base64 and sends the returned file_info as msg_type 7", async () => {
+    const calls = stubQQ((call) =>
+      call.url.endsWith("/files")
+        ? jsonResponse({ file_uuid: "u", file_info: "INFO-1", ttl: 300 })
+        : null,
+    );
+    const bot = createQQTransport().createClient(CREDS);
+    const info = await bot.uploadFile({
+      ...where,
+      fileType: 1,
+      fileName: "chart.png",
+      data: Buffer.from("png-bytes"),
+    });
+    expect(info).toBe("INFO-1");
+    await bot.sendMessage({ ...where, content: "", msgId: "msg_1", msgSeq: 2, fileInfo: info });
+    const v2 = calls.filter((c) => c.url.includes("/v2/"));
+    expect(v2.map((c) => [c.method, c.url])).toEqual([
+      ["POST", `${QQ_API_BASE}/v2/users/user_openid_aaa/files`],
+      ["POST", `${QQ_API_BASE}/v2/users/user_openid_aaa/messages`],
+    ]);
+    expect(JSON.parse(v2[0]!.body)).toEqual({
+      file_type: 1,
+      file_name: "chart.png",
+      file_data: Buffer.from("png-bytes").toString("base64"),
+      srv_send_msg: false,
+    });
+    // The handle alone: no `content`, no `markdown`.
+    expect(JSON.parse(v2[1]!.body)).toEqual({
+      msg_type: 7,
+      media: { file_info: "INFO-1" },
+      msg_id: "msg_1",
+      msg_seq: 2,
+    });
+  });
+
+  it("uses the group endpoints for a group", async () => {
+    const calls = stubQQ((call) =>
+      call.url.endsWith("/files") ? jsonResponse({ file_info: "G-INFO" }) : null,
+    );
+    const bot = createQQTransport().createClient(CREDS);
+    const info = await bot.uploadFile({
+      kind: "group",
+      openid: "group_openid_bbb",
+      fileType: 4,
+      fileName: "a.pdf",
+      data: Buffer.from("x"),
+    });
+    await bot.sendMessage({
+      kind: "group",
+      openid: "group_openid_bbb",
+      content: "",
+      msgId: "m",
+      msgSeq: 1,
+      fileInfo: info,
+    });
+    expect(calls.filter((c) => c.url.includes("/v2/")).map((c) => c.url)).toEqual([
+      `${QQ_API_BASE}/v2/groups/group_openid_bbb/files`,
+      `${QQ_API_BASE}/v2/groups/group_openid_bbb/messages`,
+    ]);
+  });
+
+  it("uploads a large file in parts: prepare, PUT each part unauthenticated, finish each, then merge", async () => {
+    const data = Buffer.alloc(3_600_000, 7);
+    const blockSize = 2_000_000;
+    let putAttempts = 0;
+    const calls = stubQQ((call) => {
+      if (call.url.endsWith("/upload_prepare")) {
+        return jsonResponse({
+          upload_id: "up-1",
+          block_size: String(blockSize),
+          parts: [
+            {
+              index: 0,
+              presigned_url: "https://cos.example/p0?sig=a",
+              block_size: String(blockSize),
+            },
+            {
+              index: 1,
+              presigned_url: "https://cos.example/p1?sig=b",
+              block_size: String(blockSize),
+            },
+          ],
+          upload_config: { concurrency: 1, retry_timeout: 300, retry_delay: 1 },
+        });
+      }
+      if (call.url.startsWith("https://cos.example/")) {
+        putAttempts += 1;
+        // The first attempt at part 0 fails and is retried.
+        return putAttempts === 1
+          ? new Response("", { status: 503 })
+          : new Response("", { status: 200 });
+      }
+      if (call.url.endsWith("/upload_part_finish")) return jsonResponse({});
+      if (call.url.endsWith("/files")) return jsonResponse({ file_info: "BIG-INFO", ttl: 0 });
+      return null;
+    });
+    const bot = createQQTransport({ upload: { retryDelayMs: 0 } }).createClient(CREDS);
+    expect(await bot.uploadFile({ ...where, fileType: 4, fileName: "big.bin", data })).toBe(
+      "BIG-INFO",
+    );
+    const v2 = calls.filter((c) => c.url.includes("/v2/"));
+    expect(v2.map((c) => c.url)).toEqual([
+      `${QQ_API_BASE}/v2/users/user_openid_aaa/upload_prepare`,
+      `${QQ_API_BASE}/v2/users/user_openid_aaa/upload_part_finish`,
+      `${QQ_API_BASE}/v2/users/user_openid_aaa/upload_part_finish`,
+      `${QQ_API_BASE}/v2/users/user_openid_aaa/files`,
+    ]);
+    expect(JSON.parse(v2[0]!.body)).toEqual({
+      file_type: 4,
+      file_size: "3600000",
+      file_name: "big.bin",
+      md5: md5(data),
+      sha1: createHash("sha1").update(data).digest("hex"),
+      // The whole file is under the 10002432-byte window, so the window hash is the file's.
+      md5_10m: md5(data),
+    });
+    const puts = calls.filter((c) => c.method === "PUT");
+    // Part 0 twice (one retry), part 1 once; the parts are the file cut at block_size.
+    expect(puts.map((c) => [c.url, c.bytes.length])).toEqual([
+      ["https://cos.example/p0?sig=a", blockSize],
+      ["https://cos.example/p0?sig=a", blockSize],
+      ["https://cos.example/p1?sig=b", 1_600_000],
+    ]);
+    // The bot's token goes to api.bot.qq.com only, never to the storage host.
+    expect(puts.every((c) => c.headers.get("authorization") === null)).toBe(true);
+    expect(JSON.parse(v2[1]!.body)).toEqual({
+      upload_id: "up-1",
+      part_index: 0,
+      block_size: String(blockSize),
+      md5: md5(data.subarray(0, blockSize)),
+    });
+    expect(JSON.parse(v2[3]!.body)).toEqual({
+      file_type: 4,
+      file_name: "big.bin",
+      upload_id: "up-1",
+      srv_send_msg: false,
+    });
+  });
+
+  it("types an upload refusal with the platform's code, so the connector can react to it", async () => {
+    stubQQ((call) =>
+      call.url.endsWith("/files")
+        ? jsonResponse({ code: 850019, message: "unsupported file format" }, 400)
+        : null,
+    );
+    const bot = createQQTransport().createClient(CREDS);
+    const err = await bot
+      .uploadFile({ ...where, fileType: 1, fileName: "a.bmp", data: Buffer.from("x") })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(QQApiError);
+    expect((err as QQApiError).code).toBe(850019);
+    expect((err as QQApiError).message).toContain("Upload failed");
+  });
+
+  it("downloads an attachment with no QQ credentials, refusing at the byte that crosses the cap", async () => {
+    const calls = stubFetch((call) =>
+      call.url.endsWith("/small")
+        ? new Response(Buffer.alloc(10, 1))
+        : new Response(Buffer.alloc(5000, 2)),
+    ).calls;
+    const transport = createQQTransport();
+    expect(
+      (await transport.fetchAttachment("https://cdn.example/small", 100, "The file")).length,
+    ).toBe(10);
+    expect(calls[0]!.headers.get("authorization")).toBeNull();
+    await expect(
+      transport.fetchAttachment("https://cdn.example/big", 100, "The file"),
+    ).rejects.toBeInstanceOf(MessagingMediaTooLargeError);
   });
 });
 
