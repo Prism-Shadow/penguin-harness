@@ -80,6 +80,22 @@ export interface OrgDeskNoticeRow {
   at: string;
 }
 
+/**
+ * One channel mention waiting for an employee's desk to be idle. `seq` is the delivery order;
+ * `date` is the channel day file the message sits in, so delivery can read it back from the
+ * file (the truth) instead of a copy here.
+ */
+export interface OrgDeskMentionRow {
+  seq: number;
+  projectId: string;
+  orgId: string;
+  agentId: string;
+  channelId: string;
+  date: string;
+  messageId: string;
+  hop: number;
+}
+
 /** Where a session belongs, when it belongs to an organization at all. */
 export interface OrgSessionOwner {
   projectId: string;
@@ -132,19 +148,33 @@ export class OrgCacheRepo implements OrgCache {
     orgId: string,
     rows: Array<{ sessionId: string; agentId: string; current: boolean }>,
   ): void {
+    // One transaction for the whole sync. A statement written on its own is a transaction of
+    // its own, and with `synchronous = FULL` each commit waits for the disk: over the ledger of
+    // an organization a few weeks old — 340 desks, 699 rows in the cache — that came to 9 s of
+    // write stalls on every reconcile pass and every session list, all of it for rows that had
+    // not changed. Inside one savepoint the same writes take 25 ms, and the pass stays a single
+    // commit. A savepoint rather than BEGIN so a caller already in a transaction nests.
     const keep = new Set(rows.map((r) => r.sessionId));
-    for (const existing of this.deskSessions(projectId, orgId)) {
-      if (!keep.has(existing.sessionId)) {
-        this.db.prepare("DELETE FROM org_sessions WHERE session_id = ?").run(existing.sessionId);
+    this.db.exec("SAVEPOINT org_desk_sessions_sync");
+    try {
+      for (const existing of this.deskSessions(projectId, orgId)) {
+        if (!keep.has(existing.sessionId)) {
+          this.db.prepare("DELETE FROM org_sessions WHERE session_id = ?").run(existing.sessionId);
+        }
       }
+      const upsert = this.db.prepare(
+        `INSERT INTO org_sessions (session_id, project_id, org_id, agent_id, current)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id,
+           agent_id = excluded.agent_id, current = excluded.current`,
+      );
+      for (const r of rows) upsert.run(r.sessionId, projectId, orgId, r.agentId, r.current ? 1 : 0);
+      this.db.exec("RELEASE org_desk_sessions_sync");
+    } catch (err) {
+      this.db.exec("ROLLBACK TO org_desk_sessions_sync");
+      this.db.exec("RELEASE org_desk_sessions_sync");
+      throw err;
     }
-    const upsert = this.db.prepare(
-      `INSERT INTO org_sessions (session_id, project_id, org_id, agent_id, current)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(session_id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id,
-         agent_id = excluded.agent_id, current = excluded.current`,
-    );
-    for (const r of rows) upsert.run(r.sessionId, projectId, orgId, r.agentId, r.current ? 1 : 0);
   }
 
   // ---- ticket sessions ----
@@ -170,22 +200,32 @@ export class OrgCacheRepo implements OrgCache {
     orgId: string,
     rows: Array<{ ticketId: string; sessionId: string; agentId: string }>,
   ): void {
+    // One transaction, for the reason syncDeskSessions gives: 1,852 contributing sessions over
+    // 611 tickets are 1,852 commits of their own otherwise.
     const keep = new Set(rows.map((r) => `${r.ticketId}\0${r.sessionId}`));
-    for (const existing of this.ticketSessions(projectId, orgId)) {
-      if (!keep.has(`${existing.ticketId}\0${existing.sessionId}`)) {
-        this.db
-          .prepare(
-            "DELETE FROM org_ticket_sessions WHERE project_id = ? AND org_id = ? AND ticket_id = ? AND session_id = ?",
-          )
-          .run(projectId, orgId, existing.ticketId, existing.sessionId);
+    this.db.exec("SAVEPOINT org_ticket_sessions_sync");
+    try {
+      for (const existing of this.ticketSessions(projectId, orgId)) {
+        if (!keep.has(`${existing.ticketId}\0${existing.sessionId}`)) {
+          this.db
+            .prepare(
+              "DELETE FROM org_ticket_sessions WHERE project_id = ? AND org_id = ? AND ticket_id = ? AND session_id = ?",
+            )
+            .run(projectId, orgId, existing.ticketId, existing.sessionId);
+        }
       }
+      const upsert = this.db.prepare(
+        `INSERT INTO org_ticket_sessions (project_id, org_id, ticket_id, session_id, agent_id)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, org_id, ticket_id, session_id) DO UPDATE SET agent_id = excluded.agent_id`,
+      );
+      for (const r of rows) upsert.run(projectId, orgId, r.ticketId, r.sessionId, r.agentId);
+      this.db.exec("RELEASE org_ticket_sessions_sync");
+    } catch (err) {
+      this.db.exec("ROLLBACK TO org_ticket_sessions_sync");
+      this.db.exec("RELEASE org_ticket_sessions_sync");
+      throw err;
     }
-    const upsert = this.db.prepare(
-      `INSERT INTO org_ticket_sessions (project_id, org_id, ticket_id, session_id, agent_id)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(project_id, org_id, ticket_id, session_id) DO UPDATE SET agent_id = excluded.agent_id`,
-    );
-    for (const r of rows) upsert.run(projectId, orgId, r.ticketId, r.sessionId, r.agentId);
   }
 
   addTicketSession(
@@ -619,6 +659,77 @@ export class OrgCacheRepo implements OrgCache {
       .run(projectId, orgId, agentId);
   }
 
+  // ---- desk mentions (the queue delivered once the desk is idle) ----
+
+  /**
+   * Records a mention for an employee's desk. A message already queued for that employee is
+   * left as it is: a pass that dies after this write but before the channel offset moves reads
+   * the same lines again, and must not queue them twice.
+   */
+  queueDeskMention(row: Omit<OrgDeskMentionRow, "seq">): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO org_desk_mentions (project_id, org_id, agent_id, channel_id, date, message_id, hop)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(row.projectId, row.orgId, row.agentId, row.channelId, row.date, row.messageId, row.hop);
+  }
+
+  /** The employees with at least one mention waiting, in the order their oldest one arrived. */
+  agentsWithDeskMentions(projectId: string, orgId: string): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT agent_id FROM org_desk_mentions WHERE project_id = ? AND org_id = ?
+         GROUP BY agent_id ORDER BY MIN(seq)`,
+      )
+      .all(projectId, orgId) as Array<{ agent_id: string }>;
+    return rows.map((r) => r.agent_id);
+  }
+
+  /**
+   * Up to `limit` of an employee's waiting mentions in delivery order, left in place: they are
+   * removed with {@link dropDeskMentions} only once the run carrying them has started.
+   */
+  peekDeskMentions(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    limit: number,
+  ): OrgDeskMentionRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM org_desk_mentions
+         WHERE project_id = ? AND org_id = ? AND agent_id = ? ORDER BY seq LIMIT ?`,
+      )
+      .all(projectId, orgId, agentId, limit) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      seq: Number(r.seq),
+      projectId: r.project_id as string,
+      orgId: r.org_id as string,
+      agentId: r.agent_id as string,
+      channelId: r.channel_id as string,
+      date: r.date as string,
+      messageId: r.message_id as string,
+      hop: Number(r.hop),
+    }));
+  }
+
+  /** Removes an employee's mentions up to and including `throughSeq` — the ones a run just carried. */
+  dropDeskMentions(projectId: string, orgId: string, agentId: string, throughSeq: number): void {
+    this.db
+      .prepare(
+        "DELETE FROM org_desk_mentions WHERE project_id = ? AND org_id = ? AND agent_id = ? AND seq <= ?",
+      )
+      .run(projectId, orgId, agentId, throughSeq);
+  }
+
+  /** An employee that left takes its undelivered mentions with it: no desk of its will run them. */
+  deleteDeskMentions(projectId: string, orgId: string, agentId: string): void {
+    this.db
+      .prepare("DELETE FROM org_desk_mentions WHERE project_id = ? AND org_id = ? AND agent_id = ?")
+      .run(projectId, orgId, agentId);
+  }
+
   // ---- lifecycle ----
 
   deleteOrg(projectId: string, orgId: string): void {
@@ -631,6 +742,7 @@ export class OrgCacheRepo implements OrgCache {
       "org_channel_reads",
       "org_budget_state",
       "org_desk_notices",
+      "org_desk_mentions",
     ]) {
       this.db
         .prepare(`DELETE FROM ${table} WHERE project_id = ? AND org_id = ?`)
@@ -648,6 +760,7 @@ export class OrgCacheRepo implements OrgCache {
       "org_channel_reads",
       "org_budget_state",
       "org_desk_notices",
+      "org_desk_mentions",
     ]) {
       this.db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(projectId);
     }

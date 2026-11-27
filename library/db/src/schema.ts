@@ -370,4 +370,15 @@ CREATE TABLE IF NOT EXISTS org_desk_notices (   -- DERIVED CACHE (company mode):
   at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_org_desk_notices_agent ON org_desk_notices(project_id, org_id, agent_id);
+CREATE TABLE IF NOT EXISTS org_desk_mentions (  -- DERIVED CACHE (company mode): channel mentions waiting for an employee's desk to be idle; dropping it loses only the mentions not delivered yet (the messages stay in the channel files)
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  org_id     TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  date       TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  hop        INTEGER NOT NULL,
+  UNIQUE (project_id, org_id, agent_id, channel_id, message_id)
+);
 `;

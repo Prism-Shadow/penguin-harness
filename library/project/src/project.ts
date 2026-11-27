@@ -333,6 +333,11 @@ export type ServerEvent =
    * batch delete): every client drops the row. One per Session, to the Project's users.
    */
   | { type: "session_deleted"; sessionId: string; projectId: string }
+  /**
+   * A plugin's own event, relayed to the Project's users as it is: the plugin names itself and
+   * carries its payload opaquely (`data`), and only that plugin's page reads it.
+   */
+  | { type: "plugin"; plugin: string; data: unknown }
   | ScheduleServerEvent
   | GoalServerEvent
   | CompanyServerEvent

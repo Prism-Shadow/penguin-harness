@@ -3,9 +3,9 @@
  * or a route's write asks for it. Files in, decisions out: caches are projected from the
  * ledger and the tickets, missing desks are opened and desks renewed where the chart moved
  * them, due calendar events fire (carrying the ticket changes queued since the employee's
- * last sweep), ticket changes are recorded and queued, new channel mentions are delivered,
- * budgets are checked, and every employee's company plugins are brought up to the library's
- * version.
+ * last sweep), ticket changes are recorded and queued, new channel mentions are queued and
+ * carried to the desks that are idle, budgets are checked, and every employee's company
+ * plugins are brought up to the library's version.
  * Missed work is never backfilled: a slot that passed while the server was down, the
  * organization paused or the switch off is consumed and skipped, like a schedule.
  */
@@ -13,8 +13,10 @@ import { createHash } from "node:crypto";
 import { comparePluginVersions } from "@prismshadow/penguin-core";
 import type {
   OrgCalendarOutcome,
+  OrgDeskMentionRow,
   OrgTicketChange,
 } from "@prismshadow/penguin-library-organization";
+import type { OrgChannelRef } from "../../mechanisms/organization.js";
 import type { OrgChannelMessage } from "../../api/types.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
@@ -588,14 +590,85 @@ export async function appendSystemMessage(
   });
 }
 
+/** How many earlier messages of the channel's day a mention carries as context. */
+const MENTION_CONTEXT = 20;
+
+/** How many waiting mentions one desk run carries; the rest wait for the desk's next idle moment. */
+export const MENTIONS_PER_RUN = 20;
+
+const quoteLine = (m: OrgChannelMessage): string =>
+  `> ${m.time} ${m.sender}: ${m.text.replace(/\n/g, "\n> ")}`;
+
+const mentionHead = (msg: OrgChannelMessage): string =>
+  `Message ${msg.id} from ${msg.sender}${msg.refs?.ticket !== undefined ? ` (ticket ${msg.refs.ticket})` : ""}:\n${msg.text}`;
+
+/** Up to {@link MENTION_CONTEXT} messages of the day before `msg`, minus the ones in `skip`. */
+function earlierLines(
+  all: readonly OrgChannelMessage[],
+  msg: OrgChannelMessage,
+  skip: ReadonlySet<string> = new Set(),
+): string[] {
+  const idx = all.findIndex((m) => m.id === msg.id);
+  return (idx > 0 ? all.slice(Math.max(0, idx - MENTION_CONTEXT), idx) : [])
+    .filter((m) => !skip.has(m.id))
+    .map(quoteLine);
+}
+
 /** The body of a mention trigger: the message, then up to 20 earlier messages of that channel's day as context. */
 function mentionBody(all: readonly OrgChannelMessage[], msg: OrgChannelMessage): string {
-  const idx = all.findIndex((m) => m.id === msg.id);
-  const earlier = (idx > 0 ? all.slice(Math.max(0, idx - 20), idx) : []).map(
-    (m) => `> ${m.time} ${m.sender}: ${m.text.replace(/\n/g, "\n> ")}`,
-  );
-  const head = `Message ${msg.id} from ${msg.sender}${msg.refs?.ticket !== undefined ? ` (ticket ${msg.refs.ticket})` : ""}:\n${msg.text}`;
+  const earlier = earlierLines(all, msg);
+  const head = mentionHead(msg);
   return earlier.length === 0 ? head : `${head}\n\nEarlier today:\n${earlier.join("\n")}`;
+}
+
+/** A waiting mention, read back from its channel file (null: the line is no longer there). */
+interface WaitingMention {
+  row: OrgDeskMentionRow;
+  msg: OrgChannelMessage | null;
+  day: readonly OrgChannelMessage[];
+}
+
+/**
+ * The body of a run carrying several mentions: each mention in full, grouped by channel in
+ * the order the first of each arrived, and the context once per channel — the messages before
+ * that channel's first mention — rather than once per mention. Lines between two mentions that
+ * named someone else are not repeated; the desk reads them with `channel tail` if it needs to.
+ */
+function batchBody(waiting: readonly WaitingMention[], more: boolean): string {
+  const groups = new Map<string, WaitingMention[]>();
+  for (const w of waiting) {
+    const list = groups.get(w.row.channelId);
+    if (list) list.push(w);
+    else groups.set(w.row.channelId, [w]);
+  }
+  const parts = [
+    `${waiting.length} channel mentions are waiting for you, oldest first. Answer each in the channel it came from; one you have already handled needs no second answer.`,
+  ];
+  for (const [channelId, list] of groups) {
+    const lines = [`## Channel ${channelId}`];
+    const first = list.find((w) => w.msg !== null);
+    if (first) {
+      const earlier = earlierLines(
+        first.day,
+        first.msg!,
+        new Set(list.map((w) => w.row.messageId)),
+      );
+      if (earlier.length > 0) lines.push(`Earlier today:\n${earlier.join("\n")}`);
+    }
+    for (const w of list) {
+      lines.push(
+        w.msg !== null
+          ? mentionHead(w.msg)
+          : `Message ${w.row.messageId}: no longer in ${channelId}/${w.row.date}.jsonl.`,
+      );
+    }
+    lines.push(
+      `Messages between these that did not mention you are not repeated here: \`penguin org channel tail --channel ${channelId}\` reads them.`,
+    );
+    parts.push(lines.join("\n\n"));
+  }
+  if (more) parts.push("More mentions are still waiting; they follow in your next run.");
+  return parts.join("\n\n");
 }
 
 /**
@@ -614,14 +687,16 @@ function channelAgents(org: LoadedOrg, channel: ChannelConfig): Set<string> {
 }
 
 /**
- * Tail-scans each channel's recent day files, publishes every new message and delivers its
- * mentions inside that channel's membership. Archived channels take no posts, so there is
- * nothing new to find in them; an invalid `channel.toml` is reported and the channel skipped.
+ * Tail-scans each channel's recent day files, publishes every new message and queues its
+ * mentions inside that channel's membership in `org_desk_mentions`; a message that names
+ * nobody is queued for the channel's default recipients (`notify`) instead, the same way.
+ * {@link deliverDeskMentions} carries it to the desks that are idle. Archived channels take no
+ * posts, so there is nothing new to find in them; an invalid `channel.toml` is reported and
+ * the channel skipped.
  */
 export async function scanChannels(
   deps: OrgDeps,
   org: LoadedOrg,
-  spend: OrgSpend,
   triggers: boolean,
 ): Promise<void> {
   for (const file of await deps.store.listChannels(org.dir)) {
@@ -638,6 +713,7 @@ export async function scanChannels(
     if (channel.archived) continue;
     const members = channelAgents(org, channel);
     const channelId = file.channelId;
+    let claimed: boolean | undefined;
     const days = (await deps.store.listMessageDays(org.dir, channelId)).slice(0, 3);
     for (const date of days.reverse()) {
       const offset = deps.cache.channelOffset(org.projectId, org.orgId, channelId, date);
@@ -652,7 +728,6 @@ export async function scanChannels(
           deps.cache.setChannelOffset(org.projectId, org.orgId, channelId, date, nextOffset);
         continue;
       }
-      const all = (await deps.store.readMessageDay(org.dir, channelId, date)).messages;
       for (const line of lines) {
         const parsed = parseChannelMessageLine(line);
         if (!parsed.ok) {
@@ -674,8 +749,22 @@ export async function scanChannels(
         });
         if (!triggers || org.config.status === "paused" || msg.sender === "system") continue;
         if (msg.hop >= org.config.mentionChainLimit) continue;
+        // A channel a plugin handles itself (OrgGatewaySlots.channelClaims) keeps its message
+        // — recorded and published above — but wakes no desk. Asked once per channel per pass.
+        claimed ??=
+          deps.channelClaimed?.({ projectId: org.projectId, orgId: org.orgId, channelId }) === true;
+        if (claimed) continue;
         const senderAgent = principalAgentId(msg.sender);
         const targets = new Set<string>();
+        if (msg.mentions.length === 0) {
+          // No @ at all: the default recipients take it, inside the membership like a
+          // mention — an entry that has left the channel or the chart is not one. A person
+          // on the list has no desk; the read counts treat the line as addressed to them.
+          for (const n of channel.notify ?? []) {
+            const id = principalAgentId(n);
+            if (id !== null && members.has(id)) targets.add(id);
+          }
+        }
         for (const m of msg.mentions) {
           const p = parsePrincipal(m);
           // A mention only reaches a member: the send path refuses the rest, and a
@@ -689,22 +778,88 @@ export async function scanChannels(
         if (senderAgent !== null) targets.delete(senderAgent);
         for (const agentId of targets) {
           if (!org.byId.has(agentId)) continue;
-          await dispatchToDesk(
-            deps,
-            org,
+          deps.cache.queueDeskMention({
+            projectId: org.projectId,
+            orgId: org.orgId,
             agentId,
-            {
-              kind: "mention",
-              message: `${msg.id} from ${msg.sender}`,
-              channel: channelId,
-            },
-            mentionBody(all, msg),
-            { hop: msg.hop, budget: budgetLine(org, spend, agentId) },
-          );
+            channelId,
+            date,
+            messageId: msg.id,
+            hop: msg.hop,
+          });
         }
       }
       deps.cache.setChannelOffset(org.projectId, org.orgId, channelId, date, nextOffset);
     }
+  }
+}
+
+/**
+ * Carries the waiting mentions to every desk that is idle: one run per desk however many
+ * wait (up to {@link MENTIONS_PER_RUN}), removed from the queue only once the run has
+ * started — a desk that cannot be opened or a runner that refuses leaves them for the next
+ * pass. A busy desk is passed over: its mentions keep accumulating here, durable across a
+ * restart or a hot update, instead of one queued Task each in the session's memory. A single
+ * mention reads exactly as it always did; several read as one list (see {@link batchBody}).
+ * The run's hop is the highest of the mentions it carries, so batching never resets a chain.
+ * Held, not dropped, while the organization is paused or the master switch is off.
+ */
+export async function deliverDeskMentions(
+  deps: OrgDeps,
+  org: LoadedOrg,
+  spend: OrgSpend,
+  triggers: boolean,
+): Promise<void> {
+  if (!triggers || org.config.status === "paused") return;
+  for (const agentId of deps.cache.agentsWithDeskMentions(org.projectId, org.orgId)) {
+    if (!org.byId.has(agentId)) {
+      // Taken off the chart by hand: nobody will ever work these.
+      deps.cache.deleteDeskMentions(org.projectId, org.orgId, agentId);
+      continue;
+    }
+    const desk = org.desks[agentId];
+    if (desk !== undefined && deps.runner.statusOf(desk.sessionId) !== "idle") continue;
+    const rows = deps.cache.peekDeskMentions(
+      org.projectId,
+      org.orgId,
+      agentId,
+      MENTIONS_PER_RUN + 1,
+    );
+    const more = rows.length > MENTIONS_PER_RUN;
+    const batch = rows.slice(0, MENTIONS_PER_RUN);
+    if (batch.length === 0) continue;
+    const days = new Map<string, readonly OrgChannelMessage[]>();
+    const waiting: WaitingMention[] = [];
+    for (const row of batch) {
+      const key = `${row.channelId}/${row.date}`;
+      let day = days.get(key);
+      if (day === undefined) {
+        day = (await deps.store.readMessageDay(org.dir, row.channelId, row.date)).messages;
+        days.set(key, day);
+      }
+      waiting.push({ row, day, msg: day.find((m) => m.id === row.messageId) ?? null });
+    }
+    const first = waiting[0]!;
+    const sender = first.msg?.sender;
+    const channels = new Set(batch.map((r) => r.channelId));
+    const single = waiting.length === 1 && first.msg !== null;
+    const outcome = await dispatchToDesk(
+      deps,
+      org,
+      agentId,
+      {
+        kind: "mention",
+        message: `${first.row.messageId}${sender !== undefined ? ` from ${sender}` : ""}${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}`,
+        ...(channels.size === 1 ? { channel: first.row.channelId } : {}),
+      },
+      single ? mentionBody(first.day, first.msg!) : batchBody(waiting, more),
+      {
+        hop: Math.max(...batch.map((r) => r.hop)),
+        budget: budgetLine(org, spend, agentId),
+      },
+    );
+    if (outcome === "skipped") continue;
+    deps.cache.dropDeskMentions(org.projectId, org.orgId, agentId, batch.at(-1)!.seq);
   }
 }
 
@@ -819,6 +974,7 @@ export async function reconcileOrg(
   const paused = pausedEmployees(deps, org, spend.period);
   await reconcileCalendar(deps, org, tickets, spend, paused, triggers);
   await reconcileTickets(deps, org, tickets);
-  await scanChannels(deps, org, spend, triggers);
+  await scanChannels(deps, org, triggers);
+  await deliverDeskMentions(deps, org, spend, triggers);
   return { org, tickets, spend };
 }

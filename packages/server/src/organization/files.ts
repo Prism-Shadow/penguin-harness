@@ -57,6 +57,12 @@ export interface OrgConfig {
   createdBy: string;
   /** The shared workspace root when it is not the organization's own `workspace/`: an absolute directory that exists. */
   workspace?: string;
+  /**
+   * The machine the shared workspace is on, by its own id; absent = the server that holds the
+   * organization. An organization RUNS where its workspace is: that machine's server opens its
+   * desks and drives its calendar, and every other server of the Project holds a mirror.
+   */
+  workspaceMachine?: string;
   /** The model desks and ticket sessions run on when the employee entry names none; absent = the Project default. */
   model?: { provider: string; modelId: string };
   /** The working language everything the organization produces is written in; absent = detected from the mission ({@link orgLanguage}). */
@@ -162,6 +168,13 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
   if (workspace !== undefined && (typeof workspace !== "string" || !path.isAbsolute(workspace))) {
     return fail("workspace must be an absolute path");
   }
+  const workspaceMachine = table["workspace_machine"];
+  if (
+    workspaceMachine !== undefined &&
+    (typeof workspaceMachine !== "string" || workspaceMachine === "")
+  ) {
+    return fail("workspace_machine must be a non-empty string");
+  }
   const language = table["language"];
   if (language !== undefined && language !== "zh" && language !== "en") {
     return fail("language must be zh or en");
@@ -195,6 +208,7 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
       budgetPauseRatio: pause as number,
       createdBy,
       ...(typeof workspace === "string" ? { workspace } : {}),
+      ...(typeof workspaceMachine === "string" ? { workspaceMachine } : {}),
       ...(model !== undefined ? { model } : {}),
       ...(language !== undefined ? { language } : {}),
     },
@@ -214,6 +228,7 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     created_by: cfg.createdBy,
     ...(cfg.language !== undefined ? { language: cfg.language } : {}),
     ...(cfg.workspace !== undefined ? { workspace: cfg.workspace } : {}),
+    ...(cfg.workspaceMachine !== undefined ? { workspace_machine: cfg.workspaceMachine } : {}),
     ...(cfg.model !== undefined
       ? { model: { provider: cfg.model.provider, model_id: cfg.model.modelId } }
       : {}),
@@ -224,6 +239,7 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     "# approval_mode: allow-all | read-only | deny-all for desk and ticket sessions.",
     "# language: zh | en — the working language of everything the organization writes (optional; detected from the mission when absent).",
     "# workspace: an absolute directory used as the shared workspace instead of ./workspace (optional).",
+    "# workspace_machine: the id of the machine that directory is on; the organization runs there (optional; absent = this server).",
     "# [model]: provider + model_id for desks and ticket sessions when the employee names none (optional).",
     stringifyToml(table),
     "",
@@ -704,6 +720,27 @@ export function parseTicket(raw: string): ParseResult<TicketDoc> {
   return { ok: true, value: { ...fields.value, ...sections.value } };
 }
 
+/**
+ * A ticket written as prose only, no YAML frontmatter — the shape a proposal's brief carries:
+ * `## sections` when present, plain goal text when not.
+ */
+export function parseTicketBody(raw: string): ParseResult<TicketProse> {
+  const body = raw.replace(/\r\n/g, "\n");
+  if (!/^## .+$/m.test(body)) {
+    return {
+      ok: true,
+      value: {
+        goal: body.trim(),
+        acceptanceCriteria: "",
+        progress: [],
+        result: "",
+        extraSections: [],
+      },
+    };
+  }
+  return ticketSections(body);
+}
+
 type TicketFields = Omit<
   TicketDoc,
   "goal" | "acceptanceCriteria" | "progress" | "result" | "extraSections"
@@ -1123,4 +1160,18 @@ export function serializeChannelMessageLine(msg: OrgChannelMessage): string {
     ...(refs !== undefined && Object.keys(refs).length > 0 ? { refs } : {}),
     ...(msg.notice !== undefined ? { notice: msg.notice } : {}),
   });
+}
+
+/**
+ * Whether a message is addressed to `principal`: it names them, or it names nobody at all
+ * and they are one of the channel's default recipients (`notify`). A `system` line reaches
+ * nobody this way — its `mentions` say who it is for.
+ */
+export function messageAddresses(
+  msg: Pick<OrgChannelMessage, "sender" | "mentions">,
+  principal: string,
+  notify: readonly string[] | undefined,
+): boolean {
+  if (msg.mentions.includes(principal)) return true;
+  return msg.mentions.length === 0 && msg.sender !== "system" && (notify ?? []).includes(principal);
 }

@@ -69,6 +69,7 @@ import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-se
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
 import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 import { usageRecordsPurpose } from "./steps/2026-11-19-usage-records-purpose.js";
+import { companyModeDeskMentions } from "./steps/2026-09-21-company-mode-desk-mentions.js";
 import { pluginModuleRequests } from "./steps/2026-11-19-plugin-module-requests.js";
 import { pluginModulePreinstalls } from "./steps/2026-11-19-plugin-module-preinstalls.js";
 
@@ -91,6 +92,7 @@ export const MIGRATIONS: readonly Migration[] = [
   companyModeOrgCaches,
   companyModeChannels,
   companyModeDeskNotices,
+  companyModeDeskMentions,
   modelPromotions,
   modelProviderAuthTokens,
   sessionsSandbox,

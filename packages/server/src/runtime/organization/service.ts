@@ -51,12 +51,15 @@ import type {
   OrgHandbookFilesResponse,
 } from "../../api/types.js";
 import { TICKET_SLUG_PATTERN } from "../../api/types.js";
+import { userText } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../../http/errors.js";
 import { userChannelKey } from "../../http/routes/events.js";
 import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
+import { OrgGateway } from "../../mechanisms/organization.js";
+import type { OrgView } from "../../mechanisms/organization.js";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
@@ -72,8 +75,15 @@ import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors, UsageQueries } from "@prismshadow/penguin-library-observability";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
-import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
+import type {
+  ChannelConfig,
+  OrgConfig,
+  OrgEmployee,
+  TicketDoc,
+  TicketProse,
+} from "../../organization/files.js";
 import {
+  messageAddresses,
   BUDGET_RATIO_MAX,
   DEFAULT_CEO_BUDGET,
   MENTION_CHAIN_LIMIT_MAX,
@@ -85,6 +95,7 @@ import {
   orgLanguage,
   parseCalendarEvent,
   parseOrgChart,
+  parseTicketBody,
   serializeCalendarEvent,
   serializeOrgChart,
   slugSuffix,
@@ -116,8 +127,21 @@ import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
-import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins } from "./deps.js";
-import type { OrgDeps } from "./deps.js";
+import { machineApi } from "../../machines/machine-api.js";
+import { Machines } from "../../machines/service.js";
+import {
+  DEFAULT_EMPLOYEE_PLUGINS,
+  OrgRuns,
+  OrgSessions,
+  channelClaimsOf,
+  employeePlugins,
+  runsOn,
+} from "./deps.js";
+import type { OrgChannelRef } from "../../mechanisms/organization.js";
+import type { OrgDeps, OrgRetirement } from "./deps.js";
+import { isMirrorPath, mirrorManifest, pullMirror, readMirrorFile } from "./mirror.js";
+import { retireAndTrash } from "./retire.js";
+import type { OrgMirrorEntry } from "./mirror.js";
 import { loadOrg, orgEmployeeNames, projectUserIds, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { readAvatar, readAvatarRev, writeAvatar } from "../../organization/avatars.js";
@@ -135,6 +159,8 @@ import {
 } from "./notices.js";
 import { appendChannelMessage, listTickets, syncApprovalMode, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
+import { changeRoomMembers } from "./room-members.js";
+import type { RoomMembersChange } from "./room-members.js";
 import { rotaWarnings } from "./rota.js";
 import { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
@@ -218,7 +244,11 @@ export class OrganizationService {
   constructor(
     private readonly deps: OrgDeps,
     private readonly scheduler: OrganizationScheduler,
-  ) {}
+  ) {
+    // The delete's marks live on the deps every reader of the files shares (loadOrg), so a
+    // test that binds none still gets the marks the delete relies on.
+    deps.deleting ??= new Set();
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -362,14 +392,47 @@ export class OrganizationService {
 
   async list(projectId: string): Promise<OrganizationSummary[]> {
     const out: OrganizationSummary[] = [];
+    /** What each machine says of the organizations it runs, asked once per machine. */
+    const told = new Map<string, Promise<Map<string, OrganizationSummary>>>();
     for (const orgId of await this.deps.store.listOrgIds(projectId)) {
       const org = await loadOrg(this.deps, projectId, orgId);
       if (org === null) continue;
       const { tickets } = await listTickets(this.deps, org);
       const spend = await computeSpend(this.deps, org, tickets);
-      out.push(this.summary(org, tickets, spend));
+      const mirrored = this.summary(org, tickets, spend);
+      const machineId = runsOn(this.deps, org.config);
+      if (machineId === null) {
+        out.push(mirrored);
+        continue;
+      }
+      // Who is running and what was spent are facts of the server the Sessions are on; the
+      // mirror has the files only, and answers alone when that machine cannot be asked.
+      if (!told.has(machineId)) told.set(machineId, this.summariesOn(projectId, machineId));
+      const live = (await told.get(machineId)!).get(orgId);
+      out.push({ ...(live ?? mirrored), machineId });
     }
     return out;
+  }
+
+  private async summariesOn(
+    projectId: string,
+    machineId: string,
+  ): Promise<Map<string, OrganizationSummary>> {
+    const found = new Map<string, OrganizationSummary>();
+    try {
+      const api = await this.deps.machines?.api(machineId);
+      if (!api) return found;
+      const res = await api.request(
+        "GET",
+        `/api/projects/${encodeURIComponent(projectId)}/organizations`,
+      );
+      if (res.status !== 200) return found;
+      const body = JSON.parse(res.text) as { organizations: OrganizationSummary[] };
+      for (const item of body.organizations) found.set(item.orgId, item);
+    } catch {
+      // The mirror answers.
+    }
+    return found;
   }
 
   private summary(
@@ -491,7 +554,14 @@ export class OrganizationService {
         blockedByMe: items.filter((t) => t.blockedBy === me),
       },
       recentMessages: recent?.messages.slice(-20) ?? [],
-      inbox: this.inbox(spend, items, tickets, recent?.messages ?? [], me),
+      inbox: this.inbox(
+        spend,
+        items,
+        tickets,
+        recent?.messages ?? [],
+        me,
+        allHands?.parsed.ok === true ? allHands.parsed.value.notify : undefined,
+      ),
       alerts: this.alerts(org, spend.period),
       ...(ceoDesk !== undefined ? { ceoDeskSessionId: ceoDesk.sessionId } : {}),
     };
@@ -502,7 +572,8 @@ export class OrganizationService {
    * files `detail` already loaded:
    *
    * - `mentions`: the all-hands messages of the window `recentMessages` reads (the
-   *   organization's current day) that name the caller or `all`, newest first.
+   *   organization's current day) that name the caller or `all` — or name nobody while the
+   *   caller is one of that channel's default recipients — newest first.
    * - `blockedTickets`: every ticket carrying a `blocked` reason, whoever it waits on —
    *   uncapped, because a blocked ticket is work nobody is doing.
    * - `doneTickets`: tickets in `done` that closed in the current budget period, `closedAt`
@@ -519,9 +590,10 @@ export class OrganizationService {
     tickets: readonly LoadedTicket[],
     windowMessages: readonly OrgChannelMessage[],
     me: string,
+    allHandsNotify: readonly string[] | undefined,
   ): OrgInbox {
     const mentions = windowMessages
-      .filter((m) => m.mentions.includes(me) || m.mentions.includes("all"))
+      .filter((m) => messageAddresses(m, me, allHandsNotify) || m.mentions.includes("all"))
       .reverse()
       .slice(0, INBOX_PAGE);
     const newestFirst = <T extends { ticketId: string }>(a: T, b: T): number =>
@@ -559,7 +631,8 @@ export class OrganizationService {
     for (const file of await this.deps.store.listChannels(org.dir)) {
       if (!file.parsed.ok) continue;
       if (!this.channelMemberPrincipals(org, file.parsed.value).includes(me)) continue;
-      mentions += (await this.channelActivity(org, file.channelId, userId)).mentionsMe;
+      mentions += (await this.channelActivity(org, file.channelId, file.parsed.value, userId))
+        .mentionsMe;
     }
     return mentions;
   }
@@ -588,6 +661,8 @@ export class OrganizationService {
     userId: string,
     /** Who creates it, for the CEO's plugins' server modules; a member who is not the administrator when absent. */
     actor: ModuleActor = { userId, isAdmin: false },
+    /** `admin`: the caller administers this server (see createOn for what that allows). */
+    opts: { admin?: boolean } = {},
   ): Promise<OrganizationDetail> {
     const orgId = req.orgId;
     if (!isNewSemanticId(orgId)) {
@@ -608,6 +683,8 @@ export class OrganizationService {
     if (await this.deps.agents.exists(projectId, ceo)) {
       throw new HttpError(409, "agent_exists", `The CEO's Agent id is already taken: ${ceo}`);
     }
+    const elsewhere = runsOn(this.deps, { workspaceMachine: req.workspaceMachine });
+    if (elsewhere !== null) return this.createOn(elsewhere, projectId, req, opts.admin === true);
     const name = req.name?.trim() || orgId;
     if (req.model !== undefined) await this.validateModel(projectId, req.model);
     // Its desks run on the Project's default when it names no model: with none, the CEO's first
@@ -636,6 +713,9 @@ export class OrganizationService {
       budgetPauseRatio: ORG_CONFIG_DEFAULTS.budgetPauseRatio,
       createdBy: userId,
       ...(workspace !== undefined ? { workspace } : {}),
+      // Recorded when the request names this server explicitly: that is what a server holding
+      // this organization's mirror reads to know where it runs.
+      ...(req.workspaceMachine !== undefined ? { workspaceMachine: req.workspaceMachine } : {}),
       ...(req.model !== undefined ? { model: req.model } : {}),
     };
     const dir = this.deps.store.dir(projectId, orgId);
@@ -708,6 +788,113 @@ export class OrganizationService {
     return detail;
   }
 
+  /** The files a server holding this organization's mirror copies (runtime/organization/mirror.ts). */
+  async mirrorFiles(projectId: string, orgId: string): Promise<OrgMirrorEntry[]> {
+    const org = await this.requireOrg(projectId, orgId);
+    return mirrorManifest(org.dir);
+  }
+
+  async mirrorFile(projectId: string, orgId: string, rel: string): Promise<Buffer> {
+    const org = await this.requireOrg(projectId, orgId);
+    const bytes = isMirrorPath(rel) ? await readMirrorFile(org.dir, rel) : null;
+    if (bytes === null) throw new HttpError(404, "not_found", `No such file: ${rel}`);
+    return bytes;
+  }
+
+  /**
+   * The machine an organization runs on when that is not this server. Its requests belong
+   * there: a write made to the mirror would be undone by the next copy, and a read of it
+   * knows nothing of the Sessions.
+   */
+  async runsOn(projectId: string, orgId: string): Promise<string | null> {
+    const config = (await this.deps.store.readConfig(this.deps.store.dir(projectId, orgId)))
+      ?.parsed;
+    return config?.ok === true ? runsOn(this.deps, config.value) : null;
+  }
+
+  /**
+   * Creates the organization on the machine its shared workspace is on, and takes it into
+   * this Project as a mirror. The machine's own server does the creating — the CEO's Agent,
+   * its desk and the first work round are all Sessions and state over THERE — with the
+   * request as it came, so whatever it refuses (a taken id, a directory that does not exist,
+   * a Model it does not have, company mode switched off) is refused in its own words.
+   */
+  private async createOn(
+    machineId: string,
+    projectId: string,
+    req: OrganizationCreateRequest,
+    admin: boolean,
+  ): Promise<OrganizationDetail> {
+    if (req.workspace === undefined) {
+      throw badRequest("An organization on a machine needs its shared workspace named.");
+    }
+    const api = await this.deps.machines?.api(machineId);
+    if (!api) {
+      throw new HttpError(
+        409,
+        "machine_not_connected",
+        "That machine is not connected; connect it on the Machines page first.",
+      );
+    }
+    const path = `/api/projects/${encodeURIComponent(projectId)}/organizations`;
+    let answer = await api.request("POST", path, req);
+    // Company mode is a switch per server, off until someone turns it on — and the machine's
+    // own Settings page is not one a person here can open. An administrator of THIS server,
+    // where the switch is on (or this route would not exist), is who connected that machine
+    // and whom this server speaks to it as: the create turns the switch on over there and
+    // asks again. Anyone else is told where it stands.
+    if (answer.status === 404 && admin && errorCodeOf(answer.text) === "company_mode_off") {
+      const switched = await api.request("PUT", "/api/admin/settings", { companyMode: true });
+      if (switched.status >= 200 && switched.status < 300) {
+        this.deps.log?.(`[organization] company mode switched on on machine ${machineId}`);
+        answer = await api.request("POST", path, req);
+      }
+    }
+    if (answer.status !== 201) {
+      let error: { code?: string; message?: string } = {};
+      try {
+        error = (JSON.parse(answer.text) as { error?: typeof error }).error ?? {};
+      } catch {
+        // Not the API's envelope.
+      }
+      throw new HttpError(
+        answer.status >= 400 && answer.status < 500 ? (answer.status as 400) : 502,
+        error.code ?? "machine_refused",
+        error.message ?? `The machine answered ${answer.status}.`,
+      );
+    }
+    const pulled = await this.scheduler.withLock(projectId, req.orgId, () =>
+      pullMirror(this.deps, projectId, req.orgId, machineId, api),
+    );
+    const created = JSON.parse(answer.text) as OrganizationDetail;
+    if (pulled.kind !== "mirrored") {
+      // The organization exists over there; what this Project needs is a place to copy it
+      // into, or no pass would ever look for it. Its settings are enough to say where it runs.
+      const dir = this.deps.store.dir(projectId, req.orgId);
+      await this.deps.store.createLayout(dir, new Date(this.now()).toISOString());
+      await this.deps.store.writeConfig(dir, {
+        name: created.settings.name,
+        mission: created.settings.mission,
+        status: created.settings.status,
+        timezone: created.settings.timezone,
+        language: created.settings.language,
+        approvalMode: created.settings.approvalMode,
+        mentionChainLimit: created.settings.mentionChainLimit,
+        budgetWarnRatio: created.settings.budgetWarnRatio,
+        budgetPauseRatio: created.settings.budgetPauseRatio,
+        createdBy: created.settings.createdBy,
+        workspace: req.workspace,
+        workspaceMachine: machineId,
+        ...(created.settings.model !== undefined ? { model: created.settings.model } : {}),
+      });
+      this.deps.log?.(
+        `[organization] ${req.orgId} was created on ${machineId}; its first copy did not arrive (${pulled.kind}) and the next pass retries`,
+      );
+    }
+    return { ...created, machineId };
+  }
+
+
   /**
    * Deletes the organization — and ONLY the organization: its directory goes to the Project's
    * trash (store.trash), whole and restorable, and the rows this server derived from it go
@@ -722,12 +909,18 @@ export class OrganizationService {
    * the price of not deleting conversations along with a company.
    *
    * Under the organization's lock, so a pass in flight finishes first and the next one finds
-   * no directory — the same state a hand-removed directory always was.
+   * no directory — the same state a hand-removed directory always was. Before the move the
+   * organization is marked as being deleted, the plugins release what they hold of it and its
+   * sessions are stopped (retire.ts); a move that fails answers 409 `organization_busy`.
    */
   async delete(projectId: string, orgId: string): Promise<void> {
     await this.requireOrg(projectId, orgId);
     await this.scheduler.withLock(projectId, orgId, async () => {
-      await this.deps.store.trash(projectId, orgId, new Date(this.now()).toISOString());
+      // Read again under the lock: a delete queued behind another finds nothing to delete.
+      const org = await this.requireOrg(projectId, orgId);
+      await retireAndTrash({ ...this.deps, deleting: this.deps.deleting! }, org, {
+        now: this.now(),
+      });
       this.deps.cache.deleteOrg(projectId, orgId);
     });
     this.deps.log?.(`[organization] ${projectId}/${orgId} deleted (moved to the trash)`);
@@ -1184,8 +1377,10 @@ export class OrganizationService {
         delete org.desks[agentId];
         await this.deps.store.writeDesks(org.dir, org.desks);
       }
-      // Nothing will sweep for this employee again, so its queued ticket changes go with it.
+      // Nothing will sweep for this employee again, so its queued ticket changes and its
+      // waiting mentions go with it.
       this.deps.cache.deleteDeskNotices(projectId, orgId, agentId);
+      this.deps.cache.deleteDeskMentions(projectId, orgId, agentId);
       for (const f of await this.deps.store.listCalendar(org.dir)) {
         if (f.agentId === agentId)
           await this.deps.store.deleteCalendarEvent(org.dir, agentId, f.name);
@@ -1675,6 +1870,14 @@ export class OrganizationService {
     req: OrgTicketCreateRequest,
     actor: Actor,
   ): Promise<OrgTicketDetail> {
+    // `body` is the whole Markdown body: its sections become the ticket's. Parsed before the
+    // lock and the slug ask, so a body that cannot be read costs neither.
+    let fromBody: TicketProse | null = null;
+    if (req.body !== undefined) {
+      const parsed = parseTicketBody(req.body);
+      if (!parsed.ok) throw badRequest(`body: ${parsed.error}`);
+      fromBody = parsed.value;
+    }
     const ticketId = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const title = req.title.trim();
@@ -1708,12 +1911,14 @@ export class OrganizationService {
         ...(req.due !== undefined ? { due: req.due } : {}),
         sessions: [],
         history: [],
-        goal: (req.body ?? req.goal ?? "").trim(),
-        acceptanceCriteria: req.body !== undefined ? "" : (req.acceptanceCriteria ?? "").trim(),
-        progress: [],
-        result: "",
+        ...(fromBody ?? {
+          goal: (req.goal ?? "").trim(),
+          acceptanceCriteria: (req.acceptanceCriteria ?? "").trim(),
+          progress: [],
+          result: "",
+          extraSections: [],
+        }),
         extra: {},
-        extraSections: [],
       };
       this.recordHistory(doc, by, "created");
       // Filing for somebody else is two facts: who filed it, and who it landed on.
@@ -2097,6 +2302,7 @@ export class OrganizationService {
   private async channelActivity(
     org: LoadedOrg,
     channelId: string,
+    cfg: ChannelConfig,
     userId: string | null,
   ): Promise<{ unread: number; mentionsMe: number; lastMessageAt: string | null }> {
     const days = await this.deps.store.listMessageDays(org.dir, channelId);
@@ -2111,13 +2317,21 @@ export class OrganizationService {
     // Read cursors belong to people; an employee reads its channel through its trigger.
     if (userId === null) return { unread: 0, mentionsMe: 0, lastMessageAt };
     const lastReadId = this.deps.cache.readCursor(org.projectId, org.orgId, channelId, userId);
-    const counts = await this.countUnread(org, channelId, days, userPrincipal(userId), lastReadId);
+    const counts = await this.countUnread(
+      org,
+      channelId,
+      cfg,
+      days,
+      userPrincipal(userId),
+      lastReadId,
+    );
     return { ...counts, lastMessageAt };
   }
 
   /**
-   * What one person has not read in a channel, and how much of it names them. Two rules the
-   * loop is here to keep in one place:
+   * What one person has not read in a channel, and how much of it names them — by an `@`,
+   * or by the channel's default recipients when a message names nobody. Two rules the loop
+   * is here to keep in one place:
    *
    * A person's own lines are never unread. Only `markRead` moves the cursor, so posting from
    * the CLI — or from the Web App when the read that follows a post does not land — would
@@ -2135,6 +2349,7 @@ export class OrganizationService {
   private async countUnread(
     org: LoadedOrg,
     channelId: string,
+    cfg: ChannelConfig,
     days: readonly string[],
     me: string,
     lastReadId: string | null,
@@ -2155,7 +2370,7 @@ export class OrganizationService {
         }
         if (m.sender === me) continue;
         unread++;
-        if (m.mentions.includes(me)) mentionsMe++;
+        if (messageAddresses(m, me, cfg.notify)) mentionsMe++;
       }
       if (reachedCursor) break;
     }
@@ -2178,8 +2393,9 @@ export class OrganizationService {
       createdBy: cfg.createdBy,
       createdAt: cfg.createdAt,
       memberCount: members.length,
+      notify: cfg.notify ?? [],
       isMember: members.includes(caller.principal),
-      ...(await this.channelActivity(org, channelId, caller.userId)),
+      ...(await this.channelActivity(org, channelId, cfg, caller.userId)),
     };
   }
 
@@ -2216,6 +2432,8 @@ export class OrganizationService {
     const channels: OrgChannelItem[] = [];
     for (const file of await this.deps.store.listChannels(org.dir)) {
       if (!file.parsed.ok) continue;
+      // An unlisted channel (a roadmap's room) is reached from the work it was opened for.
+      if (file.parsed.value.unlisted === true) continue;
       const item = await this.channelItem(org, file.channelId, file.parsed.value, caller);
       if (caller.agentId !== null && !item.isMember) continue;
       channels.push(item);
@@ -2317,8 +2535,9 @@ export class OrganizationService {
       }
       // Everything but lifting the archive itself is refused while the channel is archived.
       if (cfg.archived && req.archived !== false) throw channelArchived(channelId);
-      const renaming = req.name !== undefined || req.purpose !== undefined;
-      if (renaming && !members.includes(caller.principal)) {
+      const editing =
+        req.name !== undefined || req.purpose !== undefined || req.notify !== undefined;
+      if (editing && !members.includes(caller.principal)) {
         throw notAMember(channelId, caller.principal);
       }
       const next: ChannelConfig = { ...cfg };
@@ -2327,6 +2546,11 @@ export class OrganizationService {
         next.name = req.name.trim();
       }
       if (req.purpose !== undefined) next.purpose = req.purpose.trim();
+      if (req.notify !== undefined) {
+        const notify = this.channelNotifyList(channelId, req.notify, members);
+        if (notify.length > 0) next.notify = notify;
+        else delete next.notify;
+      }
       const archiveChanged = req.archived !== undefined && req.archived !== cfg.archived;
       // The notice is written before the flag: an archived channel is skipped by the scan,
       // so a line written after it would wait for the unarchive to reach the event stream.
@@ -2344,6 +2568,34 @@ export class OrganizationService {
     });
     await this.scheduler.reconcile(projectId, orgId);
     return item;
+  }
+
+  /**
+   * The default recipients as stored: `agent:<id>` employees and `user:<id>` people that are
+   * in the channel (everyone is in the all-hands one), deduplicated, in the order given. An
+   * outsider or a stranger refuses the whole list — a list that silently dropped an entry
+   * would leave the caller believing someone is notified who is not.
+   */
+  private channelNotifyList(channelId: string, raw: string[], members: string[]): string[] {
+    const out: string[] = [];
+    for (const entry of raw) {
+      const parsed = parsePrincipal(entry);
+      const principal =
+        parsed?.kind === "agent"
+          ? agentPrincipal(parsed.id)
+          : parsed?.kind === "user"
+            ? userPrincipal(parsed.id)
+            : null;
+      if (principal === null || !members.includes(principal)) {
+        throw new HttpError(
+          400,
+          "notify_not_member",
+          `Not a member of ${channelId}: ${entry}. Only members of the channel can be its default recipients.`,
+        );
+      }
+      if (!out.includes(principal)) out.push(principal);
+    }
+    return out;
   }
 
   /** `agent:<id>` must be an employee and `user:<id>` a Project member — nobody else can be in a channel. */
@@ -2435,10 +2687,12 @@ export class OrganizationService {
       }
       const members = cfg.members ?? [];
       if (!members.includes(principal)) return;
-      await this.deps.store.writeChannel(org.dir, channelId, {
-        ...cfg,
-        members: members.filter((m) => m !== principal),
-      });
+      // A departed member cannot stay a default recipient: the list names members only.
+      const next: ChannelConfig = { ...cfg, members: members.filter((m) => m !== principal) };
+      const notify = (cfg.notify ?? []).filter((n) => n !== principal);
+      if (notify.length > 0) next.notify = notify;
+      else delete next.notify;
+      await this.deps.store.writeChannel(org.dir, channelId, next);
       await appendChannelMessage(
         this.deps,
         org,
@@ -2476,7 +2730,7 @@ export class OrganizationService {
     const { unread, mentionsMe } =
       me === null
         ? { unread: 0, mentionsMe: 0 }
-        : await this.countUnread(org, channelId, days, me, lastReadId, { date, messages });
+        : await this.countUnread(org, channelId, cfg, days, me, lastReadId, { date, messages });
     return {
       channelId,
       date,
@@ -2548,6 +2802,15 @@ export class OrganizationService {
           if (row && row.projectId === projectId && org.byId.has(row.agentId)) {
             sender = agentPrincipal(row.agentId);
             hop = 1;
+          } else {
+            // The id is a claim that an employee is speaking (only the control environment's
+            // token carries it here). Recording the line under the token holder's name at
+            // hop 0 instead would put a person's name on it and deliver it unconditionally.
+            throw new HttpError(
+              400,
+              "unknown_session",
+              `Session ${req.sessionId} is not a session of an employee of ${orgId}; the message was not sent.`,
+            );
           }
         }
       }
@@ -2588,6 +2851,192 @@ export class OrganizationService {
     const current = this.deps.cache.readCursor(projectId, orgId, channelId, userId);
     if (current === null || upTo > current)
       this.deps.cache.setReadCursor(projectId, orgId, channelId, userId, upTo);
+  }
+
+  // ---------------------------------------------------------------------------
+  // The plugin gateway (mechanisms/organization.ts OrgGateway): narrowings of the methods
+  // above, so a plugin can read an organization, attribute a write, speak in a channel and
+  // open an employee's session without holding this service.
+  // ---------------------------------------------------------------------------
+
+  async gatewayView(projectId: string, orgId: string): Promise<OrgView | null> {
+    const org = await loadOrg(this.deps, projectId, orgId);
+    if (org === null) return null;
+    const names = await orgEmployeeNames(this.deps, org);
+    return {
+      projectId,
+      orgId,
+      name: org.config.name,
+      status: org.config.status,
+      language: orgLanguage(org.config),
+      workspace: sharedWorkspace(org),
+      employees: org.chart.employees.map((e) => ({
+        agentId: e.agentId,
+        name: names.get(e.agentId) ?? e.agentId,
+        title: e.title,
+        reportsTo: e.reportsTo,
+      })),
+      userIds: this.projectUserIds(org),
+      machineId: runsOn(this.deps, org.config),
+    };
+  }
+
+  async gatewayPrincipal(projectId: string, orgId: string, actor: Actor): Promise<string> {
+    const org = await this.requireOrg(projectId, orgId);
+    return this.actorPrincipal(org, actor);
+  }
+
+  /**
+   * One plain line of work on the employee's desk, in nobody's name: the text is the user
+   * input as given (sender `server`, like a trigger), queued behind a running Task. An
+   * organization that is paused, or an employee whose budget (or an ancestor's) is paused,
+   * receives nothing — the call fails with the reason instead, so the caller can record it.
+   */
+  async gatewayDeliverToDesk(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    text: string,
+  ): Promise<{ sessionId: string; queued: boolean }> {
+    return this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireValidOrg(projectId, orgId);
+      if (!org.byId.has(agentId)) {
+        throw new HttpError(400, "not_an_employee", `${agentId} is not an employee of ${orgId}`);
+      }
+      if (org.config.status === "paused") {
+        throw new HttpError(409, "org_paused", `${orgId} is paused; ${agentId} was not told.`);
+      }
+      const spend = await computeSpend(this.deps, org, []);
+      if (pausedEmployees(this.deps, org, spend.period).has(agentId)) {
+        throw new HttpError(
+          409,
+          "employee_paused",
+          `${agentId} is paused by its budget for ${spend.period}; it was not told.`,
+        );
+      }
+      const desk = await ensureDesk(this.deps, org, agentId);
+      if (!desk.ok) throw new HttpError(409, "desk_unavailable", desk.error);
+      const res = await this.deps.runner.startTask(
+        desk.desk.sessionId,
+        [userText(text, "server")],
+        { queueIfBusy: true },
+      );
+      return { sessionId: desk.desk.sessionId, queued: res.queued === true };
+    });
+  }
+
+  /**
+   * OrgGateway.openRoom: the routes' channel creation, unlisted, with its employees in it from
+   * the start. Refused (409 `org_runs_elsewhere`, as the routes refuse a write) for an
+   * organization that runs on another machine: what this server holds of it is a mirror, and the
+   * next copy from that machine would remove the room again.
+   */
+  async gatewayOpenRoom(args: {
+    projectId: string;
+    orgId: string;
+    channelId: string;
+    name: string;
+    purpose: string;
+    by: string;
+    agentIds: string[];
+  }): Promise<{ channelId: string }> {
+    const { projectId, orgId, channelId } = args;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      const elsewhere = runsOn(this.deps, org.config);
+      if (elsewhere !== null) {
+        throw new HttpError(
+          409,
+          "org_runs_elsewhere",
+          `This organization runs on machine ${elsewhere}; open the room there.`,
+        );
+      }
+      if (!isChannelId(channelId)) {
+        throw badRequest(
+          "Channel id must be 2–64 characters: a lowercase letter, then lowercase letters, digits or underscores.",
+        );
+      }
+      if ((await this.deps.store.readChannel(org.dir, channelId)) !== null) {
+        throw new HttpError(409, "channel_exists", `Channel id is already taken: ${channelId}`);
+      }
+      const creator = parsePrincipal(args.by);
+      if (creator?.kind !== "agent" && creator?.kind !== "user") {
+        throw badRequest(`Not a principal: ${args.by}`);
+      }
+      const members: string[] = creator.kind === "user" ? [args.by] : [];
+      for (const agentId of args.agentIds) {
+        if (!org.byId.has(agentId)) {
+          throw new HttpError(400, "not_an_employee", `${agentId} is not an employee of ${orgId}`);
+        }
+        const principal = agentPrincipal(agentId);
+        if (!members.includes(principal)) members.push(principal);
+      }
+      const cfg: ChannelConfig = {
+        name: args.name.trim() || channelId,
+        purpose: args.purpose.trim(),
+        createdBy: args.by,
+        createdAt: new Date(this.now()).toISOString(),
+        archived: false,
+        members,
+        unlisted: true,
+      };
+      await this.deps.store.writeChannel(org.dir, channelId, cfg);
+      await appendChannelMessage(this.deps, org, channelId, systemMessage(channelCreated(args.by)));
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+    return { channelId };
+  }
+
+  /** OrgGateway.changeRoomMembers (room-members.ts), under the organization's lock. */
+  async gatewayChangeRoomMembers(
+    args: RoomMembersChange & { projectId: string; orgId: string },
+  ): Promise<{ added: string[]; removed: string[] }> {
+    const { projectId, orgId } = args;
+    const out = await this.scheduler.withLock(projectId, orgId, async () =>
+      changeRoomMembers(this.deps, await this.requireOrg(projectId, orgId), args),
+    );
+    await this.scheduler.reconcile(projectId, orgId);
+    return out;
+  }
+
+  /** {@link openTicketSession} without the ticket: the session is the employee's, marked as the organization's, and started on `body`. */
+  async gatewayOpenSession(args: {
+    projectId: string;
+    orgId: string;
+    agentId: string;
+    title: string;
+    body: string;
+    workspace?: string;
+  }): Promise<{ sessionId: string; workspace: string }> {
+    const org = await this.requireValidOrg(args.projectId, args.orgId);
+    const employee = org.byId.get(args.agentId);
+    if (!employee) {
+      throw new HttpError(
+        400,
+        "not_an_employee",
+        `${args.agentId} is not an employee of ${args.orgId}`,
+      );
+    }
+    const spec = args.workspace ?? employee.workspace;
+    const workspace = await this.deps.store.ensureWorkspace(sharedWorkspace(org), spec);
+    if (workspace === null) {
+      throw badRequest(`workspace directory does not exist: ${spec}`);
+    }
+    const model = employee.model ?? org.config.model;
+    const created = await this.deps.sessionCreator.createSession({
+      projectId: org.projectId,
+      agentId: args.agentId,
+      workspace,
+      ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
+      approvalMode: org.config.approvalMode,
+      client: "org",
+      source: "company",
+    });
+    this.deps.sessions.updateTitle(created.sessionId, args.title);
+    // Messages the session sends carry hop 1: it was opened by a plugin's drive, not by a person.
+    this.deps.cache.setTriggerHop(created.sessionId, 0);
+    await this.deps.runner.startTask(created.sessionId, [userText(args.body, "server")]);
+    return created;
   }
 
   // ---------------------------------------------------------------------------
@@ -2875,6 +3324,9 @@ export abstract class OrgService extends Interface<
     | "employersOf"
     | "list"
     | "create"
+    | "mirrorFiles"
+    | "mirrorFile"
+    | "runsOn"
     | "detail"
     | "delete"
     | "patch"
@@ -2919,6 +3371,15 @@ export abstract class OrgService extends Interface<
   >
 >() {}
 
+/** The `error.code` of an API error envelope, or null for any other text. */
+function errorCodeOf(text: string): string | null {
+  try {
+    return (JSON.parse(text) as { error?: { code?: string } }).error?.code ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The organization scheduler as the boot sequence drives it (the pass itself is internal). */
 export abstract class OrgScheduler extends Interface<
   Pick<OrganizationScheduler, "start" | "stop">
@@ -2950,11 +3411,13 @@ export class OrganizationModule {
   @Use() private readonly usage!: UsageQueries;
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
+  @Use() private readonly machines!: Machines;
   @Use() private readonly messagingRepo!: MessagingBindings;
   @Use() private readonly pluginModules!: PluginModules;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
-  setup({ effect }: ClassCtx) {
+  @Provide() orgGateway!: OrgGateway;
+  setup({ effect, contributions }: ClassCtx) {
     const channels = this.channels as ChannelHub;
     const agentService = this.agentService;
     const agentConfig = this.agentConfig;
@@ -2962,6 +3425,23 @@ export class OrganizationModule {
     const runner = this.runner;
     const projectConfig = this.projectConfig;
     const pluginModules = this.pluginModules;
+    // The channels plugins handle themselves (OrgGatewaySlots.channelClaims): none, and every
+    // channel delivers its mentions as before.
+    const channelClaimed = channelClaimsOf(
+      (contributions.channelClaims ?? []).map((c) => c.code as (channel: OrgChannelRef) => boolean),
+      (err, channel) =>
+        this.errors.record({
+          source: "organization",
+          err,
+          code: "org_channel_claim_failed",
+          ctx: { projectId: channel.projectId },
+        }),
+    );
+    // What plugins release when an organization is deleted (OrgGatewaySlots.retirements).
+    const retirements: OrgRetirement[] = (contributions.retirements ?? []).map((c) => ({
+      id: c.id,
+      retire: c.code as OrgRetirement["retire"],
+    }));
     const deps: OrgDeps = {
       root: this.config.root,
       store: new OrgStore(this.config.root),
@@ -3019,16 +3499,33 @@ export class OrganizationModule {
         }
       },
       companyModeEnabled: () => this.settings.getCompanyMode(),
+      ...(channelClaimed !== undefined ? { channelClaimed } : {}),
+      deleting: new Set(),
+      retirements,
+      // Stop a deleted organization's Task and background commands without awaiting them.
+      stopSession: (sessionId) => {
+        runner.abortTask(sessionId);
+        for (const p of runner.listProcesses(sessionId)) {
+          if (p.running) runner.killProcess(sessionId, p.processId);
+        }
+      },
+      machines: {
+        ownId: () => this.machines.ownId(),
+        api: async (machineId) => {
+          const target = await this.machines.proxyTarget(machineId);
+          return target === null ? null : machineApi(target.agent, target.port, target.cookie);
+        },
+      },
       now: () => this.clock.now().getTime(),
       log: (line: string) => this.log.line(line),
     };
     const orgScheduler = new OrganizationScheduler(deps);
     this.orgScheduler = orgScheduler;
-    const service = new OrganizationService(deps, orgScheduler);
-    this.orgService = service;
+    const orgService = new OrganizationService(deps, orgScheduler);
+    this.orgService = orgService;
     // An employee's model is its desk Session's: a switch made on a desk reaches the chart.
     const unsubscribe = runner.onModelChanged((sessionId, model) => {
-      service.deskModelChanged(sessionId, model).catch((err: unknown) =>
+      orgService.deskModelChanged(sessionId, model).catch((err: unknown) =>
         deps.errors.record({
           source: "organization",
           err,
@@ -3038,6 +3535,18 @@ export class OrganizationModule {
       );
     });
     effect(() => unsubscribe());
+    this.orgGateway = {
+      companyModeEnabled: deps.companyModeEnabled,
+      organization: (projectId, orgId) => orgService.gatewayView(projectId, orgId),
+      principalOf: (projectId, orgId, actor) =>
+        orgService.gatewayPrincipal(projectId, orgId, actor),
+      deliverToDesk: (projectId, orgId, agentId, text) =>
+        orgService.gatewayDeliverToDesk(projectId, orgId, agentId, text),
+      openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
+      openRoom: (args) => orgService.gatewayOpenRoom(args),
+      changeRoomMembers: (args) => orgService.gatewayChangeRoomMembers(args),
+      notifyProject: deps.notifyProject,
+    };
     // Only active while this App is; the successor's start() reconciles from the files.
     effect(() => orgScheduler.stop());
   }

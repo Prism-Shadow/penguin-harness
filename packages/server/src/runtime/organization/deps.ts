@@ -21,6 +21,7 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { MessagingChannel } from "../../api/types.js";
 import type { ModuleActor } from "../../mechanisms/plugins.js";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { OrgChannelRef } from "../../mechanisms/organization.js";
 import type { OrgStore } from "../../organization/store.js";
 import type { ErrorSink } from "../error-recorder.js";
 
@@ -41,6 +42,12 @@ export interface OrgTaskRunner {
  */
 export interface OrgRunsShape extends OrgTaskRunner {
   invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Interrupts the Session's current Task; false when nothing runs (a delete stops the organization's sessions). */
+  abortTask(sessionId: string): boolean;
+  /** A loaded Session's background commands; empty when it is not loaded. */
+  listProcesses(sessionId: string): Array<{ processId: string; running: boolean }>;
+  /** Kills one running background command of a loaded Session. */
+  killProcess(sessionId: string, processId: string): boolean;
   /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
   onModelChanged(
     listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
@@ -183,10 +190,96 @@ export interface OrgDeps {
   notifyProject: (projectId: string, event: ServerEvent) => void;
   /** The admin master switch, read per pass so a change applies without a restart. */
   companyModeEnabled: () => boolean;
+  /**
+   * Whether a plugin handles this channel's messages itself (OrgGatewaySlots.channelClaims):
+   * a claimed channel's mentions are not delivered to desks. Optional: without a claimant,
+   * and in every test that binds none, every channel delivers.
+   */
+  channelClaimed?: (channel: OrgChannelRef) => boolean;
+  /**
+   * Organizations being deleted, by orgLockKey: loadOrg answers null for them, so every route,
+   * pass and gateway read treats the organization as gone while a delete releases what it
+   * holds (retire.ts). Optional so a test may leave it out; the service fills one in.
+   */
+  deleting?: Set<string>;
+  /**
+   * What plugins release when an organization is deleted (OrgGatewaySlots.retirements), in the
+   * order contributed. Optional: without a contributor a delete only moves the directory.
+   */
+  retirements?: ReadonlyArray<OrgRetirement>;
+  /**
+   * Stops one Session without waiting for it: its Task aborted, its running background
+   * commands killed, its surface closed. Optional: a test that binds none stops nothing.
+   */
+  stopSession?: (sessionId: string) => void;
+  /**
+   * The Project's machines, as far as company mode needs them. Optional: a server with no
+   * machines (and every test that binds none) runs each organization it holds.
+   */
+  machines?: OrgMachines;
   now?: () => number;
   log?: (line: string) => void;
+}
+
+/** One plugin's retirement of an organization (OrgGatewaySlots.retirements), by contribution id. */
+export interface OrgRetirement {
+  id: string;
+  retire: (org: { projectId: string; orgId: string }) => Promise<void>;
+}
+
+/** One call to a machine's own API, as that machine's authenticated caller (machines/machine-api.ts). */
+export interface OrgMachineApi {
+  request(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; text: string }>;
+}
+
+/**
+ * Which server this is, and how to reach another. An organization RUNS on the machine its
+ * shared workspace is on (`workspace_machine`): that server opens its desks and drives its
+ * calendar, and this one — when it is not that server — keeps a mirror of the organization's
+ * files in the Project and leaves the rest alone.
+ */
+export interface OrgMachines {
+  /** This server's own machine id. */
+  ownId(): string;
+  /** The API of a connected machine; null when it is not connected. */
+  api(machineId: string): Promise<OrgMachineApi | null>;
+}
+
+/** The machine an organization runs on when that is not this server; null when it runs here. */
+export function runsOn(
+  deps: Pick<OrgDeps, "machines">,
+  config: { workspaceMachine?: string },
+): string | null {
+  const machine = config.workspaceMachine;
+  if (machine === undefined) return null;
+  return deps.machines === undefined || deps.machines.ownId() === machine ? null : machine;
 }
 
 /** What company mode needs of the session runtime — declared at the consumer (Go style). */
 export abstract class OrgRuns extends Interface<OrgRunsShape>() {}
 export abstract class OrgSessions extends Interface<OrgSessionCreator>() {}
+
+/**
+ * The claims plugins contributed, as one question: does any of them handle this channel? A
+ * claim that throws is recorded and counts as not claiming — the channel then delivers as it
+ * always did, which is the safe side of a broken plugin.
+ */
+export function channelClaimsOf(
+  claims: ReadonlyArray<(channel: OrgChannelRef) => boolean>,
+  onError: (err: unknown, channel: OrgChannelRef) => void,
+): ((channel: OrgChannelRef) => boolean) | undefined {
+  if (claims.length === 0) return undefined;
+  return (channel) =>
+    claims.some((claim) => {
+      try {
+        return claim(channel) === true;
+      } catch (err) {
+        onError(err, channel);
+        return false;
+      }
+    });
+}
