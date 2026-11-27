@@ -110,6 +110,8 @@ export {
   refusalHandoff,
 } from "./lib/amsp/compaction-summary";
 
+export { handoverNoteText } from "./lib/amsp/context-opening";
+
 export {
   aggregateMemoryChanges,
   isFolderFilePath,
@@ -148,6 +150,7 @@ export {
 } from "./lib/amsp/stream-model";
 export type {
   ChatItem,
+  CompactionHandover,
   CompactionItem,
   LlmErrorItem,
   McpConnectItem,
