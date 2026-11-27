@@ -25,7 +25,7 @@ export interface Native {
     author: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
     committer: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
   }): string;
-  readBlobs(gitdir: string, oids: string[]): Uint8Array[];
+  readObjects(gitdir: string, oids: string[]): Array<Uint8Array | null>;
 }
 
 export function loadNative(): Native {

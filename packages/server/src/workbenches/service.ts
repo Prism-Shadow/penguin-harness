@@ -372,8 +372,9 @@ export class WorkbenchService implements Workbenches {
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
   /**
-   * The Agent State repository; its writes stay in order across instances (./repo.ts). A
-   * contributed engine writes and reads versions when one is ready (./engines.ts).
+   * The Agent State repository; its writes stay in order across instances (./repo.ts). The
+   * deployment's contributed engine writes and reads versions; with none ready, this is the
+   * error, said as it is (./engines.ts).
    */
   private repo(projectId: string, agentId: string): AgentStateRepo {
     return new AgentStateRepo({
@@ -381,7 +382,6 @@ export class WorkbenchService implements Workbenches {
       now: () => this.clock.now(),
       log: (line) => this.log.line(`[workbenches] ${projectId}/${agentId}: ${line}`),
       engine: this.engines.current(),
-      onEngineUnavailable: (engine) => this.engines.drop(engine),
     });
   }
 
@@ -410,7 +410,7 @@ export class WorkbenchService implements Workbenches {
    */
   private async migrate(projectId: string, agentId: string): Promise<void> {
     await this.held.get(`${projectId}/${agentId}`);
-    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
+    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId), this.engines.current());
   }
 
   setup(ctx: ClassCtx) {

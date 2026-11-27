@@ -48,6 +48,7 @@ import {
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { isNewSemanticId, NEW_ID_RULE, SEMANTIC_ID_RULE } from "./ids.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
+import type { AgentStateEngines } from "../workbenches/engines.js";
 import { agentAvatarRev } from "@prismshadow/penguin-library-agent/agent-avatar";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "@prismshadow/penguin-library-agent/memory-service";
@@ -235,6 +236,7 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly snapshots!: Snapshots;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly pluginModules!: PluginModules;
+  @Use() private readonly engines!: AgentStateEngines;
 
   /** Deletions this process knows, by `${projectId}/${deletionId}`. */
   private readonly deletions = new Map<string, AgentDeletionInfo>();
@@ -377,7 +379,7 @@ export class AgentService implements AgentLifecycle {
    * ahead of the move: the old folder would then be left where it is.
    */
   private migrateWorkbenches(projectId: string, agentId: string): Promise<void> {
-    return migrateWorkbenches(agentDir(this.root, projectId, agentId));
+    return migrateWorkbenches(agentDir(this.root, projectId, agentId), this.engines.current());
   }
 
   /** Count installed folders without compiling or walking their UI/runtime assets. */

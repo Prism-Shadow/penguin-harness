@@ -5,15 +5,16 @@
  * the parent (`from`), deletes the folder and writes each of its files inline. fast-import builds
  * the trees, writes the commit and moves the branch only if the new commit descends from what the
  * branch holds when it gets there (no `--force`), so a branch moved meanwhile refuses the write.
- * Its objects are unpacked into loose files (`fastimport.unpackLimit`), the way the built-in
- * engine stores them and reads them fastest, instead of one pack per commit.
+ * Its objects are unpacked into loose files (`fastimport.unpackLimit`), the way git stores them
+ * and reads them fastest, instead of one pack per commit.
  *
- * Reading a version back is one `git cat-file --batch`: the harness walked the version's trees
- * itself and asks for every blob of it at once.
+ * Reading objects back is one `git cat-file --batch`: the harness walked the version's trees
+ * itself and asks for every blob of it at once; an id that is not in the repository answers
+ * null.
  *
- * The engine writes the same bytes as the built-in one: the message whole, both identity lines
+ * The engine writes the same bytes as every other engine: the message whole, both identity lines
  * with the zone the harness computed, every file `100644`, trees in git's order — so the same
- * input is the same commit under either.
+ * input is the same commit under any of them.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
@@ -25,7 +26,7 @@ import type {
   AgentStateIdentity,
 } from "@prismshadow/penguin-core/plugin";
 import { locateGit, type GitProgram } from "./binary.js";
-import { finish, gitEnv, start, unavailable } from "./git.js";
+import { finish, gitEnv, start } from "./git.js";
 
 const LF = Buffer.from("\n");
 
@@ -94,7 +95,7 @@ class Objects {
   private pending: Buffer[] = [];
   private readonly waiting: Array<{
     oid: string;
-    resolve: (o: { type: string; body: Buffer }) => void;
+    resolve: (o: { type: string; body: Buffer } | null) => void;
     reject: (err: Error) => void;
   }> = [];
   private failed: Error | null = null;
@@ -122,7 +123,7 @@ class Objects {
       const [oid, type, length] = header.split(" ");
       if (type === "missing" || length === undefined) {
         buffer = buffer.subarray(nl + 1);
-        this.waiting.shift()!.reject(new Error(`object ${oid} is not in the repository`));
+        this.waiting.shift()!.resolve(null);
         continue;
       }
       const end = nl + 1 + Number(length);
@@ -134,11 +135,11 @@ class Objects {
     this.pending = buffer.length === 0 ? [] : [buffer];
   }
 
-  get(oids: string[]): Promise<Array<{ type: string; body: Buffer }>> {
+  get(oids: string[]): Promise<Array<{ type: string; body: Buffer } | null>> {
     if (this.failed !== null) return Promise.reject(this.failed);
     const answers = oids.map(
       (oid) =>
-        new Promise<{ type: string; body: Buffer }>((resolve, reject) =>
+        new Promise<{ type: string; body: Buffer } | null>((resolve, reject) =>
           this.waiting.push({ oid, resolve, reject }),
         ),
     );
@@ -152,30 +153,9 @@ class Objects {
   }
 }
 
-/**
- * The folder sizes, in files, from which this engine beats the built-in one, read off the bench
- * (bench/engines.bench-run.ts) on each platform: a write here is one fast-import plus the child
- * that unpacks it, a read one cat-file, so what decides is what a process start costs.
- *
- * - Linux (about 4 ms a process): a commit wins from the first file — one batched sync against
- *   an fsync per object — and a restore from 100–200 files.
- * - macOS (about 7 ms): a load with a change wins from 20–50 files, a restore from 50–100.
- * - Windows (about 34 ms): a load with a change wins only between 200 and 500 files, a restore
- *   from 100–200.
- */
-export function fasterFrom(platform: NodeJS.Platform = process.platform): {
-  commit: number;
-  read: number;
-} {
-  if (platform === "win32") return { commit: 300, read: 150 };
-  if (platform === "darwin") return { commit: 30, read: 100 };
-  return { commit: 1, read: 150 };
-}
-
-export function gitEngine(git: GitProgram, version: string): AgentStateEngine {
+export function gitEngine(git: GitProgram, version: string, source = "dugite"): AgentStateEngine {
   return {
-    name: `git ${version} (dugite)`,
-    fasterFrom: fasterFrom(),
+    name: `git ${version} (${source})`,
 
     async commit(c) {
       const child = start(git, c.gitdir, [
@@ -194,14 +174,13 @@ export function gitEngine(git: GitProgram, version: string): AgentStateEngine {
       return (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
     },
 
-    async readBlobs(gitdir, oids) {
+    async readObjects(gitdir, oids) {
       if (oids.length === 0) return [];
       const objects = new Objects(git, gitdir);
       try {
-        return (await objects.get([...oids])).map((object, i) => {
-          if (object.type !== "blob") throw new Error(`${oids[i]} is a ${object.type}, not a blob`);
-          return object.body;
-        });
+        return (await objects.get([...oids])).map((object) =>
+          object === null ? null : object.body,
+        );
       } finally {
         await objects.close().catch(() => undefined);
       }
@@ -215,51 +194,45 @@ function probe(git: GitProgram): Promise<string> {
     const child = spawn(git.program, ["version"], { env: gitEnv(git), windowsHide: true });
     let out = "";
     child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
-    child.on("error", (err: NodeJS.ErrnoException) => reject(unavailable(err.code ?? err.message)));
+    child.on("error", (err: NodeJS.ErrnoException) => reject(new Error(err.code ?? err.message)));
     child.on("close", (code, signal) => {
       const version = /^git version (\S+)/.exec(out)?.[1];
       if (code === 0 && version !== undefined) resolve(version);
-      else reject(unavailable(signal !== null ? `killed by ${signal}` : `exit ${code}`));
+      else reject(new Error(signal !== null ? `killed by ${signal}` : `exit ${code}`));
     });
   });
 }
 
 /** One fetch per cache directory per process: a hot swap asks again, and gets the same answer. */
-const opening = new Map<string, Promise<AgentStateEngine | null>>();
+const opening = new Map<string, Promise<AgentStateEngine>>();
 
 /**
- * The engine for this host, once its Git is in place and starts; null (with a log line saying
- * why) when there is none, so the harness keeps its built-in engine.
+ * The engine for this host, once its Git is in place and starts. An error when there is no Git
+ * it could use or the program does not run: the deployment has no engine from this contribution.
+ * A failed open is asked again by the next App, not by this one.
  */
-export function openGitEngine(host: AgentStateEngineHost): Promise<AgentStateEngine | null> {
+export function openGitEngine(host: AgentStateEngineHost): Promise<AgentStateEngine> {
   let open = opening.get(host.cacheDir);
   if (open === undefined) {
     open = (async () => {
       const say = (line: string) => host.log(`[agent-state-git] ${line}`);
-      let found: Awaited<ReturnType<typeof locateGit>>;
-      try {
-        found = await locateGit({ cacheDir: host.cacheDir, log: host.log });
-      } catch (err) {
-        say(`no Git: ${err instanceof Error ? err.message : String(err)}`);
-        opening.delete(host.cacheDir);
-        return null;
-      }
-      if (found === null) {
-        say(`no Git build for ${process.platform}-${process.arch} in dugite's table`);
-        return null;
-      }
-      try {
-        const version = await probe(found.git);
-        say(`git ${version} from ${found.source}`);
-        return gitEngine(found.git, version);
-      } catch (err) {
-        say(
-          `${found.git.program} does not run (${err instanceof Error ? err.message : String(err)})`,
-        );
-        return null;
-      }
+      const found = await locateGit({ cacheDir: host.cacheDir, log: host.log }).catch(
+        (err: unknown) => {
+          throw new Error(`no Git: ${err instanceof Error ? err.message : String(err)}`);
+        },
+      );
+      if (found === null)
+        throw new Error(`no Git build for ${process.platform}-${process.arch} in dugite's table`);
+      const version = await probe(found.git).catch((err: Error) => {
+        throw new Error(`${found.git.program} does not run (${err.message})`);
+      });
+      say(`git ${version} from ${found.source}`);
+      return gitEngine(found.git, version);
     })();
     opening.set(host.cacheDir, open);
+    open.catch(() => {
+      if (opening.get(host.cacheDir) === open) opening.delete(host.cacheDir);
+    });
   }
   return open;
 }

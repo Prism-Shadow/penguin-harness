@@ -140,7 +140,7 @@ const oidsOf = (gitdir, commit) =>
 const median = (xs) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 const ms = (t0) => Math.round(performance.now() - t0);
 
-async function benchEngine(name, commit, readBlobs, root) {
+async function benchEngine(name, commit, readObjects, root) {
   const gitdir = path.join(root, `${name}.git`);
   git(["init", "--bare", "--initial-branch=main", gitdir]);
   const out = { name, commit: new Map(), read: new Map() };
@@ -171,7 +171,7 @@ async function benchEngine(name, commit, readBlobs, root) {
     const reads = [];
     for (let i = 0; i < RUNS; i++) {
       const t0 = performance.now();
-      const bodies = await readBlobs(gitdir, oids);
+      const bodies = await readObjects(gitdir, oids);
       reads.push(ms(t0));
       if (bodies.length !== oids.length) throw new Error(`${name}: short read`);
     }
@@ -185,11 +185,11 @@ const root = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-state-bench-"));
 try {
   const native = loadNative();
   const results = [];
-  results.push(await benchEngine("gitoxide", (c) => gixEngine(native, "gitoxide").commit(c), (g, o) => gixEngine(native, "gitoxide").readBlobs(g, o), root));
+  results.push(await benchEngine("gitoxide", (c) => gixEngine(native, "gitoxide").commit(c), (g, o) => gixEngine(native, "gitoxide").readObjects(g, o), root));
   const dugite = await openGitEngine({ cacheDir: path.join(root, "cache"), log: () => {} });
   if (dugite !== null) {
     results.push(
-      await benchEngine("dugite-fast-import", (c) => dugite.commit(c), (g, o) => dugite.readBlobs(g, o), root),
+      await benchEngine("dugite-fast-import", (c) => dugite.commit(c), (g, o) => dugite.readObjects(g, o), root),
     );
   } else {
     console.log("dugite: not available on this host, skipped");

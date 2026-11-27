@@ -1,20 +1,29 @@
 /**
  * Which engine records Agent State versions, given what plugins contributed.
  *
- * - With none, the built-in engine does.
  * - A contributed engine is used from the moment its source answers with it, and was handed a
- *   directory of its own under the data root; until then, and when it answers null, fails, or
- *   throws, the built-in engine does, and the log says which.
- * - Of several, the first in contribution order that is ready; a dropped one is passed over.
+ *   directory of its own under the data root; until then the asking is an error, said with what
+ *   each contribution answered.
+ * - A source that answers null (a plugin built for an older contract), fails, or throws, leaves
+ *   the deployment without an engine, and the log says which.
+ * - Of several, the first in contribution order that is ready.
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentStateEngine, AgentStateEngineSource } from "@prismshadow/penguin-core/plugin";
 import { EngineChoice } from "../src/workbenches/engines.js";
-import { builtinEngine } from "../src/workbenches/repo.js";
 
 const ROOT = path.join(path.sep, "data");
-const named = (name: string): AgentStateEngine => ({ ...builtinEngine, name });
+/** An engine that is never driven: choosing it is all these tests ask. */
+const named = (name: string): AgentStateEngine => ({
+  name,
+  commit: async () => {
+    throw new Error("not driven");
+  },
+  readObjects: async () => {
+    throw new Error("not driven");
+  },
+});
 
 /** A source whose answer the test gives when it likes. */
 function deferred() {
@@ -23,7 +32,7 @@ function deferred() {
   const source: AgentStateEngineSource = (host) => {
     asked.push(host.cacheDir);
     return new Promise((resolve) => {
-      answer = resolve;
+      answer = resolve as (engine: AgentStateEngine) => void;
     });
   };
   return { source, asked, answer: (e: AgentStateEngine | null) => answer(e) };
@@ -41,15 +50,15 @@ function choose(...sources: Array<[string, AgentStateEngineSource]>) {
 }
 
 describe("the engine that records versions", () => {
-  it("is the built-in one when nothing is contributed", () => {
-    expect(choose().choice.current()).toBeNull();
+  it("is an error to ask with nothing contributed", () => {
+    expect(() => choose().choice.current()).toThrow(/no Agent State engine is ready/);
   });
 
   it("is a contributed one from the moment it answers, asked with a directory of its own", async () => {
     const git = deferred();
     const { choice, logged } = choose(["dugite.engine", git.source]);
     expect(git.asked).toEqual([path.join(ROOT, "cache", "dugite.engine")]);
-    expect(choice.current()).toBeNull();
+    expect(() => choice.current()).toThrow(/has not answered yet/);
 
     const engine = named("git 2.56.1");
     git.answer(engine);
@@ -61,31 +70,31 @@ describe("the engine that records versions", () => {
 
   it.each([
     {
-      how: "answers null",
-      source: () => null,
-      line: "[agent-state] dugite: not available on this host; the built-in engine records versions",
+      how: "answers null (a plugin built for an older contract)",
+      source: () => null as never,
+      line: "[agent-state] dugite: answered without an engine",
     },
     {
       how: "fails",
       source: () => Promise.reject(new Error("download refused")),
-      line: "[agent-state] dugite: failed (download refused); the built-in engine records versions",
+      line: "[agent-state] dugite: failed (download refused)",
     },
     {
       how: "throws",
       source: () => {
         throw new Error("no platform");
       },
-      line: "[agent-state] dugite: not started (no platform); the built-in engine records versions",
+      line: "[agent-state] dugite: not started (no platform)",
     },
-  ])("stays the built-in one when the source $how, and says so", async ({ source, line }) => {
+  ])("leaves the deployment without an engine when the source $how, and says so", async ({ source, line }) => {
     const { choice, logged } = choose(["dugite.engine", source]);
     await settle();
 
-    expect(choice.current()).toBeNull();
+    expect(() => choice.current()).toThrow(/no Agent State engine is ready.*dugite/);
     expect(logged).toEqual([line]);
   });
 
-  it("of several, is the first ready in contribution order, passing over a dropped one", async () => {
+  it("of several, is the first ready in contribution order", async () => {
     const first = deferred();
     const second = named("second");
     const { choice } = choose(["first.engine", first.source], ["second.engine", () => second]);
@@ -96,8 +105,17 @@ describe("the engine that records versions", () => {
     first.answer(engine);
     await settle();
     expect(choice.current()).toBe(engine);
+  });
 
-    choice.drop(engine);
-    expect(choice.current()).toBe(second);
+  it("the error to ask with names why each contribution has none", async () => {
+    const first = deferred();
+    const { choice } = choose(["first.engine", first.source], ["second.engine", () => {
+      throw new Error("no platform");
+    }]);
+    await settle();
+
+    expect(() => choice.current()).toThrow(
+      "no Agent State engine is ready (first.engine has not answered yet, second.engine not started (no platform))",
+    );
   });
 });

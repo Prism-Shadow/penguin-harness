@@ -5,10 +5,10 @@
  * A contribution to `AgentStateHistoryModule.engines` is `{ id, name }` in the manifest and an
  * `AgentStateEngineSource` bound by the contributor: a function the module calls once per App,
  * handing it a directory under the data root to keep files in (`<root>/cache/<contribution id>/`)
- * and a log line. The answer may take a while (a plugin that fetches its program first), so the
- * module never waits for it: until an engine has answered with itself, and after it answered
- * null, the built-in engine records versions. The first contribution that is ready wins, in
- * contribution order. An engine that later fails to run is dropped for the rest of the App.
+ * and a log line. The answer may take a while (a plugin that fetches its program first), and a
+ * source that fails answers with nothing: either way the deployment has no engine from it, and
+ * asking for the repository is an error, said with every contribution's reason. The first
+ * contribution that is ready wins, in contribution order.
  *
  * A node of the tree rather than a module singleton, like every other plugin floor: a hot swap
  * that removes the plugin builds an App without its contribution, and the engine goes with it.
@@ -33,17 +33,19 @@ export interface AgentStateEnginesSlots {
 /** Which engine records Agent State versions. */
 @Interface()
 export abstract class AgentStateEngines {
-  /** The first contributed engine that is ready and has not failed to run; null: the built-in one. */
-  abstract current(): AgentStateEngine | null;
-  /** Stops using an engine for the rest of this App: it could not run. */
-  abstract drop(engine: AgentStateEngine): void;
+  /**
+   * The first contributed engine that is ready. An error when none is — no contribution, one
+   * that failed, or one that has not answered yet: nothing records versions without it.
+   */
+  abstract current(): AgentStateEngine;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export class EngineChoice implements AgentStateEngines {
   private readonly ready = new Map<string, AgentStateEngine>();
-  private readonly dropped = new Set<AgentStateEngine>();
+  /** Why a contribution has no engine, said again if asking for the repository is an error. */
+  private readonly without = new Map<string, string>();
   private readonly order: string[] = [];
 
   constructor(
@@ -60,33 +62,37 @@ export class EngineChoice implements AgentStateEngines {
           log: (line) => opts.log(line),
         });
       } catch (err) {
-        say(`not started (${messageOf(err)}); the built-in engine records versions`);
+        this.without.set(id, `not started (${messageOf(err)})`);
+        say(`not started (${messageOf(err)})`);
         continue;
       }
       void Promise.resolve(answer).then(
         (engine) => {
-          if (engine === null) {
-            say("not available on this host; the built-in engine records versions");
+          if (engine === null || engine === undefined) {
+            this.without.set(id, "answered without an engine");
+            say("answered without an engine");
             return;
           }
           this.ready.set(id, engine);
           say(`${engine.name} records Agent State versions`);
         },
-        (err: unknown) => say(`failed (${messageOf(err)}); the built-in engine records versions`),
+        (err: unknown) => {
+          this.without.set(id, `failed (${messageOf(err)})`);
+          say(`failed (${messageOf(err)})`);
+        },
       );
     }
   }
 
-  current(): AgentStateEngine | null {
+  current(): AgentStateEngine {
     for (const id of this.order) {
       const engine = this.ready.get(id);
-      if (engine !== undefined && !this.dropped.has(engine)) return engine;
+      if (engine !== undefined) return engine;
     }
-    return null;
-  }
-
-  drop(engine: AgentStateEngine): void {
-    this.dropped.add(engine);
+    const why =
+      this.order.map((id) => `${id} ${this.without.get(id) ?? "has not answered yet"}`).join(", ") ||
+      "none contributed";
+    throw new Error(`no Agent State engine is ready (${why})`);
   }
 }
 

@@ -40,9 +40,9 @@ export function gixEngine(native: Native, version: string): AgentStateEngine {
       });
     },
 
-    async readBlobs(gitdir: string, oids: readonly string[]) {
+    async readObjects(gitdir: string, oids: readonly string[]) {
       if (oids.length === 0) return [];
-      return native.readBlobs(gitdir, [...oids]);
+      return native.readObjects(gitdir, [...oids]);
     },
   };
 }
@@ -51,17 +51,16 @@ export function gixEngine(native: Native, version: string): AgentStateEngine {
 let native: Native | undefined;
 
 /**
- * The engine for this host, once its addon loads; null (with a log line saying why) when the
- * native half cannot load on this host, so the harness keeps its built-in engine.
+ * The engine for this host, once its addon loads. An error when the native half cannot load on
+ * this host: the deployment has no engine from this contribution.
  */
-export function openGixEngine(host: AgentStateEngineHost): AgentStateEngine | null {
+export function openGixEngine(host: AgentStateEngineHost): AgentStateEngine {
   const say = (line: string) => host.log(`[agent-state-gix] ${line}`);
   if (native === undefined) {
     try {
       native = loadNative();
     } catch (err) {
-      say(`the native half did not load: ${(err as Error).message}`);
-      return null;
+      throw new Error(`the native half did not load: ${(err as Error).message}`);
     }
   }
   const version = native.engineVersion();

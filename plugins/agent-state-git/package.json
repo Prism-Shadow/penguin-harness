@@ -2,7 +2,7 @@
   "name": "@penguinharness/agent-state-git",
   "version": "0.1.0",
   "type": "module",
-  "description": "Native Git for PenguinHarness Agent State history: GitHub Desktop's dugite builds write workbench versions and read them back, faster than the built-in engine as workbenches grow.",
+  "description": "Native Git for PenguinHarness Agent State history: GitHub Desktop's dugite builds record workbench versions and read them back.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",

@@ -1,9 +1,9 @@
 /**
  * The server's Agent State suite (packages/server/test/helpers/agent-state-repo-scenarios.ts),
- * run with this plugin's engine instead of the built-in one: every scenario the harness holds
- * its repository to — first commit, no-op loads, edits, history caps, removals, refused names,
- * untrustworthy refs, who a version is by — and, last, the same commits as the built-in engine,
- * object for object.
+ * run with this plugin's engine: every scenario the harness holds its repository to — first
+ * commit, no-op loads, edits, history caps, removals, refused names, untrustworthy refs, who a
+ * version is by. The same commits another engine writes is pinned engine against engine in the
+ * agent-state-gix plugin's interchange suite.
  *
  * Live: it needs this host's Git (test/global-setup.ts); without it the suite skips, unless
  * PENGUIN_MUST_RUN names agent-state-git.

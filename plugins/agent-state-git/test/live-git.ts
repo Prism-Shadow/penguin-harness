@@ -39,15 +39,13 @@ export interface Server {
     gitdir: string;
     now: () => Date;
     log: (line: string) => void;
-    engine?: AgentStateEngine;
-    engineFrom?: { commit?: number; read?: number };
+    engine: AgentStateEngine;
     identity?: {
       env: Record<string, string>;
       home: string;
       readFile: (f: string) => string | null;
     };
   }) => RepoUnderTest;
-  builtinEngine: AgentStateEngine;
   treeId(files: Array<{ rel: string; oid: string }>): string;
   blobOid(body: Uint8Array): string;
 }

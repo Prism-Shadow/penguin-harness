@@ -177,22 +177,22 @@ pub fn commit(input: CommitInput) -> Result<String> {
     Ok(id.detach().to_string())
 }
 
-/// The bodies of these blobs (full hex ids), in the order asked; an id not in the repository,
-/// or an id of another kind, refuses.
+/// The raw content of these objects (a blob's bytes, a tree's entries, a commit's headers —
+/// whatever each id names), in the order asked; an id that is not in the repository answers
+/// None.
 #[napi]
-pub fn read_blobs(gitdir: String, oids: Vec<String>) -> Result<Vec<Buffer>> {
+pub fn read_objects(gitdir: String, oids: Vec<String>) -> Result<Vec<Option<Buffer>>> {
     let repo = gix::open(&gitdir)
         .map_err(|e| refuse(format!("gitoxide cannot open {gitdir}: {e}")))?;
     let mut out = Vec::with_capacity(oids.len());
     for hex in &oids {
         let id = oid_of(hex)?;
-        let object = repo
-            .find_object(id)
-            .map_err(|_| refuse(format!("object {hex} is not in the repository")))?;
-        if object.kind != gix::object::Kind::Blob {
-            return Err(refuse(format!("{hex} is a {}, not a blob", object.kind)));
+        match repo.find_object(id) {
+            Ok(object) => out.push(Some(Buffer::from(object.data.to_vec()))),
+            // Absent, exactly as cat-file --batch answers "missing": the caller decides
+            // whether an absent object is its answer or its error.
+            Err(_) => out.push(None),
         }
-        out.push(Buffer::from(object.data.to_vec()));
     }
     Ok(out)
 }

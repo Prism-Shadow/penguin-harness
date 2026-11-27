@@ -1,8 +1,9 @@
 /**
  * The Agent State repository's behaviour, as one suite any engine can be run through: the
- * server's own test runs it with the built-in engine (workbench-repo.test.ts), and an engine
- * plugin runs it with its own (plugins/agent-state-git). Whatever an engine writes has to read
- * back, list and restore exactly as the built-in engine's does.
+ * server's own test runs it with this host's native-Git engine (workbench-repo.test.ts), and an
+ * engine plugin runs it with its own (plugins/agent-state-git). Whatever an engine writes has
+ * to read back, list and restore exactly; that the engines write the same bytes as each other
+ * is pinned engine against engine in the agent-state-gix plugin's interchange suite.
  *
  * - Given a fresh Agent, the first commit creates `agent_state.git/` with its ignore rules for
  *   people, adds nothing to `agent_state/`, and lists one version whose revision is the folder's
@@ -30,7 +31,9 @@
  *   the role-specific environment variables win over config, and `EMAIL` comes after it; an
  *   `include` is not followed; no config file changes. A member who asked for the version is
  *   its author, the server its committer.
- * - An engine other than the built-in one writes the very same commits, object for object.
+ *
+ * isomorphic-git reads the repository back here as the independent referee: what the suite
+ * asserts about commits and trees is what a library with no stake in this code sees.
  *
  * The caller hands in its own `describe` / `it` / `expect` / hooks: a plugin package running this
  * file through a path import has a vitest of its own, and only that one is collecting tests.
@@ -84,16 +87,6 @@ export const EDITED = source({
 
 const ZWNJ = String.fromCodePoint(0x200c);
 
-/** Every loose object file of a repository, as its id. */
-export async function objectIds(at: string): Promise<string[]> {
-  const out: string[] = [];
-  for (const prefix of await fs.readdir(path.join(at, "objects"))) {
-    if (!/^[0-9a-f]{2}$/.test(prefix)) continue;
-    for (const rest of await fs.readdir(path.join(at, "objects", prefix))) out.push(prefix + rest);
-  }
-  return out.sort();
-}
-
 /** The test functions of the vitest that runs the suite. */
 export type TestApi = Pick<
   typeof Vitest,
@@ -102,10 +95,10 @@ export type TestApi = Pick<
 
 /** What the scenarios run against. */
 export interface ScenarioEngine {
-  /** Names the run: `built-in`, or the plugin's engine. */
+  /** Names the run: the plugin's engine's own name. */
   label: string;
-  /** The engine under test, asked for when a repository is opened; undefined is the built-in one. */
-  engine: () => AgentStateEngine | undefined;
+  /** The engine under test, asked for when a repository is opened. */
+  engine: () => AgentStateEngine;
 }
 
 export function agentStateRepoScenarios(t: TestApi, scenario: ScenarioEngine): void {
@@ -140,8 +133,6 @@ function scenarios(t: TestApi, { engine }: ScenarioEngine): void {
       log: (line) => logged.push(line),
       caps,
       engine: engine(),
-      // Every step goes to the engine under test, however small the folder.
-      engineFrom: { commit: 1, read: 1 },
       identity: identity(),
     });
   const head = () => git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
@@ -457,33 +448,24 @@ function scenarios(t: TestApi, { engine }: ScenarioEngine): void {
       await expect(repo.commitPath(REL, EDITED, "workbench demo @2")).rejects.toThrow();
       await expect(repo.history(REL)).rejects.toThrow();
     });
-  });
 
-  describe.skipIf(engine() === undefined)("the same commits as the built-in engine", () => {
-    it("every step of a history writes the commit and the objects the built-in engine writes", async () => {
-      const twin = path.join(dir, "twin.git");
-      const builtin = new AgentStateRepo({
-        gitdir: twin,
-        now: () => now,
-        log: () => {},
-        identity: identity(),
-      });
-      const steps: Array<(repo: AgentStateRepo) => Promise<unknown>> = [
-        (repo) => repo.commitPath(REL, DEMO, "workbench demo @1"),
-        (repo) => repo.commitPath("workbenches/other", EDITED, "workbench other @1"),
-        (repo) => repo.commitPath(REL, EDITED, "workbench demo @2", { by: { name: "Ada" } }),
-        (repo) => repo.removePath("workbenches/other", "workbench other: removed"),
-        (repo) => repo.removePath(REL, "workbench demo: removed"),
-        (repo) => repo.commitPath(REL, DEMO, "workbench demo @1"),
-      ];
-      const tips = (at: string) => git.resolveRef({ fs: nodeFs, gitdir: at, ref: "HEAD" });
-      for (const step of steps) {
-        now = new Date(now.getTime() + 61_000);
-        await step(open());
-        await step(builtin);
-        expect(await head()).toBe(await tips(twin));
-      }
-      expect(await objectIds(gitdir)).toEqual(await objectIds(twin));
+    it("a branch packed by a person's git is read, and written on", async () => {
+      const repo = open();
+      await repo.commitPath(REL, DEMO, "workbench demo @1");
+      const tip = await head();
+      // What `git pack-refs` leaves behind: the branch only in packed-refs.
+      await fs.rm(path.join(gitdir, "refs", "heads", "main"));
+      await fs.writeFile(
+        path.join(gitdir, "packed-refs"),
+        `# pack-refs with: peeled fully-peeled sorted \n${tip} refs/heads/main\n`,
+      );
+
+      expect((await repo.history(REL)).map((v) => v.revision)).toEqual([revisionOf(DEMO)]);
+      expect((await repo.commitPath(REL, EDITED, "workbench demo @2")).changed).toBe(true);
+      expect((await repo.history(REL)).map((v) => v.revision)).toEqual([
+        revisionOf(EDITED),
+        revisionOf(DEMO),
+      ]);
     });
   });
 }

@@ -3,17 +3,17 @@
  * to (agent-state-repo.test.ts):
  *
  * - File names with spaces, brackets, apostrophes and non-ASCII text (and, where a file system
- *   can hold them, quotes, tabs and line breaks) are written and read back exactly, in the same
- *   commits the built-in engine writes.
- * - Every object it writes is a loose file, as the built-in engine stores them: no pack per commit.
+ *   can hold them, quotes, tabs and line breaks) are written and read back exactly, and `git
+ *   fsck` calls the repository healthy.
+ * - Every object it writes is a loose file: no pack per commit.
  * - What the server's environment and the operator's Git config could change does not apply: an
  *   ambient `GIT_DIR`, object directory or index file is not followed, and a global config's hooks,
  *   template and signing are not used, nor is a hook in the repository itself.
  * - A ref another program holds locked fails the write and stays as it was; once it is released
  *   the next write goes through.
  * - A repository a person packed (`git gc`) is read and written on.
- * - A program that is not there is reported as unavailable, so the harness takes over; git
- *   refusing a write is reported as itself.
+ * - A program that is not there fails the write, as does git refusing one: there is no other
+ *   engine, and the branch stays as it was.
  *
  * Live: these need this host's Git (test/global-setup.ts).
  */
@@ -39,14 +39,12 @@ describe.skipIf(live === null)("the native engine", () => {
   let dir: string;
   let gitdir: string;
   const saved = { ...process.env };
-  const open = (at = gitdir, engine = live?.engine): RepoUnderTest =>
+  const open = (at = gitdir): RepoUnderTest =>
     new server.AgentStateRepo({
       gitdir: at,
       now: () => T1,
       log: () => {},
-      engine,
-      // Every step goes to the engine under test, however small the folder.
-      engineFrom: { commit: 1, read: 1 },
+      engine: live!.engine,
       identity: QUIET,
     });
   const git = (args: string[], input?: string) =>
@@ -63,7 +61,7 @@ describe.skipIf(live === null)("the native engine", () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it("writes and reads back unusual names exactly, in the commits the built-in engine writes", async () => {
+  it("writes and reads back unusual names exactly, and fsck calls the repository healthy", async () => {
     const files = text({
       "nested/-item with spaces": "中文",
       "apostrophe's (and parentheses).md": "q",
@@ -76,15 +74,12 @@ describe.skipIf(live === null)("the native engine", () => {
         : { 'quote "and" back.md': "q", "tab\tline\nbreak.txt": "contents" }),
     });
     const rel = "workbenches/名字 [x]";
-    const twin = path.join(dir, "twin.git");
 
     await open().commitPath(rel, files, "odd names");
-    await open(twin, server.builtinEngine).commitPath(rel, files, "odd names");
 
     expect(texts(await open().filesAt(rel, revisionOf(files)))).toEqual(texts(files));
-    expect(await git(["rev-parse", "HEAD"])).toBe(
-      (await fs.readFile(path.join(twin, "refs", "heads", "main"), "utf8")).trim(),
-    );
+    expect(await git(["rev-parse", "HEAD"])).toMatch(/^[0-9a-f]{40}$/);
+    await runGit(live!.git, gitdir, ["fsck", "--strict"]);
   });
 
   it("stores every object as a loose file", async () => {
@@ -151,10 +146,9 @@ describe.skipIf(live === null)("the native engine", () => {
 
     const refused = await repo
       .commitPath(REL, text({ "package.json": "{ }" }), "competing")
-      .catch((err: Error & { engineUnavailable?: boolean }) => err);
+      .catch((err: Error) => err);
 
     expect(refused).toBeInstanceOf(Error);
-    expect((refused as { engineUnavailable?: boolean }).engineUnavailable).toBeUndefined();
     expect(await fs.readFile(lock, "utf8")).toBe("another Git process");
     expect((await repo.history(REL))[0]?.commit).toBe(first.commit);
     expect((await fs.readdir(gitdir)).filter((n) => n.startsWith("fast_import_crash_"))).toEqual(
@@ -182,7 +176,7 @@ describe.skipIf(live === null)("the native engine", () => {
     expect(texts(await repo.filesAt(REL, revisionOf(v1)))).toEqual(texts(v1));
   });
 
-  it("reports a program that is not there as unavailable", async () => {
+  it("fails the write when its program is not there, and leaves the branch as it was", async () => {
     const missing = gitEngine({ program: path.join(dir, "no-such-git"), execPath: dir }, "0.0.0");
     await open().commitPath(REL, text({ "package.json": "{}" }), "base");
     const tip = await git(["rev-parse", "HEAD"]);
@@ -199,6 +193,7 @@ describe.skipIf(live === null)("the native engine", () => {
         when: { seconds: 1, offset: 0 },
       })
       .catch((e: Error) => e);
-    expect((err as { engineUnavailable?: boolean }).engineUnavailable).toBe(true);
+    expect(err).toBeInstanceOf(Error);
+    expect(await git(["rev-parse", "HEAD"])).toBe(tip);
   });
 });

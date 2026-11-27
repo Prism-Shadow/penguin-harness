@@ -45,7 +45,7 @@ try {
     .update("blob " + body.length + "\0")
     .update(body)
     .digest("hex");
-  const restored = await engine.readBlobs(gitdir, [blob]);
+  const restored = await engine.readObjects(gitdir, [blob]);
   assert.deepEqual(Buffer.from(restored[0]), body);
   assert.equal(requests, 0);
   globalThis.fetch = originalFetch;

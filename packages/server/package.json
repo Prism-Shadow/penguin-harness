@@ -118,7 +118,6 @@
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.11",
-    "isomorphic-git": "^1.44.0",
     "mdast-util-gfm-footnote": "^2.1.0",
     "mdast-util-gfm-strikethrough": "^2.0.0",
     "mdast-util-gfm-table": "^2.0.0",

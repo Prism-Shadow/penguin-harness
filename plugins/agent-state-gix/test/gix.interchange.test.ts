@@ -219,7 +219,7 @@ describe("agent-state-gix interchange with real Git", () => {
     }
   });
 
-  it("readBlobs answers what git cat-file answers", async () => {
+  it("readObjects answers what git cat-file answers, blobs included", async () => {
     // Self-contained: write a folder of its own, then read its blobs back.
     const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
     const next: AgentStateCommit = {
@@ -236,17 +236,32 @@ describe("agent-state-gix interchange with real Git", () => {
     expect(ls.status).toBe(0);
     const oids = [...ls.stdout.toString().matchAll(/blob ([0-9a-f]{40})\t/g)].map((m) => m[1]!);
     expect(oids.length).toBeGreaterThan(0);
-    const mine = await engine.readBlobs(c.gitdir, oids);
+    const mine = await engine.readObjects(c.gitdir, oids);
     for (const [i, oid] of oids.entries()) {
       const theirs = run(c.gitdir, ["cat-file", "blob", oid]).stdout;
       expect(Buffer.from(mine[i]!).equals(theirs), oid).toBe(true);
     }
   });
 
-  it("a missing blob id refuses", async () => {
-    await expect(
-      engine.readBlobs(c.gitdir, ["1".repeat(40)]),
-    ).rejects.toThrow(/not in the repository/);
+  it("readObjects reads a commit and a tree the way cat-file answers them, null where an id is absent", async () => {
+    // The server reads commits and trees back through the same contract (its history walk
+    // parses them itself), so both kinds are pinned here, with absence per id.
+    const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
+    const tree = /^tree ([0-9a-f]{40})/m.exec(
+      run(c.gitdir, ["cat-file", "commit", tip]).stdout.toString(),
+    )![1]!;
+    const [commitBody, treeBody, absent] = await engine.readObjects(c.gitdir, [
+      tip,
+      tree,
+      "1".repeat(40),
+    ]);
+    expect(Buffer.from(commitBody!).toString()).toBe(
+      run(c.gitdir, ["cat-file", "commit", tip]).stdout.toString(),
+    );
+    expect(Buffer.from(treeBody!).equals(run(c.gitdir, ["cat-file", "tree", tree]).stdout)).toBe(
+      true,
+    );
+    expect(absent).toBeNull();
   });
 
   it("git fsck says the repository is healthy after both writers ran", () => {
@@ -268,7 +283,7 @@ describe("agent-state-gix interchange with real Git", () => {
     // gix reads the gitcl-written blobs back, whole.
     const ls = run(c.gitdir, ["ls-tree", "-r", sha]);
     const oids = [...ls.stdout.toString().matchAll(/blob ([0-9a-f]{40})\t/g)].map((m) => m[1]!);
-    const mine = await engine.readBlobs(c.gitdir, oids);
+    const mine = await engine.readObjects(c.gitdir, oids);
     expect(mine[0]!.toString()).toBe("written by the gitcl pipeline\n");
     // The history walk sees gitcl's commit on gix's tip: its parent is what gix wrote.
     const commitBody = run(c.gitdir, ["cat-file", "commit", sha]).stdout.toString();
