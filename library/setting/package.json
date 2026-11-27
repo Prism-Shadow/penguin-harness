@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-setting",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "The settings domain: the Settings and UiPrefsStore mechanisms, the attachment size arithmetic those settings govern, and the repos that store them. A library package — the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

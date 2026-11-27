@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-agent-api",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "The agent-api domain: the AgentApi mechanism, its settings/update DTOs, the ModelRefDto pair, and the agent_api repos. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {

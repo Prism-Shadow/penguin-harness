@@ -9,6 +9,22 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.2.21",
+    date: "2026-11-27",
+    zh: [
+      "较旧的 Linux 系统上终端恢复可用，包括 Linux 桌面应用和远程 Linux 机器。远程机器需在「机器管理」里更新到本版本。",
+      "服务端在启动时收到连接不会再退出。远程机器连不上时，状态显示在对话的输入框上，对话记录照常可读，已输入的内容会保留；最多重试五次，之后显示本机缓存的副本。",
+      "从「快捷方式」打开的「记忆」能正常加载，浏览器面板会自动打开第一个标签页，关掉停靠栏的最后一个标签页后停靠栏会停在启动页。",
+      "通过「远程控制」连接的 QQ 机器人可以收发图片和文件，发给它的语音会以文字送达 Agent；发到微信的图片和文件也能正常送达和查看。",
+    ],
+    en: [
+      "Terminals work again on older Linux systems, including the Linux desktop app and remote Linux machines. Update remote machines to this version from Machines.",
+      "The server no longer exits when a connection arrives while it starts. When a remote machine cannot be reached, its status covers the conversation's input box: the conversation stays readable and what you typed is kept, and after at most five retries it shows the copy saved on this server.",
+      "Memory opened from Shortcuts loads, the Browser panel opens its first tab by itself, and closing a dock's last tab leaves the dock on its start page.",
+      "A QQ bot connected through Remote control sends and receives images and files, and voice messages sent to it reach the agent as text. Images and files sent to WeChat arrive and open again.",
+    ],
+  },
+  {
     version: "0.2.20",
     date: "2026-11-26",
     zh: [

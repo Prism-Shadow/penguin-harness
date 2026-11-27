@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-ui",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "type": "module",
   "description": "PenguinHarness UI: the React components, design tokens and four themes of the PenguinHarness Web App, with a precompiled stylesheet and optional fonts.",
   "license": "Apache-2.0",

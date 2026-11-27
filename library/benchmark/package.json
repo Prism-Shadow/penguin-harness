@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-library-benchmark",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "The benchmark domain: the Benchmarks mechanism, its service (create/import/export a Project's Benchmark packages), the archive reader/writer and the API vocabulary. One package, no server dependencies \u2014 the server imports these; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
