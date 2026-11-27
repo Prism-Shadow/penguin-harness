@@ -49,6 +49,18 @@ const socketStandInPlugin: Plugin = {
 
 export default defineConfig({
   plugins: [socketStandInPlugin],
+  resolve: {
+    // The internal hub the domain libraries' web halves compile against resolves to this
+    // package's own source, not the copy under node_modules: pnpm records @prismshadow/penguin-web
+    // (a workspace package with peer dependencies) as a file: link, a snapshot an incremental
+    // install may leave stale, while the suites must always run against the current hub.
+    alias: [
+      {
+        find: "@prismshadow/penguin-web/internal",
+        replacement: resolve(here, "src/internal.ts"),
+      },
+    ],
+  },
   test: {
     environment: "node",
     // The scroll-driven component tests simulate a run of animation frames over a tall trace;
