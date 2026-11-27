@@ -21,7 +21,7 @@ import {
   type BarPlace,
   type DownloadProgress,
   type InstallStep,
-} from "../src/features/plugins/install-progress";
+} from "@prismshadow/penguin-library-plugin/web/install-progress";
 
 type Report = { stage: InstallStage } | { progress: DownloadProgress };
 const stage = (s: InstallStage): Report => ({ stage: s });

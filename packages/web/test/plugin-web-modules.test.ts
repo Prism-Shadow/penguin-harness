@@ -49,6 +49,7 @@ import {
 
 import {
   pluginWebEntries,
+  pluginWebModuleSource,
   separateProjects,
   writePluginWebModules,
 } from "../scripts/gen-web-table.mjs";
