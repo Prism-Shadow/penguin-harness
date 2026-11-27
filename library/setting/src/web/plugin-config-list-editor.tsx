@@ -19,7 +19,8 @@ import {
   Input,
   Select,
 } from "@prismshadow/penguin-ui";
-import { localizedText, S } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { Locale } from "@prismshadow/penguin-web/internal";
 import { ICON_BUTTON } from "./plugin-config-table-cells";
 

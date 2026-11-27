@@ -21,7 +21,8 @@ import type {
   PluginIndexEntry,
   PluginItem,
 } from "@prismshadow/penguin-server/api";
-import { S, localizedText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import { PLUGIN_STATUSES, type ModuleState, type PluginStatus } from "./plugin-status";
 
 /** The server-module side of a row: the package a Project lists, or could. */

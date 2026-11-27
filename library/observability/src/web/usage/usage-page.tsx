@@ -50,20 +50,22 @@ import {
   Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  useDocumentTitle,
   useUpdateBadges,
   dismissTodo,
   refreshProjectTodos,
-  formatMoney,
-  humanizeTokens,
-  scoped,
-  scopedValue,
-  type Scoped,
-  useOpenedInProject,
-  useProject,
-  useTheme,
+} from "@prismshadow/penguin-web/internal";
+import { formatMoney, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import { scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { useOpenedInProject } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
+import { TrendChart } from "./trend-chart";
+import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
+import {
   compactCounts,
   compactSeries,
   isoDate,
@@ -73,8 +75,9 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-  failureNode,
 } from "@prismshadow/penguin-web/internal";
+import { ErrorsPanel } from "./errors-panel";
+import { failureNode } from "@prismshadow/penguin-web/internal";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({

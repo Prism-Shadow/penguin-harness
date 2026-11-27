@@ -13,8 +13,9 @@ import {
   useAiBridge,
   pickDefaultAgent,
   type AiChatRequest,
-  S,
 } from "@prismshadow/penguin-web/internal";
+
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** The plugin to repair, as its row has it. */
 export interface RepairTarget {

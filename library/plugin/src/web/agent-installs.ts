@@ -20,10 +20,8 @@ import {
   cachedAgentInstalls,
   forgetAgentInstalls,
   rememberAgentInstalls,
-  createReadStore,
-  readKey,
-  useReads,
 } from "@prismshadow/penguin-web/internal";
+import { createReadStore, readKey, useReads } from "@prismshadow/penguin-web/internal";
 import type { ReadStore } from "@prismshadow/penguin-web/internal";
 import type { AgentInstalls, InstalledMap } from "./plugin-status";
 

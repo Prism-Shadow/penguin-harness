@@ -21,22 +21,19 @@ import {
   SettingsGroup,
   SettingsSection,
 } from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import { conflictsOf, findConflicts, type Conflict } from "./lib/shortcuts/conflicts";
+import { currentHost, currentPlatform } from "@prismshadow/penguin-web/internal";
+import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "@prismshadow/penguin-web/internal";
+import { browserCommon, browserReserved, desktopReserved } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  currentHost,
-  currentPlatform,
-  SHORTCUT_COMMANDS,
-  SHORTCUT_GROUPS,
-  commandById,
-  browserCommon,
-  browserReserved,
-  desktopReserved,
   isOverridden,
   resetAll,
   resetBinding,
   setBinding,
-  useKeymap,
 } from "@prismshadow/penguin-web/internal";
+import type { Chord, CommandId, ShortcutCommand } from "@prismshadow/penguin-web/internal";
+import { useKeymap } from "@prismshadow/penguin-web/internal";
 import { ShortcutRecorder } from "./shortcut-recorder";
 
 interface RowHint {

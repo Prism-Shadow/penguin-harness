@@ -60,11 +60,10 @@ import {
   type TokenBucketKey,
 } from "@prismshadow/penguin-ui";
 
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatPercent, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  formatPercent,
-  humanizeTokens,
-  NEUTRAL_SERIES,
   bucketAxisLabel,
   bucketFullLabel,
   foldEntitySeries,

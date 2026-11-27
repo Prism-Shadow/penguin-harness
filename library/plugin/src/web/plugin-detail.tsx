@@ -67,20 +67,35 @@ import {
   type TreeToggle,
 } from "@prismshadow/penguin-ui";
 import type { PluginArt, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
+import { S } from "@prismshadow/penguin-web/internal";
+import { linkSegments } from "./lib/link-segments";
+import { baseName } from "@prismshadow/penguin-web/internal";
+import { useReaderFind } from "@prismshadow/penguin-web/internal";
+import { BOOK_ICON, localizedText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  baseName,
-  useReaderFind,
-  BOOK_ICON,
-  localizedText,
-  useLocale,
   getLibraryPluginReadme,
   getPluginFiles,
   getPluginReadme,
-  ApiError,
-  SkillTile,
-  failureOf,
 } from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
+import { PluginCover } from "./plugin-cover";
+import { PluginMcpSection } from "./plugin-mcp";
+import type { ModulePart, PluginRow } from "./plugin-groups";
+import {
+  pluginTags,
+  rowDetails,
+  rowDescription,
+  rowHasDescription,
+  rowLinked,
+  rowNote,
+  rowShortDescription,
+  rowTitle,
+  rowVersion,
+} from "./plugin-marks";
+import { marketIcon, rowPackage } from "./plugin-market";
+import { failureOf } from "@prismshadow/penguin-web/internal";
 
 /** One collapsible group of installable files. */
 interface FileGroup {

@@ -6,7 +6,8 @@
  */
 import { useState } from "react";
 import { Button, PrefRow, SettingsGroup } from "@prismshadow/penguin-ui";
-import { S, ChangePasswordDialog } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { ChangePasswordDialog } from "@prismshadow/penguin-web/internal";
 
 export function AccountSection() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);

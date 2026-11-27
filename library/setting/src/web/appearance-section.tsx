@@ -25,17 +25,20 @@ import {
   ToggleRow,
 } from "@prismshadow/penguin-ui";
 import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
+import { S } from "@prismshadow/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
+import { isDesktopShellWindow } from "@prismshadow/penguin-web/internal";
+import { useThemePackList } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  isDesktopShellWindow,
-  useThemePackList,
-  useInstantSetting,
   launcherHiddenVersion,
   readLauncherHidden,
   subscribeLauncherHidden,
   writeLauncherHidden,
-  useAuth,
-  useLocale,
+} from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import {
   accentSwatches,
   useTheme,
   type FontCjk,
@@ -43,12 +46,9 @@ import {
   type TerminalThemeMode,
   type TextSize,
   type ThemeMode,
-  shownTheme,
-  themeEntries,
-  themeName,
-  FONT_FOLLOWS_THEME,
-  effectiveAccent,
 } from "@prismshadow/penguin-web/internal";
+import { shownTheme, themeEntries, themeName } from "@prismshadow/penguin-web/internal";
+import { FONT_FOLLOWS_THEME, effectiveAccent } from "@prismshadow/penguin-web/internal";
 import { BackgroundControls } from "./background-controls";
 import { ThemePacksSection } from "./theme-packs-section";
 

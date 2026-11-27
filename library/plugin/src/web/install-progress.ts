@@ -16,7 +16,8 @@
  */
 import type { ProgressStage, StagedProgressStatus } from "@prismshadow/penguin-ui";
 import type { InstallStage } from "@prismshadow/penguin-web/internal";
-import { formatBytes, S } from "@prismshadow/penguin-web/internal";
+import { formatBytes } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export type InstallStep = "check" | "fetch" | "start" | "agents";
 

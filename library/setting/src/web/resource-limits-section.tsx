@@ -9,12 +9,9 @@ import {
   useSaving,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import {
-  adminGetSettings,
-  adminPutSettings,
-  S,
-  toastApiError,
-} from "@prismshadow/penguin-web/internal";
+import { adminGetSettings, adminPutSettings } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { SETTINGS_SCOPE } from "./lib/unsaved/scopes";
 
 const fields = ["terminalMaxOpen", "browserMaxOpen"] as const;

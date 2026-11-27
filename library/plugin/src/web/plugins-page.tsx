@@ -81,49 +81,117 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { isConversationAgent } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import {
-  S,
-  isConversationAgent,
-  apiErrorText,
-  useDocumentTitle,
   useUpdateBadges,
   dismissTodo,
   bulkOutcome,
   failedList,
   firstFailure,
   noticeCounts,
-  useAuth,
-  useLocale,
-  agentDisplayName,
-  useProject,
-  useMachines,
-  useSessions,
-  agentKey,
-  mixAgents,
-  useMachineAgents,
-  readKey,
-  useRead,
-  MachinePicker,
-  type MachineChoice,
+} from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { agentKey } from "@prismshadow/penguin-web/internal";
+import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";
+import { readKey, useRead } from "@prismshadow/penguin-web/internal";
+import { MachinePicker, type MachineChoice } from "@prismshadow/penguin-web/internal";
+import {
   DRAFT_SESSION_ID,
   draftKey,
   loadDraft,
   saveDraft,
   prepareNewChatDraft,
-  localizedText,
-  pickDefaultAgent,
-  pluginPickItems,
-  toneInk,
-  appWindowPath,
-  notifyPluginsChanged,
-  toastInstall,
+} from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { PackageUpdateDialog, packageUpdate, type PackageUpdate } from "./plugin-package-update";
+import { usePluginRepair } from "./plugin-repair";
+import { useMachineMarkets } from "./machine-markets";
+import {
+  marketRows,
+  moduleTarget,
+  offersPackageUpdate,
+  rowBlocked,
+  rowCurrentTarget,
+  rowTargets,
+} from "./market-rows";
+import { viewedMachine } from "./viewed-machine";
+import { SettingsDialog } from "@prismshadow/penguin-library-setting/web";
+import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
+import { pluginPickItems } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { appWindowPath } from "@prismshadow/penguin-web/internal";
+import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
+import type { InstallTarget, PluginCardProps } from "./plugin-card";
+import type { InstallFailure } from "./plugin-install-flow";
+import { rowTitle } from "./plugin-marks";
+import {
+  ALL_TAB,
+  artOf,
+  availableSorts,
+  initialPluginsSort,
+  isSelected,
+  popularityOf,
+  sortRows,
+  storePluginsSort,
+  tabRows,
+  type PluginSort,
+} from "./plugin-market";
+import {
+  INDEX_KEY,
+  LIBRARY_KEY,
+  MARKET_KEY,
+  installedPlugins,
+  installedPluginsKey,
+  pluginIndex,
+  pluginLibrary,
+  pluginMarket,
+  useLocalPluginIndex,
+} from "./plugin-reads";
+import { notifyPluginsChanged } from "@prismshadow/penguin-web/internal";
+import {
+  agentInstalls,
+  readNewAgentInstalls,
+  rereadInstalls,
+  useAgentInstalls,
+  type InstallsTarget,
+} from "./agent-installs";
+import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
+import { toastInstall } from "@prismshadow/penguin-web/internal";
+import {
   useOnPluginModulesChanged,
   usePluginModuleRequests,
-  toastApiError,
-  toastFailure,
-  failureOf,
-  toldFailure,
 } from "@prismshadow/penguin-web/internal";
+import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
+import { SourceFailuresNotice } from "./source-failures-notice";
+import { ImportPluginModal } from "./plugin-import-modal";
+import {
+  PLUGIN_GROUP_BYS,
+  groupRows,
+  initialPluginsGroupBy,
+  pluginCategories,
+  storePluginsGroupBy,
+  type PluginGroupBy,
+  type PluginRow,
+} from "./plugin-groups";
+import {
+  installNeedsConfirm,
+  libraryUsage,
+  pluginComplete,
+  pluginStatus,
+  type AgentInstalls,
+  type InstalledMap,
+  type LibraryUsage,
+  type PluginStatus,
+} from "./plugin-status";
+import { toastApiError, toastFailure } from "@prismshadow/penguin-web/internal";
+import { failureOf, toldFailure } from "@prismshadow/penguin-web/internal";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 

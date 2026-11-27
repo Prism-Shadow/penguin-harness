@@ -14,12 +14,9 @@
  */
 import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { Button, GlyphIcon, ICONS, ICON_SIZE, toastSuccess } from "@prismshadow/penguin-ui";
-import {
-  S,
-  agentDisplayName,
-  CreateAgentDialog,
-  defaultPicks,
-} from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { CreateAgentDialog, defaultPicks } from "@prismshadow/penguin-web/internal";
 import type { CreateAgentDraft, PluginPickItem } from "@prismshadow/penguin-web/internal";
 
 /** What the page hands a card for the row: the picker's library, and how a new Agent joins the list. */

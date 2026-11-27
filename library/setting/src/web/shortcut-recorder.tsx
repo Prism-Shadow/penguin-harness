@@ -7,13 +7,11 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import {
-  S,
-  ChordKbd,
-  isModifierCode,
-  formatChord,
-  currentPlatform,
-} from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { ChordKbd } from "@prismshadow/penguin-web/internal";
+import { isModifierCode } from "@prismshadow/penguin-web/internal";
+import { formatChord } from "@prismshadow/penguin-web/internal";
+import { currentPlatform } from "@prismshadow/penguin-web/internal";
 import {
   RECORDER_IDLE,
   recorderRelease,

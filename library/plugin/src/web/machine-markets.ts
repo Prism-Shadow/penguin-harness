@@ -11,7 +11,8 @@ import type {
   PluginIndexEntry,
 } from "@prismshadow/penguin-server/api";
 import * as api from "@prismshadow/penguin-web/internal";
-import { createCatalogStore, useMachineCatalogs } from "@prismshadow/penguin-web/internal";
+import { createCatalogStore } from "@prismshadow/penguin-web/internal";
+import { useMachineCatalogs } from "@prismshadow/penguin-web/internal";
 import type { MachineMarketData } from "./market-rows";
 
 const libraries = createCatalogStore<PluginGroupItem[]>(

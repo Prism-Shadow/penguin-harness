@@ -19,7 +19,9 @@ import type {
   MessagingUnreachableMachine,
 } from "@prismshadow/penguin-server/api";
 import type { MachineLink } from "@prismshadow/penguin-web/internal";
-import { formatDateTime, machineForSession, S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { channelForm } from "./channels/registry";
 
 /** The server a Session's binding lives on: a machine, or this server (null). */
