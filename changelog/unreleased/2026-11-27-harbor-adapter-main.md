@@ -3,6 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** fix
 - **Scope:** `skills`
+- **PR:** [#1925](https://github.com/Prism-Shadow/penguin-harness/pull/1925)
 
 [中文版](2026-11-27-harbor-adapter-main.zh.md)
 
