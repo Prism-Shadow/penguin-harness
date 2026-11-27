@@ -3,7 +3,7 @@
 - **Date:** 2026-11-27
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`
-- **PR:** [#PR_NUMBER](https://github.com/Prism-Shadow/penguin-harness/pull/PR_NUMBER)
+- **PR:** [#1924](https://github.com/Prism-Shadow/penguin-harness/pull/1924)
 
 [English](2026-11-27-machine-reconnect-overlay.md)
 
