@@ -78,8 +78,8 @@ import {
   installsKey,
   pluginLibrary,
   AgentPluginGroups,
+  workbenchLoadFailure,
 } from "@prismshadow/penguin-web/internal-hub";
-import { workbenchLoadFailure } from "@prismshadow/penguin-web/internal-hub";
 import { agentPluginTitle } from "./agent-plugin-actions";
 import { AgentPluginsPage } from "./agent-plugins-page";
 import { HookImportDialog, useHookRows } from "./agent-hooks";
