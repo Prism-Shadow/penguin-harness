@@ -14,7 +14,9 @@
   },
   "files": [
     "dist",
-    "LICENSE"
+    "LICENSE",
+    "src/web",
+    "tsconfig.web.json"
   ],
   "type": "module",
   "main": "./dist/index.js",
