@@ -6,7 +6,7 @@
  */
 import { createElement as h } from "react";
 import type { ChatDrafts } from "../../src/features/chat";
-import { CompanyProvider } from "../../src/features/company/company-state";
+import { CompanyProvider } from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { PagesContext } from "../../src/lib/web-app-pages";
 import { BackgroundProvider } from "../../src/state/background";
 import { ThemeProvider } from "../../src/state/theme";

@@ -9,7 +9,7 @@ import { createElement as h } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { AppWindow } from "@prismshadow/penguin-ui";
-import { WorkbenchFrame } from "../src/features/workbenches/workbench-frame";
+import { WorkbenchFrame } from "@prismshadow/penguin-library-workbench/web/workbenches/workbench-frame";
 import { LocaleProvider } from "../src/state/locale";
 import { ThemeProvider } from "../src/state/theme";
 import { mount, run, unmountAll } from "./helpers/dom";

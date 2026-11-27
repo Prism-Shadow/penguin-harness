@@ -1,5 +1,5 @@
 /**
- * A company's channel list (features/company/channel-list.ts).
+ * A company's channel list (library/organization/src/web/company/channel-list.ts).
  *
  * - The all-hands channel renders under its localized label; every other channel under its
  *   stored name.
@@ -23,7 +23,7 @@ import {
   groupChannels,
   inviteCandidates,
   isAllHands,
-} from "../src/features/company/channel-list";
+} from "@prismshadow/penguin-library-organization/web/company/channel-list";
 
 const channel = (over: Partial<OrgChannelItem> & { channelId: string }): OrgChannelItem => ({
   name: over.channelId,

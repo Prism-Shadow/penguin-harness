@@ -79,7 +79,7 @@ export interface PageEntry {
 /**
  * The company-mode pages among the contributed ones — every one the server contributed under
  * `nav: "org"` — in contribution order. The app's own table has none: the organization's own
- * six pages are company mode's fixed routes (features/company/org-routes.tsx).
+ * six pages are company mode's fixed routes (library/organization/src/web/company/org-routes.tsx).
  */
 export function orgPagesOf(pages: readonly PageEntry[]): PageEntry[] {
   return pages.filter((p) => p.nav === "org" && p.released);

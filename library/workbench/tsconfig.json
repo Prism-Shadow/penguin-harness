@@ -1,5 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {},
-  "include": ["src"]
+  "compilerOptions": {
+    // Vite reads the nearest tsconfig for the JSX transform (vitest runs without the React
+    // plugin), so the web half's JSX compiles with the automatic runtime.
+    "jsx": "react-jsx"
+  },
+  // The web half (src/web) is the web app's to compile; this package's program and its
+  // tsup build carry only the server-facing contract.
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

@@ -1,6 +1,6 @@
 /**
  * The work mode the shell stands in across the two switches that make company mode available
- * (features/company/company-state.tsx), driven against the store: `setServerEnabled` is what the Provider calls
+ * (library/organization/src/web/company/company-state.tsx), driven against the store: `setServerEnabled` is what the Provider calls
  * with every read of /api/me, and `applyPrefs` what it calls when the preferences arrive. Each
  * case says where the choice ends up (the localStorage mirror and the `PUT /api/me/prefs` the
  * fetch fake records) as well as what the shell shows.
@@ -17,13 +17,13 @@
  */
 import { beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
-import { BETA_NOTICE_KEY } from "../src/features/company/company-beta";
+import { BETA_NOTICE_KEY } from "@prismshadow/penguin-library-organization/web/company/company-beta";
 import { WORK_MODE_KEY } from "../src/lib/work-mode";
 import {
   companyModeAvailable,
   createCompanyStore,
   effectiveWorkMode,
-} from "../src/features/company/company-state";
+} from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
 import { memoryStorage, stubLocalStorage, type MemoryStorage } from "./helpers/storage";

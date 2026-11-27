@@ -1,5 +1,5 @@
 /**
- * The overview page's shaping (features/company/overview-summary.ts).
+ * The overview page's shaping (library/organization/src/web/company/overview-summary.ts).
  *
  * - Employees are counted by desk, running and budget-paused, live states overriding the
  *   snapshot where known; no employees count zero.
@@ -35,8 +35,8 @@ import {
   missionClampedGuess,
   spendSummary,
   todaySummary,
-} from "../src/features/company/overview-summary";
-import { TICKET_COLUMNS } from "../src/features/company/ticket-board";
+} from "@prismshadow/penguin-library-organization/web/company/overview-summary";
+import { TICKET_COLUMNS } from "@prismshadow/penguin-library-organization/web/company/ticket-board";
 
 const ticket = (ticketId: string, extra: Partial<OrgTicketItem> = {}): OrgTicketItem => ({
   ticketId,

@@ -3,7 +3,7 @@
  * zoom arithmetic is covered by canvas-view.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import { employeeStateTone } from "../src/features/company/chart-view";
+import { employeeStateTone } from "@prismshadow/penguin-library-organization/web/company/chart-view";
 
 describe("employeeStateTone", () => {
   it("picks busy for running, attention for a budget pause, success on the desk", () => {

@@ -1,5 +1,5 @@
 /**
- * The company sidebar's Temporary group of ticket sessions (features/company/temp-session.ts).
+ * The company sidebar's Temporary group of ticket sessions (library/organization/src/web/company/temp-session.ts).
  *
  * - Opening a session adds it at the top, or moves it there under the title it was opened
  *   with; the list has no cap and never holds a desk session.
@@ -22,7 +22,7 @@ import {
   withDismissed,
   withOpened,
   type TempSessionEntry,
-} from "../src/features/company/temp-session";
+} from "@prismshadow/penguin-library-organization/web/company/temp-session";
 
 import { memoryStorage } from "./helpers/storage";
 

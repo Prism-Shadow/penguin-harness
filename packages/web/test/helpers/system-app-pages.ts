@@ -5,7 +5,7 @@
 import { moduleMetaOf, type Contributed, type ModuleClass } from "@prismshadow/penguin-core/kernel";
 import { pageTableOf, type WebAppPage } from "../../src/web-app/page-table";
 import { AgentsModule } from "../../src/features/agents/module";
-import { AppCenterModule } from "../../src/features/app-center/module";
+import { AppCenterModule } from "@prismshadow/penguin-library-workbench/web";
 import { BenchmarkModule } from "../../src/features/benchmark/module";
 import { MachinesModule } from "../../src/features/machines/module";
 import { ModelsModule } from "../../src/features/models/module";

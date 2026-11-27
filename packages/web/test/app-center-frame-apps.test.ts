@@ -24,9 +24,9 @@
 import { act, createElement as h } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
-import { AppCenterPage } from "../src/features/app-center/app-center-page";
+import { AppCenterPage } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
-import { SystemAppPage } from "../src/features/app-center/system-app-page";
+import { SystemAppPage } from "@prismshadow/penguin-library-workbench/web/app-center/system-app-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { useLocale } from "../src/state/locale";

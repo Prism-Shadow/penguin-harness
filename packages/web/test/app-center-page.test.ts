@@ -38,7 +38,7 @@ import { act, createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { AppCenterLayout, WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { closeReport, reportStore } from "@prismshadow/penguin-ui";
-import { AppCenterPage } from "../src/features/app-center/app-center-page";
+import { AppCenterPage } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";

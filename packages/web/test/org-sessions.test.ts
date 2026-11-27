@@ -1,5 +1,5 @@
 /**
- * The company sidebar's 工位 group (features/company/org-sessions.ts) and the development
+ * The company sidebar's 工位 group (library/organization/src/web/company/org-sessions.ts) and the development
  * list's organization filter (lib/session-grouping.ts).
  *
  * - There is a desk row per employee in chart order, whether or not the desk was ever opened;
@@ -31,7 +31,7 @@ import {
   orgRowActivity,
   ticketSessionTitles,
   withDeskMessagingChannel,
-} from "../src/features/company/org-sessions";
+} from "@prismshadow/penguin-library-organization/web/company/org-sessions";
 import { isOrgSession, withoutOrgSessions } from "../src/lib/session-grouping";
 
 const liveStatuses = (entries: Record<string, SessionStatus>): ReadonlyMap<string, SessionStatus> =>

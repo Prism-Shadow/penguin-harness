@@ -1,5 +1,5 @@
 /**
- * The full-page workbench's exit ball (features/workbenches/exit-ball.tsx, drawn and moved by the
+ * The full-page workbench's exit ball (library/workbench/src/web/workbenches/exit-ball.tsx, drawn and moved by the
  * UI package's FloatingBall), on the shipped Support workbench as the admin opens it (locale en).
  * The drag is a real mouse travelling over the workbench's iframe, which is what the ball's
  * shield exists for.

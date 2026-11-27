@@ -32,7 +32,7 @@ import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { STATIC_BOOT_SCRIPT } from "../ui/src/boot";
 import { penguinUi } from "../ui/src/vite-plugin";
-import { dropNonWoff2FontSources } from "../web/vite.config";
+import { dropNonWoff2FontSources, webHalfAliases } from "../web/vite.config";
 import { storageSeedScript } from "./src/app/frame";
 import { workbenchAssets } from "./src/app/mock/workbench-assets";
 import { mockWebNetwork } from "./src/app/mock/vite-plugin";
@@ -137,6 +137,9 @@ export default defineConfig({
     watchPackageSources(),
   ],
   resolve: {
+    // The app's tree reaches the domain packages' web halves and the host seams through the
+    // same faces the app itself resolves; the aliases carry the table over to this root.
+    alias: webHalfAliases(),
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in

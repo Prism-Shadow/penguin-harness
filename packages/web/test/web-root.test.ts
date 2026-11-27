@@ -69,7 +69,7 @@ import { navPagesOf, type WebAppPage } from "../src/web-app";
 
 import { pageTableOf } from "../src/web-app/page-table";
 import { contributedPagesOf } from "../src/web-app/contributions";
-import { orgPagesOf } from "../src/features/company/use-org-pages";
+import { orgPagesOf } from "@prismshadow/penguin-library-organization/web/company/use-org-pages";
 import { navKeysFor } from "../src/lib/nav-pages";
 import { SidebarModule } from "../src/web-app/sidebar/module";
 import { badgesOf, marksFor, modesOf, sectionsIn, sectionsOf } from "../src/web-app/sidebar/modes";
@@ -82,17 +82,20 @@ import { glyphOf } from "../src/lib/nav-icons";
 import { systemAppsOf } from "../src/lib/system-apps";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
-import { OrgRoutes } from "../src/features/company/org-routes";
-import { HomeRedirect } from "../src/features/company/home-redirect";
+import { OrgRoutes } from "@prismshadow/penguin-library-organization/web/company/org-routes";
+import { HomeRedirect } from "@prismshadow/penguin-library-organization/web/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
-import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
+import {
+  CompanyProvider,
+  companyUserEvents,
+} from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
 import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/src/web/browser-events";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { AppCenterWindows } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
 import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
@@ -102,7 +105,7 @@ import {
   companyDesks,
   companyMode,
   companySwitcher,
-} from "../src/features/company/sidebar-mode";
+} from "@prismshadow/penguin-library-organization/web/company/sidebar-mode";
 import { messagingRowAction } from "../src/features/messaging/session-row-action";
 import { scheduledRowMark } from "../src/features/schedules/session-row-mark";
 import { browseFilesAction } from "../src/features/dock/browse-files";

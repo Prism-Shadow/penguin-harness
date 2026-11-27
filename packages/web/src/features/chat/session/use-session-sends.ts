@@ -18,7 +18,7 @@ import { toastApiError, toastFailure } from "../../../lib/toast-api-error";
 import { toldFailure } from "../../../lib/failure";
 import { machineForSession } from "../../../lib/session-machines";
 import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
-import { switchDeskModel, useCompany } from "../../company";
+import { switchDeskModel, useCompany } from "@prismshadow/penguin-library-organization/web";
 import { adoptDockScope } from "../../dock";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import { prepareNewChatDraft } from "../new-chat";
@@ -116,7 +116,7 @@ export function useSessionSends({
         }),
       };
       // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
-      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its desk is renewed onto it (library/organization/src/web/company/desk-model.ts), so the organization —
       // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
       // is now talking in, instead of staying on the old one while a stray one is opened.
       if (selected.orgId !== undefined) {

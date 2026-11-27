@@ -26,8 +26,7 @@ import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { S } from "../../lib/strings";
 import { useProject } from "../../state/project";
-import { TileIcon } from "../app-center";
-import { useWorkbenchActions } from "../workbenches";
+import { TileIcon, useWorkbenchActions } from "@prismshadow/penguin-library-workbench/web";
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
 
 /** Whether the group is folded, per browser: a viewer's convenience, kept through a reload. */

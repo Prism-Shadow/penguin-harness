@@ -17,7 +17,7 @@ import {
   wheelZoomFactor,
   zoomAt,
   type CanvasView,
-} from "../src/features/company/canvas-view";
+} from "@prismshadow/penguin-library-organization/web/company/canvas-view";
 
 /** Where a point of the drawing lands in the frame under a view — the inverse of what zoomAt has to preserve. */
 const project = (view: CanvasView, x: number, y: number) => ({

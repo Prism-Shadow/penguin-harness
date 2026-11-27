@@ -1,6 +1,6 @@
 /**
  * Where the full-page workbench's exit ball rests, as this browser remembers it
- * (features/workbenches/exit-ball-state.ts).
+ * (library/workbench/src/web/workbenches/exit-ball-state.ts).
  *
  * - Given a first visit, nothing stored, the ball rests in the bottom-right corner of the page.
  * - Given a placement the reader chose — another edge, another height, tucked away — the next
@@ -16,7 +16,7 @@ import {
   EXIT_BALL_KEY,
   readExitBall,
   writeExitBall,
-} from "../src/features/workbenches/exit-ball-state";
+} from "@prismshadow/penguin-library-workbench/web/workbenches/exit-ball-state";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const PAGE = { width: 1280, height: 720 };

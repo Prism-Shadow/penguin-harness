@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-workbench",
   "version": "0.2.20",
-  "description": "The workbenches domain: what a workbench is as the server holds it and shows it, the request/response pair its main handler speaks, and the host surface a workbench's SDK calls. A library package - the server imports it; nothing here imports the server.",
+  "description": "The workbenches domain: what a workbench is as the server holds it and shows it, the request/response pair its main handler speaks, and the host surface a workbench's SDK calls. A library package - the server imports it; nothing here imports the server. Its web half (./web, the workbench pages and the App Center) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -27,15 +27,26 @@
     "./workbench": {
       "types": "./dist/workbench.d.ts",
       "import": "./dist/workbench.js"
-    }
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "build": "tsup"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^8.3.0"
+  },
   "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

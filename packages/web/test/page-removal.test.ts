@@ -26,7 +26,7 @@ import {
 } from "../src/web-app/contributions";
 import { webAppDeps, type WebAppDeps } from "../src/web-app/deps";
 
-import { homePath } from "../src/features/company/company-nav";
+import { homePath } from "@prismshadow/penguin-library-organization/web/company/company-nav";
 import { HOME_PATHS, removedPagesOf, type WebAppPage } from "../src/web-app/page-table";
 
 import { setSafeMode } from "../src/rescue/safe-mode";

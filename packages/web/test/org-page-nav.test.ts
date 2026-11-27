@@ -1,11 +1,11 @@
 /**
- * The company mode's contributed-page nav rows (features/company/sidebar-mode.tsx
+ * The company mode's contributed-page nav rows (library/organization/src/web/company/sidebar-mode.tsx
  * `orgNavRowsOf`): a page with a `parent` that is one of the released org pages hangs as a
  * child under it, in table order; a page without a parent sits at the top level; a page whose
  * `parent` is not among these pages has nowhere to hang, so the nav leaves it out.
  */
 import { describe, expect, it } from "vitest";
-import { orgNavRowsOf } from "../src/features/company/sidebar-mode";
+import { orgNavRowsOf } from "@prismshadow/penguin-library-organization/web/company/sidebar-mode";
 import type { WebAppPage } from "../src/web-app/page-table";
 
 const Blank = () => null;

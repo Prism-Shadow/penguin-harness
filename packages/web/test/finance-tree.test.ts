@@ -1,5 +1,5 @@
 /**
- * A company's finance page, as pure data (features/company/finance-tree.ts).
+ * A company's finance page, as pure data (library/organization/src/web/company/finance-tree.ts).
  *
  * - The spend tree walks the reporting line depth first; an unknown manager starts a tree of
  *   its own. The ticket ledger nests children under parents the same way.
@@ -32,7 +32,7 @@ import {
   ticketRowTooltip,
   ticketTreeRows,
   visibleLedgerRows,
-} from "../src/features/company/finance-tree";
+} from "@prismshadow/penguin-library-organization/web/company/finance-tree";
 
 const employee = (agentId: string, reportsTo: string | null): OrgFinanceEmployee => ({
   agentId,

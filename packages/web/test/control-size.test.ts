@@ -206,7 +206,7 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/theme-packs-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/settings/uploads-section.tsx",
-  "features/admin/admin-users-page.tsx",
+  "library/organization/src/web/admin/admin-users-page.tsx",
 ]);
 
 /**

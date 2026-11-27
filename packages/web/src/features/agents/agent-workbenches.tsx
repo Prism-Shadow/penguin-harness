@@ -53,8 +53,11 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
 import { useWorkbenchRepair } from "../ai-create";
-import { useWorkbenchActions, workbenchLoadFailure } from "../workbenches";
-import type { LoadFailedActions } from "../workbenches";
+import {
+  useWorkbenchActions,
+  workbenchLoadFailure,
+  type LoadFailedActions,
+} from "@prismshadow/penguin-library-workbench/web";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
 import { cardBodyClick } from "../../lib/card-open";

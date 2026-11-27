@@ -7,7 +7,7 @@ import { PageSlot } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
 import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { ScopedChat } from "./scoped-chat";
-import { WorkbenchExitBall } from "../workbenches";
+import { WorkbenchExitBall } from "@prismshadow/penguin-library-workbench/web";
 import { useAppDockDrop } from "./app-dock-drop";
 import { WorkbenchDirectory } from "./workbench-directory";
 

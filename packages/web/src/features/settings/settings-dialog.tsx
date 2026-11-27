@@ -67,7 +67,7 @@ import { CompanySection } from "./company-section";
 import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
 import { ModuleRequestsPage, useModuleRequestsWaiting } from "./module-requests-page";
-import { AdminUsersSection } from "../admin";
+import { AdminUsersSection } from "@prismshadow/penguin-library-organization/web";
 import { shownSections } from "./contributed-sections";
 import { usePluginPagesIndex } from "./plugin-pages-index";
 import { PluginPageBody, PluginPageHeading, PluginPageIcon } from "./plugin-page";

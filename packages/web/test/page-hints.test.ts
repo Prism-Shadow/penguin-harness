@@ -1,5 +1,5 @@
 /**
- * The dismissible hints on company pages (features/company/page-hints.ts), remembered per
+ * The dismissible hints on company pages (library/organization/src/web/company/page-hints.ts), remembered per
  * user, Project, organization and page.
  *
  * - Each of those scopes separates the hint, and a signed-out browser gets its own bucket.
@@ -14,7 +14,7 @@ import {
   dismissHint,
   hintKey,
   isHintDismissed,
-} from "../src/features/company/page-hints";
+} from "@prismshadow/penguin-library-organization/web/company/page-hints";
 
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 

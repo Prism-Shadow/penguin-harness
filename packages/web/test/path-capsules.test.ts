@@ -1,5 +1,5 @@
 /**
- * Data paths in a ticket's text (features/company/path-capsules.ts and path-capsule.tsx): which
+ * Data paths in a ticket's text (library/organization/src/web/company/path-capsules.ts and path-capsule.tsx): which
  * stretches are paths — the `<app_data_dir>` placeholder, an absolute path through this
  * Project's data directory, a code span holding one path — where one stops against the
  * punctuation and CJK around it, folder or file, and the capsules the ticket Markdown draws
@@ -21,10 +21,14 @@ import {
   spellAsWritten,
   splitPaths,
   type PathPiece,
-} from "../src/features/company/path-capsules";
+} from "@prismshadow/penguin-library-organization/web/company/path-capsules";
 import { Md } from "@prismshadow/penguin-ui";
 
-import { PathCapsulesProvider, PathMarkdown, PathText } from "../src/features/company/path-capsule";
+import {
+  PathCapsulesProvider,
+  PathMarkdown,
+  PathText,
+} from "@prismshadow/penguin-library-organization/web/company/path-capsule";
 import { S } from "../src/lib/strings";
 
 const scope = { projectId: "default_project" };

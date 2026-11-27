@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The finance page's in-place budget editor (features/company/finance-page.tsx).
+ * The finance page's in-place budget editor (library/organization/src/web/company/finance-page.tsx).
  *
  * - Focus leaving the box writes nothing: only Enter or the check commits.
  * - Enter writes the typed amount, in USD whatever the reader's currency.
@@ -12,7 +12,7 @@ import { act, createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { BudgetEditor } from "../src/features/company/finance-page";
+import { BudgetEditor } from "@prismshadow/penguin-library-organization/web/company/finance-page";
 import { field, mount, type, unmountAll } from "./helpers/dom";
 
 async function openEditor(currency: "USD" | "CNY" = "USD") {

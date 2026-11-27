@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A ticket's detail dialog (features/company/ticket-dialog.tsx): its sections edit in place,
+ * A ticket's detail dialog (library/organization/src/web/company/ticket-dialog.tsx): its sections edit in place,
  * under the settings commit model, against a fake of the ticket routes.
  *
  * - A section's Save waits for an edit and writes it at once, with no second question.
@@ -15,9 +15,12 @@ import type { OrgTicketDetail } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { TicketDialogHost } from "../src/features/company/ticket-dialog";
+import { TicketDialogHost } from "@prismshadow/penguin-library-organization/web/company/ticket-dialog";
 import { AuthProvider } from "../src/state/auth";
-import { CompanyProvider, useCompany } from "../src/features/company/company-state";
+import {
+  CompanyProvider,
+  useCompany,
+} from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { ProjectProvider } from "../src/state/project";
 import { ThemeProvider } from "../src/state/theme";
 import { ADMIN_ME } from "./helpers/admin-settings";

@@ -15,7 +15,7 @@
 import { createElement as h, type ComponentType } from "react";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { ChatDrafts } from "../src/features/chat";
-import { CompanyProvider } from "../src/features/company/company-state";
+import { CompanyProvider } from "@prismshadow/penguin-library-organization/web/company/company-state";
 import type { SidebarMode } from "../src/lib/sidebar-contributions";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

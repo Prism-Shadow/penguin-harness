@@ -7,7 +7,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { toastApiError } from "../../../lib/toast-api-error";
 import * as api from "../../../api/endpoints";
-import { switchDeskModel } from "../../company";
+import { switchDeskModel } from "@prismshadow/penguin-library-organization/web";
 import { ApiError } from "../../../api/client";
 import { S } from "../../../lib/strings";
 import { machineForSession } from "../../../lib/session-machines";
@@ -89,7 +89,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         }),
       };
       // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
-      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its desk is renewed onto it (library/organization/src/web/company/desk-model.ts), so the organization —
       // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
       // is now talking in, instead of staying on the old one while a stray one is opened.
       if (selected.orgId !== undefined) {

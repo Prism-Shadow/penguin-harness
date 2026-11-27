@@ -66,7 +66,7 @@ export const CONTEXT_MENU_ACTIONS = [
 export const HOVER_ROW_ACTIONS: readonly (typeof CONTEXT_MENU_ACTIONS)[number][] = ["archive"];
 
 /**
- * A company desk row's menu (features/company/org-session-groups.tsx). A desk's title and its
+ * A company desk row's menu (library/organization/src/web/company/org-session-groups.tsx). A desk's title and its
  * lifecycle belong to the organization — the employee names it, hiring and firing open and
  * close it — so rename, archive, delete and pin are not its reader's to run. What is left is
  * which Session this is and what it is bound to.

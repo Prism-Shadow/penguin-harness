@@ -22,7 +22,7 @@ import {
   workspaceTail,
   type OrgTreeLayout,
   type OrgTreeNode,
-} from "../src/features/company/org-chart-tree";
+} from "@prismshadow/penguin-library-organization/web/company/org-chart-tree";
 
 const employees = [
   { agentId: "ceo", reportsTo: null },

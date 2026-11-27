@@ -14,7 +14,7 @@ import {
   createTicketPress,
   edgeScrollStep,
   type PressStart,
-} from "../src/features/company/ticket-press";
+} from "@prismshadow/penguin-library-organization/web/company/ticket-press";
 
 function setup(pointerType = "mouse") {
   const calls: string[] = [];

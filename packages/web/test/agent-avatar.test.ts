@@ -4,7 +4,7 @@
  * field above the name, with the profile row's controls (features/agents/agent-avatar-field.tsx
  * over the shared components/ui/avatar-picker.tsx), and drawn wherever the Agent is, looked up
  * once (lib/agent-avatar.ts) — with an organization's own picture of its employee first on
- * company surfaces (features/company/employee-avatar.tsx).
+ * company surfaces (library/organization/src/web/company/employee-avatar.tsx).
  *
  * - The page's header and the Overview's avatar field draw the Agent's default until it has a
  *   picture. Change avatar decodes the picked file and opens the crop dialog; nothing is written
@@ -34,7 +34,7 @@ import type {
 import { hasUnsaved, toastStore } from "@prismshadow/penguin-ui";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { AgentSelect } from "../src/features/agents/agent-select";
-import { EmployeeAvatar } from "../src/features/company/employee-avatar";
+import { EmployeeAvatar } from "@prismshadow/penguin-library-organization/web/company/employee-avatar";
 import { CompanyContext, type CompanyContextValue } from "../src/lib/company-context";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

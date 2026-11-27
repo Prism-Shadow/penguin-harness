@@ -1,5 +1,5 @@
 /**
- * The channel composer's draft (features/company/mention-draft.ts): a picked mention shows the
+ * The channel composer's draft (library/organization/src/web/company/mention-draft.ts): a picked mention shows the
  * name a sent message renders and still goes out as the token the server resolves. It is one
  * block — an edit that reaches into it takes all of it, the caret and the selection step over
  * it, an input method's edit waits for compositionend, an undo brings it back whole, and a copy,
@@ -7,7 +7,7 @@
  * text that would otherwise swallow its token.
  */
 import { describe, expect, it } from "vitest";
-import { mentionRuns } from "../src/features/company/channel-mentions";
+import { mentionRuns } from "@prismshadow/penguin-library-organization/web/company/channel-mentions";
 import {
   EMPTY_DRAFT,
   draftApplyClip,
@@ -26,7 +26,7 @@ import {
   serializeClip,
   type DraftHistory,
   type MentionDraft,
-} from "../src/features/company/mention-draft";
+} from "@prismshadow/penguin-library-organization/web/company/mention-draft";
 
 /** Types `value` at the end of the draft, the way a keystroke or a paste reports it. */
 const typeAtEnd = (d: MentionDraft, value: string): MentionDraft =>

@@ -8,6 +8,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
+import { webHalfAliases } from "./vite.config";
 
 /**
  * A path in vite's spelling: forward slashes on every OS. vite hands `resolveId` its importers
@@ -49,6 +50,8 @@ const socketStandInPlugin: Plugin = {
 
 export default defineConfig({
   plugins: [socketStandInPlugin],
+  // The domain packages' web halves and the host seams they consume (see vite.config.ts).
+  resolve: { alias: webHalfAliases() },
   test: {
     environment: "node",
     // The scroll-driven component tests simulate a run of animation frames over a tall trace;

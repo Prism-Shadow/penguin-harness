@@ -1,5 +1,5 @@
 /**
- * A channel's system lines in the reader's language (features/company/channel-notices.ts).
+ * A channel's system lines in the reader's language (library/organization/src/web/company/channel-notices.ts).
  *
  * - Every kind the contract declares has wording in both languages, even for a notice that is
  *   missing its parameters.
@@ -11,7 +11,10 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OrgChannelNotice } from "@prismshadow/penguin-server/api";
-import { NOTICE_KINDS, noticeText } from "../src/features/company/channel-notices";
+import {
+  NOTICE_KINDS,
+  noticeText,
+} from "@prismshadow/penguin-library-organization/web/company/channel-notices";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

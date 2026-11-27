@@ -22,7 +22,7 @@ import {
   lastMessageId,
   messageCount,
   shiftDate,
-} from "../src/features/company/channel-stream";
+} from "@prismshadow/penguin-library-organization/web/company/channel-stream";
 
 let seq = 0;
 const msg = (sender: string, time: string, hop = 0): OrgChannelMessage => ({

@@ -40,7 +40,7 @@ const SCAN = scanSources([".tsx", ".ts"]);
 /** [module, component, why its dialog closes without the guard]. */
 const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
   [
-    "features/admin/admin-users-page.tsx",
+    "library/organization/src/web/admin/admin-users-page.tsx",
     "DeleteUserDialog",
     "a two-step confirmation with nothing typed",
   ],
@@ -50,7 +50,7 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "its dialogs build a chat prompt (edit, add) or pick an import mode; none of them writes config",
   ],
   [
-    "features/company/org-dialogs.tsx",
+    "library/organization/src/web/company/org-dialogs.tsx",
     "CreateOrganizationDialog",
     "its draft is kept in the browser on every keystroke and restored on reopen (spec 06), so a close loses nothing",
   ],

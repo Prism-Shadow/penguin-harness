@@ -1,5 +1,5 @@
 /**
- * The budget box (features/company/budget-input.ts): a monthly cap stored in USD, typed and
+ * The budget box (library/organization/src/web/company/budget-input.ts): a monthly cap stored in USD, typed and
  * shown in whichever currency the reader picked.
  *
  * - A USD box is stored as typed; a CNY box is divided by the fixed rate and rounded to cents.
@@ -16,7 +16,7 @@ import {
   isBudgetText,
   toStoredUsd,
   unitLabel,
-} from "../src/features/company/budget-input";
+} from "@prismshadow/penguin-library-organization/web/company/budget-input";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
