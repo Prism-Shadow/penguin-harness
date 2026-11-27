@@ -271,7 +271,7 @@ export const zh = {
     pageSize: "页面尺寸",
     pageSizeFit: "页面尺寸：适应面板",
     pageSizeFixed: (width: number, height: number, percent: number | null): string =>
-      `页面尺寸：${width} × ${height}${percent === null ? "" : ` · ${percent}%`}`,
+      `页面尺寸：${width} × ${height}${percent === null ? "" : ` (${percent}%)`}`,
     /** Its menu: back to the panel's size, a size, or the custom size dialog. */
     fitPanel: "适应面板",
     sizeChoice: (width: number, height: number): string => `${width} × ${height}`,
@@ -594,7 +594,7 @@ export const en: BrowserStrings = {
     pageSize: "Page size",
     pageSizeFit: "Page size: fit to panel",
     pageSizeFixed: (width: number, height: number, percent: number | null): string =>
-      `Page size: ${width} × ${height}${percent === null ? "" : ` · ${percent}%`}`,
+      `Page size: ${width} × ${height}${percent === null ? "" : ` (${percent}%)`}`,
     fitPanel: "Fit to panel",
     sizeChoice: (width: number, height: number): string => `${width} × ${height}`,
     customSize: "Custom size…",
