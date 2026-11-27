@@ -302,7 +302,7 @@ describe("agent-state-gix interchange with real Git", () => {
     const blob = run(c.gitdir, ["cat-file", "blob", gixOid]).stdout.toString();
     expect(blob).toBe("written by gitoxide\n");
     // And the commit id both sides see is the same object: gitcl's rev-parse answers it.
-    const tip = run(c.gitdir, ["rev-parse", c.ref]).stdout.toString().trim();
+    const tip = run(c.gitdir, ["rev-parse", "refs/heads/gitcl-first"]).stdout.toString().trim();
     expect(tip).toBe(sha);
     const fsck = run(c.gitdir, ["fsck", "--strict"]);
     expect(fsck.status).toBe(0);
