@@ -103,6 +103,7 @@ const TOKENS_ONLY: readonly string[] = [
   "plugins/browser-automation/src/web/chrome-surface.tsx",
   "plugins/browser-automation/src/web/new-tab-page.tsx",
   "plugins/browser-automation/src/web/pairing-dialog.tsx",
+  "library/session/src/web/chat/compaction-handover.tsx",
   "features/company/handbook-page.tsx",
   "features/model-picker/model-picker-modal.tsx",
   "features/settings/shortcut-recorder.tsx",
