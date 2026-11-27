@@ -11,8 +11,6 @@ crate-type = ["cdylib"]
 napi = "3"
 napi-derive = "3"
 gix = "0.91"
-gix-object = "0.50"
-gix-date = "0.11"
 
 [profile.release]
 lto = true

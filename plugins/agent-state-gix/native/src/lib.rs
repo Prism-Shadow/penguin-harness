@@ -11,8 +11,6 @@
 //! Every step writes the same bytes as the real-Git engines: files `100644`, trees in git's
 //! order, the message whole, both identity lines from the harness's zone — so the same input is
 //! the same commit under either, and the interchange tests pin that.
-use std::path::PathBuf;
-
 use napi::bindgen_prelude::Buffer;
 use napi::{Error, Result, Status};
 use napi_derive::napi;
@@ -112,7 +110,8 @@ pub fn commit(input: CommitInput) -> Result<String> {
             .find_commit(id)
             .map_err(|e| refuse(format!("parent {} is not in the repository: {e}", input.parent.as_deref().unwrap_or(""))))?
             .tree_id()
-            .map_err(|e| refuse(format!("parent has no tree: {e}")))?,
+            .map_err(|e| refuse(format!("parent has no tree: {e}")))?
+            .detach(),
         None => gix::hash::ObjectId::empty_tree(repo.object_hash()),
     };
 
@@ -140,7 +139,7 @@ pub fn commit(input: CommitInput) -> Result<String> {
                     .map_err(|e| refuse(format!("cannot write {}: {e}", file.rel)))?;
                 let path = format!("{}/{}", input.rel, file.rel);
                 editor
-                    .upsert(path.as_str(), gix_object::tree::EntryKind::Blob, blob.detach())
+                    .upsert(path.as_str(), gix::object::tree::EntryKind::Blob, blob.detach())
                     .map_err(|e| refuse(format!("cannot add {}: {e}", file.rel)))?;
             }
         }
