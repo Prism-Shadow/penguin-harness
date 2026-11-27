@@ -41,6 +41,9 @@ function fakeService(calls: Call[]): OrganizationService {
   const handler: ProxyHandler<Record<string, unknown>> = {
     get: (_target, method) => {
       if (typeof method !== "string") return undefined;
+      // Every write first asks where the organization runs (a mirror refuses writes); these
+      // all run here, and the question is not one of the calls a route test is about.
+      if (method === "runsOn") return async () => null;
       return async (...args: unknown[]) => {
         calls.push({ method, args });
         switch (method) {
@@ -267,6 +270,9 @@ describe("organization routes", () => {
         "olivia",
         // Who creates it, for the CEO's plugins' server modules.
         { userId: "olivia", isAdmin: false },
+        // Whether the caller administers this server: what lets a create on a machine switch
+        // company mode on over there. A Project's owner is not one by that alone.
+        { admin: false },
       ],
     });
   });
@@ -286,6 +292,7 @@ describe("organization routes", () => {
         { orgId: "acme", mission: "做一个市场", language: "zh" },
         "olivia",
         { userId: "olivia", isAdmin: false },
+        { admin: false },
       ],
     });
     expect((await owner.patch(`${base}/acme`, { language: "de" })).status).toBe(400);

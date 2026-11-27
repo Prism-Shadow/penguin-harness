@@ -222,6 +222,16 @@ export interface InstallResponse {
    * nothing on it — never treat it as a new install.
    */
   installId: string | null;
+  /**
+   * The commit this server runs: the pushed harness's source revision when a hot update put
+   * one here (the sha of its `g<sha>`, as short as the pusher's describe spelt it), else the
+   * build's own commit; null when neither is known. Public with the id: it names a commit
+   * and nothing about the machine (company-proposals reads it to place a server deployment on
+   * the PR graph).
+   */
+  commit: string | null;
+  /** The describe that commit came from (the harness revision, else the build's). */
+  describe: string | null;
 }
 
 export interface MeResponse {
@@ -4289,6 +4299,13 @@ export interface LanguageIndexResponse {
 export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
+import type { WorkflowVersion } from "../mechanisms/workflows.js";
+export type {
+  WorkflowInfo,
+  WorkflowVersion,
+  WorkflowRequest,
+  WorkflowResponse,
+} from "../mechanisms/workflows.js";
 export type {
   AppCenterShortcut,
   WorkbenchAppCenter,
@@ -5090,6 +5107,12 @@ export interface OrganizationSummary {
   blockedTickets: number;
   createdBy: string;
   spend: OrgSpendSummary;
+  /**
+   * The machine this organization RUNS on, when that is not the server answering: the one its
+   * shared workspace is on. The organization's own requests (`…/organizations/:orgId/…`) are
+   * answered there; this server holds a mirror. Absent or null: it runs here.
+   */
+  machineId?: string | null;
   /** Present when `org_config.toml` / `org_chart.yaml` fail validation: the organization is listed but every automatic trigger is held until it is fixed. */
   invalid?: string;
 }
@@ -5313,6 +5336,13 @@ export interface OrgChannelItem {
   unread: number;
   /** People only; 0 for an employee caller. */
   mentionsMe: number;
+  /**
+   * The default recipients, `agent:<id>` / `user:<id>` each: a message with no @ at all is
+   * treated as if it had mentioned them — an employee's desk is triggered, a person sees it
+   * counted under "@me". Empty when the channel has none; a server that carries no notify
+   * list omits the member.
+   */
+  notify?: string[];
   lastMessageAt: string | null;
 }
 
@@ -5343,6 +5373,12 @@ export interface OrgChannelPatchRequest {
   name?: string;
   purpose?: string;
   archived?: boolean;
+  /**
+   * Replaces the default recipients; `[]` clears them. Each entry must be a member of the
+   * channel (`agent:<id>` / `user:<id>`), or the whole request is refused with
+   * `notify_not_member`.
+   */
+  notify?: string[];
 }
 
 export interface OrgChannelMemberRequest {
@@ -5483,6 +5519,12 @@ export interface OrganizationCreateRequest {
   timezone?: string;
   /** An existing absolute directory to use as the shared workspace; default = the organization's own `workspace/`. */
   workspace?: string;
+  /**
+   * The machine `workspace` is on, by its own id (one of the Project's connected machines);
+   * absent = this server. The organization RUNS there — that server opens its desks and drives
+   * its calendar — and belongs to the Project here, which keeps a mirror of its files.
+   */
+  workspaceMachine?: string;
   /** The model for desks and ticket sessions (a configured pair); default = the Project default. */
   model?: { provider: string; modelId: string };
   /**
@@ -6796,3 +6838,1074 @@ export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
   event: DesktopBrowserEvent;
 }
+
+// The proposal system (plugins/company-proposals): its wire types, shared with the web app.
+
+// ---------------------------------------------------------------------------
+// Company proposals (the company-proposals plugin: /api/projects/:p/organizations/:o/proposals)
+//
+// The plugin owns the store and the routes; the page that draws a proposal is one of the
+// web app's builtin renderers, so the data contract lives here beside the other DTOs the
+// web build compiles against. Absent the plugin, none of these routes exist.
+// ---------------------------------------------------------------------------
+
+/** A proposal's lifecycle; a revision never changes it, a request for changes puts `ready` back to `drafting`. */
+export type ProposalStatus = "drafting" | "ready" | "approved" | "merged" | "rejected";
+
+/** One pair of the scope: a file, and optionally a pattern (a regular expression, with capture groups) over the names it touches. */
+/** What a scope entry does to its file: edit or delete one that exists, create a new one, or rename `from` to `file`. */
+export type ProposalScopeKind = "edit" | "new" | "delete" | "rename";
+
+/**
+ * A scope file's state in the working tree, as the owning server finds it when the proposal
+ * is read (under the proposal's `root`): `exists`, `missing` (an edit, a delete or a rename's
+ * source that is not there), `new` (a new file not written yet), `deleted` (a delete done),
+ * `renamed` (a rename whose source is still there and whose target is not yet).
+ */
+export type ProposalScopeState = "exists" | "new" | "missing" | "deleted" | "renamed";
+
+/**
+ * One entry of the scope: a file (relative to the proposal's `root`), what the change does to
+ * it, and optionally a pattern (a regular expression, capture groups allowed) over the names
+ * it touches. `from` is a rename's old path and appears on renames only.
+ */
+export interface ProposalScopeEntry {
+  kind: ProposalScopeKind;
+  file: string;
+  from?: string;
+  name?: string;
+  /** Computed on read (`GET …/:number`), never stored. */
+  state?: ProposalScopeState;
+}
+
+/** A listed test's state under the proposal's root, computed on read: an existing or deleted test is there or missing; a new one is there already (added to an existing file) or still to be written. */
+export type ProposalTestState = "exists" | "new" | "missing";
+
+/**
+ * One test that bears on the change: an existing one, one the change adds, or one it removes (`kind`), in a
+ * group (`unit`, `integration`, `e2e`, `bench` by convention — any short word is accepted),
+ * with a file (relative to `root`), optionally a pattern over the test names in it (a regular
+ * expression, like a scope entry's `name`), and a description of what it checks.
+ */
+export interface ProposalTestEntry {
+  kind: "existing" | "new" | "delete";
+  file: string;
+  name?: string;
+  group: string;
+  description: string;
+  /** Computed on read (`GET …/:number`), never stored. */
+  state?: ProposalTestState;
+}
+
+/** One paragraph of a section: the unit a comment anchors to. `id` is stable across revisions for unchanged text. */
+export interface ProposalParagraph {
+  id: string;
+  text: string;
+}
+
+export interface ProposalSection {
+  id: string;
+  heading: string;
+  paragraphs: ProposalParagraph[];
+}
+
+export type ProposalMaterialKind = "pr" | "issue" | "branch" | "doc" | "ticket" | "url";
+
+/** Where a GitHub pull request stands, as read from GitHub when the proposal is read. */
+export type ProposalPrStatus = "draft" | "open" | "merged" | "closed";
+
+export interface ProposalMaterial {
+  kind: ProposalMaterialKind;
+  label: string;
+  url: string;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+  /** A `pr` material on GitHub: its state, looked up on read and cached briefly — never stored; absent when unknown. */
+  status?: ProposalPrStatus;
+  /** When `status` was read. */
+  statusCheckedAt?: string;
+}
+
+/** A person's comment on one paragraph. Pending (`batchId` null) until the person requests changes; then part of a batch the author works through. */
+/**
+ * A person's comment on a passage: a range in one section's Markdown source (the section's
+ * paragraphs joined by a blank line, see the plugin's `sectionSource`), stored as offsets and
+ * re-anchored by its `quote` on every revision — agents never see the offsets, they see the
+ * passage wrapped in `⟦<id>⟧…⟦/<id>⟧` markers. Pending (`batchId` null) until the person
+ * requests changes; then part of a batch the author works through.
+ */
+export interface ProposalComment {
+  id: string;
+  /**
+   * What the comment is on, when it is not a passage of a section; absent for a passage (then
+   * `sectionId`, `range` and `quote` anchor it). A targeted comment carries `sectionId: ""` and an
+   * empty range, and its `quote` is what it was written on: the file for a scope or test entry
+   * or a changed file, the lines themselves (joined by `\n`) for a line range.
+   */
+  target?: ProposalCommentTarget;
+  /** The section the range lies in (section ids follow the heading, so they survive revisions). */
+  sectionId: string;
+  /** Offsets into the section's source, `[start, end)`, of the revision `revision`. */
+  range: { start: number; end: number };
+  /** The passage the range covered when written — what re-anchors it after a revision. */
+  quote: string;
+  /**
+   * The paragraph the range starts in, derived; absent when the passage is not in the current
+   * revision (the comment is then listed as one on revision `revision`).
+   */
+  paragraphId?: string;
+  /** The revision the range refers to: the current one, or the last one the passage was found in. */
+  revision: number;
+  text: string;
+  by: string;
+  at: string;
+  batchId: string | null;
+  resolved?: { by: string; at: string; text: string };
+}
+
+export type ProposalEventKind =
+  | "created"
+  | "revised"
+  | "ready"
+  | "changes_requested"
+  | "implementation_started"
+  | "material_added"
+  | "feedback"
+  | "runtime_feedback"
+  | "resolved"
+  | "approved"
+  | "merged"
+  | "rejected"
+  /** A channel message the plugin had to send did not go out (the text says to whom, and why). */
+  | "notify_failed"
+  /** The brief was rewritten (the text is the new brief); the revisions are untouched. */
+  | "brief_edited"
+  /** The author was replaced (the text is `<before> → <after>`, both agent ids); revisions, comments and approvals are untouched. */
+  | "author"
+  /** A person opened a discussion with the owner (the text is the owner's agent id). */
+  | "discussion_started"
+  /** A discussion's conclusion reached the owner's desk (the text is the conclusion). */
+  | "discussion_concluded";
+
+/** One thing that happened to a proposal; `seq` orders every write of the organization and is what a read position points at. */
+export interface ProposalEvent {
+  seq: number;
+  at: string;
+  kind: ProposalEventKind;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  /** One line for the timeline: the feedback text, the batch size, the material's label, the reason. */
+  text?: string;
+  /** The revision a `revised` event produced. */
+  revision?: number;
+  /** What a `material_added` event added (a material, or the impl PR): its link. */
+  url?: string;
+}
+
+/** A proposal as the queue lists it. */
+export interface ProposalItem {
+  number: number;
+  title: string;
+  status: ProposalStatus;
+  revision: number;
+  /** The employee that writes it (`agentId`). */
+  author: string;
+  /** The employee that builds it, once `implement` named one. */
+  implementer: string | null;
+  /** The principal that started it: `user:<id>` for a person, `agent:<id>` for an employee proposing on its own. */
+  delegatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Events after the caller's read position, not counting the caller's own. */
+  unread: number;
+  /** The caller's pending comments (people only; 0 for an employee). */
+  pendingComments: number;
+  materials: ProposalMaterial[];
+  /** The one pull request the proposal is implemented by (`penguin org proposal impl`): the PR on its impl branch; null until registered, absent from a server older than impl PRs. */
+  implPr?: ProposalImplPr | null;
+  /** The branch pair the proposal is implemented on; null until registered, absent from a server older than impl branches. */
+  impl?: ProposalImplBranch | null;
+  /**
+   * The roadmaps whose items lead to it — an item's approval created it, or the item adopted or
+   * linked it — in roadmap order; `[]` without the roadmaps plugin. Present on the reads (the
+   * queue's list, a proposal's detail); a write's answer leaves it out.
+   */
+  roadmaps?: ProposalRoadmapRef[];
+}
+
+/** A roadmap a proposal belongs to, and the key of the item that leads to it there. */
+export interface ProposalRoadmapRef {
+  number: number;
+  name: string;
+  itemKey: string;
+}
+
+/**
+ * One side of an impl branch: a git remote of the proposal's repository that points at GitHub
+ * (`origin`), or a GitHub repository written out (`owner/repo`), and a branch on it.
+ */
+export interface ProposalBranchRef {
+  remote: string;
+  branch: string;
+}
+
+/**
+ * A declared side as the proposal views show it: the branch's page on GitHub
+ * (`https://github.com/<owner>/<repo>/tree/<branch>`), or why the server cannot name one — the
+ * remote is not in the plugin's `origins` setting and not a GitHub remote of the shared
+ * workspace. Computed for the view on every read; the registration itself is unchanged. Absent
+ * from a server older than branch links.
+ */
+export interface ProposalImplBranchSide extends ProposalBranchRef {
+  url?: string | null;
+  /** Why `url` is null; null when there is one. */
+  unresolved?: string | null;
+}
+
+/**
+ * A proposal's implementation: a head branch and the base it is measured against — the patch
+ * is the merge base of the two up to the head — and the PR opened for the head, once one is.
+ * A registration that named only a PR has `head` and `base` null: they are that PR's, read
+ * from GitHub where they are needed.
+ */
+export interface ProposalImplBranch {
+  head: ProposalImplBranchSide | null;
+  base: ProposalImplBranchSide | null;
+  /** The PR's URL, null until one is registered. */
+  pr: string | null;
+  /** `agent:<id>` or `user:<id>`: who registered the latest of it. */
+  by: string;
+  at: string;
+}
+
+/**
+ * A proposal's impl PR: one per proposal, and a PR is the impl PR of at most one proposal.
+ * Registering another replaces it. The `pr` materials stay what they were — the history,
+ * the official twin — and are never read to guess this.
+ */
+export interface ProposalImplPr {
+  url: string;
+  /** `<owner>/<repo>#<n>`. */
+  label: string;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+}
+
+/**
+ * `PUT …/:number/impl`: a branch pair (`head` and `base` together), a PR (`url`), or both. A PR
+ * registered onto a declared head must have that head; its base replaces the declared one.
+ */
+export interface ProposalImplRequest {
+  url?: string;
+  head?: ProposalBranchRef;
+  base?: ProposalBranchRef;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/**
+ * `POST …/proposals/adopt-impl` (anybody in the organization): every proposal without an impl PR takes the
+ * latest `pr` material on the delivery repository as one: for proposals whose PR was attached
+ * as a material and never registered as the impl.
+ */
+export interface ProposalAdoptImplResponse {
+  adopted: Array<{ number: number; url: string }>;
+  /** Adopted, but more than one `pr` material was on the delivery repository: the latest was taken. */
+  ambiguous: Array<{ number: number; urls: string[] }>;
+  /** Not adopted: no `pr` material there, or that PR is already another proposal's. */
+  skipped: Array<{ number: number; reason: string }>;
+}
+
+/** One side of an impl branch as GitHub names it: the remote it was declared with (null when read off a PR), the repository, the branch. */
+export interface ProposalResolvedBranch {
+  remote: string | null;
+  /** `owner/repo`. */
+  repo: string;
+  branch: string;
+}
+
+/** One file of an impl branch's patch, as GitHub's comparison lists it. */
+export interface ProposalImplDiffFile {
+  path: string;
+  /** `added`, `removed`, `modified`, `renamed`, `copied`, `changed` or `unchanged`. */
+  status: string;
+  /** The path before a rename; null otherwise. */
+  from: string | null;
+  additions: number;
+  deletions: number;
+  /** The file's unified hunks; null when GitHub sent none (a binary file, or one too large). */
+  patch: string | null;
+}
+
+/** `GET …/:number/impl/diff`: the impl branch's patch — the merge base of base and head, up to head. */
+export interface ProposalImplDiff {
+  head: ProposalResolvedBranch;
+  base: ProposalResolvedBranch;
+  /** The head commit, full sha. */
+  headSha: string;
+  mergeBase: string | null;
+  /** Commits on head past the merge base, and on base past it. */
+  ahead: number;
+  behind: number;
+  files: ProposalImplDiffFile[];
+  /** GitHub lists at most 300 files of a comparison: true when there were more. */
+  truncated: boolean;
+  /** The comparison on GitHub. */
+  compareUrl: string;
+  /** The impl PR, null when none is registered. */
+  pr: string | null;
+}
+
+/** One line of a hunk: added, deleted, or context on both sides. */
+export interface ProposalImplDiffLine {
+  kind: "add" | "del" | "context";
+  text: string;
+}
+
+/** One hunk of a file's diff: where it starts on each side and how many lines it spans there. */
+export interface ProposalImplHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  /** The text after the second `@@` (the enclosing function, when git found one); empty otherwise. */
+  section: string;
+  lines: ProposalImplDiffLine[];
+}
+
+/** One file of an impl branch's structured diff. */
+export interface ProposalImplChangedFile {
+  path: string;
+  /** The path before a rename; null otherwise. */
+  oldPath: string | null;
+  status: "added" | "deleted" | "modified" | "renamed";
+  additions: number;
+  deletions: number;
+  /** A binary file: counts are zero and there are no hunks. */
+  binary: boolean;
+  /**
+   * Why the hunks are left out while the counts stay: `tooLarge` — the file is over the per-file
+   * cap; `diffLimit` — the whole diff reached its cap before this file; `noPatch` — GitHub sent
+   * no patch for it (a binary file or one too large, which GitHub does not tell apart). Null when
+   * the hunks are given.
+   */
+  omitted: "tooLarge" | "diffLimit" | "noPatch" | null;
+  hunks: ProposalImplHunk[];
+}
+
+/**
+ * `GET …/:number/impl/changes[?w=1]`: the impl branch's diff, file by file with hunks — the merge
+ * base of base and head, up to head. Read from the delivery repository's mirror, or, when the
+ * mirror cannot answer, parsed from GitHub's comparison (`source: "github"`).
+ */
+export interface ProposalImplChanges {
+  head: ProposalResolvedBranch;
+  base: ProposalResolvedBranch;
+  headSha: string;
+  baseSha: string;
+  mergeBase: string | null;
+  source: "mirror" | "github";
+  /** Why the mirror did not answer; null when it did. */
+  fallbackReason: string | null;
+  /** Whether whitespace changes were ignored: asked for and honoured (GitHub's comparison cannot). */
+  ignoreWhitespace: boolean;
+  files: ProposalImplChangedFile[];
+  /** The sums over `files`. */
+  additions: number;
+  deletions: number;
+  /** GitHub lists at most 300 files of a comparison: true when there were more (`source: "github"` only). */
+  truncated: boolean;
+  /** The caps the hunks were read under, in bytes: one file's content, and the whole diff's text. */
+  limits: { fileBytes: number; diffBytes: number };
+  compareUrl: string;
+}
+
+/** How one head stands against another: `ahead` = it contains the other and more. */
+export type ProposalGraphRelation = "same" | "ahead" | "behind" | "diverged" | "unknown";
+
+/** The PR an origin has on a node's branch, and how its head stands against the node's. */
+export interface ProposalGraphOriginPr {
+  /** The origin's name, as the settings list it (`fork`, `origin`). */
+  origin: string;
+  number: number;
+  url: string;
+  draft: boolean;
+  head: string;
+  relation: ProposalGraphRelation;
+}
+
+/**
+ * A merged or closed PR the walk from a node's declared base passed through on its way to the
+ * node's parent: the declared base was that PR's head branch, and the walk went on from that PR's
+ * own base. A `closed` one was never merged, so its commits are still in the node's layer —
+ * dropping them takes a restack of the layer onto the one below.
+ */
+export interface ProposalGraphVia {
+  number: number;
+  state: "merged" | "closed";
+}
+
+/**
+ * Why a node is off the chain:
+ * - `old-line`: its head neither contains its parent's head nor forked inside the parent's own layer
+ *   (for the bottom layer, whose parent is the base branch: no fork point on the base's history);
+ * - `unread`: its edge could not be compared;
+ * - `no-base`: its declared base is neither the base branch nor the head branch of a node or of a merged or closed PR, so it is not drawn;
+ * - `not-taken`: it stacks on a fork (`at`, a node's key; `""` = the base branch) where another branch keeps going;
+ * - `above`: it stacks on `at`, which is off the chain itself;
+ * - `cycle`: its declared bases lead back to itself.
+ */
+export type ProposalGraphOffReason =
+  "old-line" | "unread" | "no-base" | "not-taken" | "above" | "cycle";
+
+/**
+ * Why a node is off the chain (`reason`, and the node `at` it names), with what fixing it takes:
+ * `missing` is a declared base the graph draws no node for, and `by` the proposal behind it — for
+ * `no-base`, the proposal that registered that base; when a merged PR claimed the base branch
+ * away (a proposal whose impl head it is registered that PR, so the branch is no node), that
+ * proposal and its PR (`pr`). Both absent when there is nothing more to say.
+ */
+export interface ProposalGraphOff {
+  reason: ProposalGraphOffReason;
+  at: string | null;
+  missing?: string;
+  by?: { proposal: number; pr?: string };
+}
+
+/**
+ * A commit in the graph: an open PR on the delivery repository, or a proposal's impl branch on it
+ * that no open PR claims yet (a branch node: `number` and `url` are null). Once a PR is opened on
+ * the branch, the same node carries its number.
+ */
+export interface ProposalGraphNode {
+  /**
+   * The node's identity: its head branch. A second open PR on a branch name another node has
+   * (a PR from another repository) is `<branch>#<number>`. `""` is never a node's key: it names
+   * the base branch wherever a key is expected.
+   */
+  key: string;
+  /** The open PR; null for a branch node. */
+  number: number | null;
+  url: string | null;
+  /** The PR's title; a branch node's proposal's title. */
+  title: string;
+  draft: boolean;
+  branch: string;
+  head: string;
+  /**
+   * The declared base branch — the PR's `baseRefName`, or the base a branch node's impl
+   * registered: a declaration, checked against ancestry below.
+   */
+  base: string;
+  /** The node the declared base leads to, through the PRs in `via` (its key; `""` = the base branch); null = neither (`off.reason` says why). */
+  parent: string | null;
+  /** The merged or closed PRs between the declared base and `parent`, nearest first; empty when the base is the parent's branch. */
+  via: ProposalGraphVia[];
+  /** The head against the parent's head. */
+  relation: ProposalGraphRelation;
+  /** Commits the head has that the parent's head has not (the layer's size); null when unknown. */
+  ahead: number | null;
+  behind: number | null;
+  /**
+   * The edge to the parent holds: the head contains the parent's, or the commits it lacks carry no
+   * content, or it forked inside the parent's own layer (then `stale`) — for the bottom layer, on
+   * the base branch's history (then `stale`, `behind` = the commits the base gained since).
+   */
+  stacked: boolean;
+  /**
+   * Stacked only because it forked inside the parent's own layer, which has moved on since (for the
+   * bottom layer: the base branch moved on): a restack is pending.
+   */
+  stale: boolean;
+  /** On the chain: reached from the base branch through stacked edges, taking one branch at each fork. */
+  onChain: boolean;
+  /** Why the node is off the chain; null when it is on it. */
+  off: ProposalGraphOff | null;
+  /** More than one stacked child: the chain forks here. */
+  fork: boolean;
+  /** The proposal whose impl this is; null for a PR no proposal registered (never for a branch node). */
+  proposal: { number: number; title: string; status: ProposalStatus } | null;
+  /** The other origins' PRs on the same branch. */
+  origins: ProposalGraphOriginPr[];
+}
+
+/**
+ * Why a proposal's impl is not on the graph:
+ * - `counterpart`: an open PR on the delivery repository (`at`) has the impl PR's head branch — the registration names the other one;
+ * - `merged`: merged, into `into` (for an impl branch with no PR: the proposal is merged, into the base it registered);
+ * - `in-base`: not merged, but its head is already in the base branch;
+ * - `closed`: closed without merging, and not in the base branch;
+ * - `open-elsewhere`: open, on another repository;
+ * - `unread`: GitHub could not be asked about it, or an impl branch's head is not on the delivery repository or could not be read there.
+ */
+export type ProposalGraphUnplacedReason =
+  "counterpart" | "merged" | "in-base" | "closed" | "open-elsewhere" | "unread";
+
+/** A proposal whose impl is on no node of the graph, and why. */
+export interface ProposalGraphUnplaced {
+  number: number;
+  title: string;
+  status: ProposalStatus;
+  /** The impl PR; null for an impl branch with no PR. */
+  implPr: string | null;
+  /** The declared head, `<remote>/<branch>`; null when the impl was registered as a PR alone. */
+  branch: string | null;
+  reason: ProposalGraphUnplacedReason;
+  /** The counterpart's number (`counterpart`); null otherwise. */
+  at: number | null;
+  /** The branch it was merged into (`merged`); null otherwise. */
+  into: string | null;
+}
+
+/**
+ * One row of the drawn graph. `cells` holds one cell per column, two characters each: `│ ` a line
+ * passing through, `○ ` a node on the chain, `◌ ` one off it whose edge holds, `× ` one whose edge
+ * does not, `├─` and `╯ ` a line joining back into the node below, `~ ` the base branch.
+ */
+export interface ProposalGraphRow {
+  /** `node`: a node's row; `join`: a line joining back; `base`: the base branch, the last row. */
+  kind: "node" | "join" | "base";
+  /** The node drawn (`""` for the base branch); for a join, the node the line joins into. */
+  key: string;
+  cells: string[];
+  /**
+   * The base row: the commits the base branch gained since the bottom layer of the first
+   * column's stack was built; null when it has not moved on, and on every other row.
+   */
+  behind: number | null;
+  /**
+   * A node without a proposal drawn in `ownRows` only because a proposal's node stacks on it:
+   * drawn faded. False on every other row, and always in `rows`.
+   */
+  connector: boolean;
+}
+
+/** `GET …/proposals/graph`: the delivery repository's open PRs as a commit graph. */
+export interface ProposalGraphResponse {
+  repo: string;
+  base: { branch: string; head: string | null; fork: boolean };
+  origins: Array<{ name: string; repo: string }>;
+  nodes: ProposalGraphNode[];
+  /**
+   * The chain's last layer (its key), or null when the chain is empty or forks with no single
+   * branch that keeps going — choosing there takes the record (the roadmap's order), which the
+   * graph does not read.
+   */
+  top: string | null;
+  /**
+   * The last layer of every branch the chain walk took (keys, in key order). Every line hanging
+   * straight from the base branch is a stack of its own and on the chain; each one's last layer
+   * is here, so each is marked as its stack's top.
+   */
+  tops: string[];
+  /**
+   * The graph drawn as Sapling's smartlog draws a stack, top to bottom: newest on top, a line
+   * forking from a node in the column to its right right above it, joining back with `├─╯`,
+   * the base branch the last row. The CLI prints the cells; the page draws the same cells.
+   * A node with no row (no parent, or a cycle of declarations) is not drawn.
+   */
+  rows: ProposalGraphRow[];
+  /**
+   * The same drawing of the organization's own part, the default view: the nodes that carry one
+   * of its proposals and, below them, the nodes without one their lines need (`connector`). The
+   * chain was decided over every node; this only leaves the others out of the drawing.
+   */
+  ownRows: ProposalGraphRow[];
+  /** Proposals whose impl is on no node of the graph. */
+  unplaced: ProposalGraphUnplaced[];
+  /** What could not be read from GitHub; the graph is partial when present. */
+  errors: string[];
+  /** When the delivery repository was last found to be as this graph shows it. */
+  checkedAt: string;
+  /** Every registered deployment with the commit it runs and the layer that commit sits on. */
+  deployments: ProposalGraphDeployment[];
+  /**
+   * A refresh of the graph is running: this answer is the stored one, and a later read may
+   * show more. Absent from a server older than the field.
+   */
+  refreshing?: boolean;
+}
+
+/**
+ * A registered deployment as the graph places it. `at` is the key of the node whose head the
+ * deployment's commit is (`relation: "same"`) or contains (`"ahead"`, `ahead` commits past it);
+ * `""` is the base branch; null when the commit is unknown or compares with no layer.
+ */
+export interface ProposalGraphDeployment {
+  id: string;
+  /** A penguin server deployment's url; null for any other deployment. */
+  url: string | null;
+  commit: string | null;
+  describe: string | null;
+  at: string | null;
+  relation: "same" | "ahead" | null;
+  ahead: number | null;
+  /** Why the commit could not be read, when it could not. */
+  error: string | null;
+}
+
+/**
+ * A deployment on the organization's registry: only deployments somebody registered; none
+ * registers itself. A penguin server deployment carries its `url` and the install id it
+ * answered with; any other deployment carries neither.
+ */
+export interface ProposalDeployment {
+  id: string;
+  url: string | null;
+  installId: string | null;
+  registeredAt: string;
+  by: string;
+}
+
+/** GET …/proposals/deployments, and the answer to POST …/proposals/deployments. */
+export interface ProposalDeploymentsResponse {
+  deployments: ProposalDeployment[];
+}
+
+/** POST …/proposals/deployments: register one deployment by its id; `url` makes it a penguin server deployment. */
+export interface ProposalDeploymentRegisterRequest {
+  id: string;
+  url?: string;
+}
+
+/** Where an ActionRun came from; `notify`: a notice another run sent once its write committed. */
+export type ActionRunVia = "web" | "cli" | "session" | "api" | "notify";
+
+/** How an ActionRun ended; null while it runs. */
+export type ActionRunOutcome = "succeeded" | "refused" | "failed" | "aborted" | "abandoned";
+
+/**
+ * One execution of an Action (company-proposals' Action registry): who ran which Action on
+ * what, from where, and how it ended. The Activity is these, newest first.
+ */
+export interface ActionRunView {
+  id: string;
+  /** The Action's key, `proposal.approve`. */
+  key: string;
+  /** The contribution that ran, `company-proposals.action.approve`. */
+  contribution: string;
+  subjectKind: string;
+  /** The subject as written, `proposal:12`. */
+  subject: string;
+  /** The subject's commit when the run started (a deploy's head); null for a subject without one. */
+  commit: string | null;
+  params: Record<string, unknown>;
+  /** `user:<id>` or `agent:<id>`. */
+  by: string;
+  via: ActionRunVia;
+  sessionId: string | null;
+  requestId: string | null;
+  startedAt: string;
+  /** null while the run has not ended. */
+  outcome: ActionRunOutcome | null;
+  /** The HTTP status the run answered. */
+  status: number | null;
+  code: string | null;
+  message: string | null;
+  /** What the run returned (the proposal after it, a process's exit). */
+  result: unknown;
+  /** After hooks that failed: the write stands, each failure is listed. */
+  hookErrors: string[];
+  endedAt: string | null;
+}
+
+/** `POST …/actions/:key/runs` and `POST …/actions/by-id/:contribution/runs`. */
+export interface ActionRunRequest {
+  /** `organization`, `proposal:12`, `comment:12/<id>`, `discussion:12/<session>`, `roadmap:3`, `item:3/<key>`, `branch:<remote>/<branch>`, `pr:<owner>/<repo>#<n>`, `target:<id>`. */
+  subject: string;
+  params?: Record<string, unknown>;
+  /** A retry with the same id answers the first run instead of running again. */
+  requestId?: string;
+  /** The surface the run is started from (`session` is read off the caller). */
+  via?: "web" | "cli";
+}
+
+/** The answer to a run: 200 once it ended, 202 while a process it started runs (follow it with `GET …/actions/runs/:id`). */
+export interface ActionRunAnswer {
+  run: ActionRunView;
+  result: unknown;
+}
+
+/** `GET …/actions/runs?subject=&by=&key=&before=&limit=`: one page of the Activity, newest first. */
+export interface ActionRunsResponse {
+  runs: ActionRunView[];
+  /** The `before` of the next page; null on the last. */
+  next: string | null;
+}
+
+/** `GET …/actions/runs/:id?from=`: one run, and its process output from an offset (a bounded tail). */
+export interface ActionRunResponse {
+  run: ActionRunView;
+  output: string;
+  /** Where `output` starts: `from`, or later when the earlier output was dropped. */
+  from: number;
+  /** The offset to ask from next. */
+  next: number;
+}
+
+/** An Action bound in the organization, and whether the caller may run it on the subject asked about. */
+export interface ActionView {
+  key: string;
+  contribution: string;
+  subjects: string[];
+  /** Parameter name (`?`: optional) to its type. */
+  params: Record<string, string>;
+  description: string;
+  /** A plugin's own Action rather than a company workflow's. */
+  builtin: boolean;
+  /** With `?subject=`: the guard's answer for the caller now (parameters not considered). */
+  allowed?: boolean;
+  refusal?: { status: number; code: string; message: string };
+}
+
+/** `GET …/actions[?subject=]`: the organization's Actions (those acting on that subject's kind). */
+export interface ActionsResponse {
+  actions: ActionView[];
+}
+
+/**
+ * One contribution to the organization's Action registry: a plugin's own (built in), or one of
+ * the organization's company workflows'. A company workflow's `action` or `guard` takes the
+ * place of the built-in one on its key.
+ */
+export interface ActionContributionView {
+  id: string;
+  kind: "action" | "guard" | "hook" | "subject";
+  key: string | null;
+  /** The contributing module. */
+  from: string;
+  builtin: boolean;
+  /** The company workflow that contributes it; null for a built-in one. */
+  workflow: string | null;
+  /** A built-in `action` or `guard` a company workflow's contribution replaces on its key. */
+  replaced: boolean;
+  subjects: string[];
+  when: "before" | "after" | null;
+  description: string;
+}
+
+/** A key two or more contributions of the same standing answer: ambiguous when invoked. */
+export interface ActionConflict {
+  key: string;
+  kind: "action" | "guard";
+  contributions: string[];
+}
+
+/** `GET …/actions/contributions`: every contribution, and those the registry left out. */
+export interface ActionContributionsResponse {
+  contributions: ActionContributionView[];
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+/** `GET …/actions/check`: the organization's conflicts. */
+export interface ActionCheckResponse {
+  conflicts: ActionConflict[];
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+/**
+ * A company workflow of an organization (company-proposals): `<org dir>/workflows/<id>/`, an
+ * Agent workflow's package scoped to the organization, whose contributions to the Action
+ * registry take effect there as soon as it loads.
+ */
+export interface CompanyWorkflowView {
+  id: string;
+  name: string;
+  version: string | null;
+  /** The content revision of the folder on disk. */
+  revision: string;
+  /** The revision serving: the last one that loaded; null while none has. */
+  serving: string | null;
+  loadedAt: string | null;
+  /** Why the files on disk did not load; the previous instance, if any, keeps serving. */
+  error: string | null;
+  /** The ids of the serving instance's contributions in force: those the registry took in. */
+  contributions: string[];
+  /** Its contributions the registry left out, and why (a `workflow.*` key, a clashing id). */
+  skipped: Array<{ id: string; reason: string }>;
+  files: string[];
+}
+
+/** `GET …/organizations/:orgId/workflows`. */
+export interface CompanyWorkflowsResponse {
+  workflows: CompanyWorkflowView[];
+}
+
+/** `GET …/organizations/:orgId/workflows/:id/history`: the recorded versions, newest first. */
+export interface CompanyWorkflowHistoryResponse {
+  versions: WorkflowVersion[];
+}
+
+/** `GET …/organizations/:orgId/workflows/:id/files/<path>`. */
+export interface CompanyWorkflowFileResponse {
+  path: string;
+  content: string;
+}
+
+export interface ProposalDetail extends ProposalItem {
+  /** The delegation, as the person wrote it — or as the author or a person last rewrote it (`penguin org proposal brief`). */
+  brief: string;
+  /** The repository's directory relative to the organization's shared workspace ("" = the workspace itself); scope paths are relative to it. */
+  root: string;
+  /** The absolute directory the scope resolves under, on the server that owns the organization — present on a read and on a publish answer. */
+  base?: string;
+  /**
+   * Notes on what a write accepted but that deserve a look — on the publish answer, the scope (a
+   * `new` file that already exists, a rename target already there); on the impl answer, a base
+   * judged before the PR graph was read, so without its open PRs.
+   */
+  hints?: string[];
+  scope: ProposalScopeEntry[];
+  /** The tests that bear on the change, existing and new; `[]` on a revision written before tests existed. */
+  tests: ProposalTestEntry[];
+  sections: ProposalSection[];
+  /** Pending comments are the commenter's own until requested: an employee sees only batched ones. */
+  comments: ProposalComment[];
+  events: ProposalEvent[];
+  /** Implementation sessions, in the order they were opened. */
+  sessions: string[];
+  /** Discussions with the owner, in the order they were opened. */
+  discussions: ProposalDiscussion[];
+  /**
+   * The revision the standing approval covers, or null. An approval covers ONE revision: a
+   * later publish puts the proposal back to `ready`, and this stays at the approved one so
+   * the page can show what changed since.
+   */
+  approvedRevision: number | null;
+  /** The proposal's latest `seq`: what `POST …/read` should carry to mark everything read. */
+  seq: number;
+  /** The test groups the proposals plugin's configuration declares, in display order — on a read. */
+  testGroups?: ProposalTestGroup[];
+  /**
+   * The impl branch's `+N/−M`, on a read while an impl is registered: computed in the background
+   * and cached by the head and base commits (the cache the diff view reads), so a read never waits
+   * for it — `computing` until known, then a plugin event (`impl_stat`) says to read again.
+   */
+  implStat?: ProposalImplStat;
+}
+
+/** An impl branch's totals: computing, known (with the commits they were read at), or why not. */
+export type ProposalImplStat =
+  | { state: "computing" }
+  | {
+      state: "ready";
+      head: ProposalResolvedBranch;
+      base: ProposalResolvedBranch;
+      headSha: string;
+      baseSha: string;
+      files: number;
+      additions: number;
+      deletions: number;
+      compareUrl: string;
+    }
+  | { state: "unavailable"; reason: string };
+
+/**
+ * A discussion: a session of the owner's Agent (the implementer, else the author) that a
+ * person opened from the proposal page to talk the proposal over — not the owner's desk. Its
+ * conclusion is delivered to the desk once; until then it is open.
+ */
+export interface ProposalDiscussion {
+  sessionId: string;
+  /** The owner the session runs as. */
+  agentId: string;
+  /** The person that opened it (`user:<id>`). */
+  by: string;
+  at: string;
+  /** Set once the conclusion reached the owner's desk. */
+  concluded: { by: string; at: string; text: string } | null;
+}
+
+/**
+ * A test group the proposals plugin's configuration declares (Settings → Plugins, one line
+ * `id: description` each; server-wide). A proposal's tests may only use declared groups, and
+ * the page shows them in the declared order.
+ */
+export interface ProposalTestGroup {
+  id: string;
+  description: string;
+}
+
+/** `GET …/organizations/:orgId/proposals/test-groups`. */
+export interface ProposalTestGroupsResponse {
+  groups: ProposalTestGroup[];
+}
+
+/** One revision as it was published: `GET …/:number/revisions/:rev`. */
+export interface ProposalRevision {
+  revision: number;
+  title: string;
+  /** The scope's root at this revision ("" = the shared workspace). */
+  root: string;
+  scope: ProposalScopeEntry[];
+  tests: ProposalTestEntry[];
+  sections: ProposalSection[];
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+}
+
+/** `GET …/:number/revisions`: every revision published, oldest first. */
+export interface ProposalRevisionsResponse {
+  revisions: Array<{ revision: number; by: string; at: string }>;
+}
+
+/**
+ * `GET …/:number/file?path=`: one file under the proposal's `base`, read-only, for the page's
+ * file panel. `path` is relative to `base` (as the scope and tests write it).
+ */
+export interface ProposalFileResponse {
+  path: string;
+  size: number;
+  /** A NUL byte in the first 8 KB; `content` is then null. */
+  binary: boolean;
+  /** Only the first 512 KB is sent. */
+  truncated: boolean;
+  content: string | null;
+  /** The file's extension, lowercase and without the dot ("" when none); the page maps it to a grammar. */
+  extension: string;
+}
+
+export interface ProposalsResponse {
+  proposals: ProposalItem[];
+}
+
+export interface ProposalCreateRequest {
+  /** The author employee's Agent id; default = the calling employee (a person has to name one). */
+  author?: string;
+  brief: string;
+  title?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/** `PUT …/:number` — a revision: the whole proposal as one Markdown document (frontmatter `title` and `scope`, then the sections). */
+export interface ProposalPublishRequest {
+  markdown: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalImplementRequest {
+  /** The employee that builds it; default = the author itself. */
+  agentId?: string;
+  message?: string;
+  workspace?: string;
+  sessionId?: string;
+  /** The caller's identity claim (the CLI's PENGUIN_AGENT_ID); distinct from `agentId`, the implementer. */
+  callerAgentId?: string;
+}
+
+/** `POST …/:number/discussions/:sessionId/conclude` — the conclusion, delivered to the owner's desk. */
+export interface ProposalConcludeRequest {
+  text: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalMaterialRequest {
+  kind: ProposalMaterialKind;
+  url: string;
+  label?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalFeedbackRequest {
+  text: string;
+  /** From the test team's run of the dev branch rather than from building the proposal. */
+  runtime?: boolean;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/**
+ * What a comment that is not on a passage is on:
+ *
+ * - `scope` — an entry of the current revision's scope, by its file and kind;
+ * - `test` — an entry of the current revision's tests, by its file;
+ * - `change-file` — a file of the impl branch's diff;
+ * - `change-lines` — lines `start`..`end` (inclusive, 1-based) of a changed file, on the old side
+ *   (the merge base) or the new side (the head).
+ *
+ * A comment on the diff records the head and base commits the diff was read at: once either
+ * branch moves, the page marks it outdated and still shows the lines it was written on (its
+ * `quote`).
+ */
+export type ProposalCommentTarget =
+  | { kind: "scope"; file: string; scopeKind: ProposalScopeKind }
+  | { kind: "test"; file: string }
+  | { kind: "change-file"; path: string; headSha: string; baseSha: string }
+  | {
+      kind: "change-lines";
+      path: string;
+      side: "old" | "new";
+      start: number;
+      end: number;
+      headSha: string;
+      baseSha: string;
+    };
+
+/**
+ * The `target` param of `proposal.comment`: what to comment on, as the page names it. A diff
+ * target carries the commits the page read the diff at; the server refuses it once they are not
+ * the current ones, and reads a line range's text itself.
+ */
+export type ProposalCommentTargetRequest = ProposalCommentTarget;
+
+/**
+ * `proposal.comment` — a comment on `[start, end)` of `sectionId`'s source (`quote` must equal
+ * that slice), or on a `target` (no section fields then).
+ */
+export type ProposalCommentRequest =
+  | { sectionId: string; start: number; end: number; quote: string; text: string }
+  | { target: ProposalCommentTargetRequest; text: string };
+
+/**
+ * `GET …/:number/comments[?pending=1]` — the comments the caller may see (`pending`: the
+ * batched, unresolved ones — the author's work list), and `text`: the proposal's sections
+ * with every listed comment's passage wrapped in `⟦<id>⟧…⟦/<id>⟧`, followed by the comments
+ * by id. What an agent reads; it carries no offsets.
+ */
+export interface ProposalCommentsResponse {
+  number: number;
+  comments: ProposalComment[];
+  text: string;
+}
+
+/** `PATCH …/:number/comments/:id` — a pending comment reworded by the person who wrote it. */
+export interface ProposalCommentEditRequest {
+  text: string;
+}
+
+export interface ProposalResolveRequest {
+  text?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalRejectRequest {
+  reason: string;
+}
+
+export interface ProposalReadRequest {
+  upTo: number;
+}
+
+/** The `data` of the plugin event `company-proposals` publishes after every write. */
+export interface ProposalPluginEvent {
+  projectId: string;
+  orgId: string;
+  number: number;
+  seq: number;
+  /** `impl_stat`: the impl's `+N/−M` (`implStat`) was computed or changed — no write, re-read the detail. */
+  kind: ProposalEventKind | "comment" | "impl_stat";
+}
+
+// ---------------------------------------------------------------------------
+// Web contributions (GET /api/contributions)
+// ---------------------------------------------------------------------------
+
+/** How the web app renders a contributed surface: a name from its own registry, or an iframe. */

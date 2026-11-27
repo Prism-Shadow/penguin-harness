@@ -462,6 +462,25 @@ export function replacementsFor(
       {
         orgService: o.orgService,
         orgScheduler: { start: async () => {}, stop: () => {} },
+        orgGateway: {
+          companyModeEnabled: () => false,
+          organization: async () => null,
+          principalOf: async (_p: string, _o: string, actor: { userId: string }) =>
+            `user:${actor.userId}`,
+          deliverToDesk: async () => {
+            throw new Error("no organization in this suite");
+          },
+          openEmployeeSession: async () => {
+            throw new Error("no organization in this suite");
+          },
+          openRoom: async () => {
+            throw new Error("no organization in this suite");
+          },
+          changeRoomMembers: async () => {
+            throw new Error("no organization in this suite");
+          },
+          notifyProject: () => {},
+        },
       },
     ]);
   }
