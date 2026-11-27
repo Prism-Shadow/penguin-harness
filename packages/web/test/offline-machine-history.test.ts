@@ -30,7 +30,7 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import type { HistoryStreamHandlers, HistoryStreamQuery } from "../src/api/sse";
-import { MachineCover } from "../src/features/chat/machine-cover";
+import { MachineCover } from "@prismshadow/penguin-library-session/web/chat/machine-cover";
 import {
   OfflineHistoryNote,
   offlineCover,

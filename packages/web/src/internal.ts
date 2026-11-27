@@ -464,6 +464,7 @@ export { backgroundSourceMark, programSource } from "./lib/session-source-mark";
 export {
   isSessionWorkbenchKind,
   parseSessionWorkbenchPage,
+  sessionWorkbenchAppKey,
   sessionWorkbenchEntries,
   sessionWorkbenchKindAt,
   sessionWorkbenchPage,
@@ -472,7 +473,12 @@ export type { SessionWorkbenchKind } from "./lib/session-workbenches";
 
 export { currentPlatform } from "./lib/shortcuts/platform";
 
-export { displayedBinding, useKeymap, useShortcutTitle } from "./lib/shortcuts/use-keymap";
+export {
+  displayedBinding,
+  shortcutTitle,
+  useKeymap,
+  useShortcutTitle,
+} from "./lib/shortcuts/use-keymap";
 
 export type { SidebarSection } from "./lib/sidebar-contributions";
 
