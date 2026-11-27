@@ -31,8 +31,8 @@ function deferred() {
   const asked: string[] = [];
   const source: AgentStateEngineSource = (host) => {
     asked.push(host.cacheDir);
-    return new Promise<AgentStateEngine | null>((resolve) => {
-      answer = resolve;
+    return new Promise<AgentStateEngine>((resolve) => {
+      answer = (engine) => resolve(engine as AgentStateEngine);
     });
   };
   return { source, asked, answer: (e: AgentStateEngine | null) => answer(e) };
