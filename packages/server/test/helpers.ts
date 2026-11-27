@@ -86,7 +86,7 @@ import type { WeChatTransport } from "@prismshadow/penguin-library-messaging/wec
 import { WeChatScanTransportProvider } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import type { WeChatScanTransport } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
-import { AgentStateEngines } from "../src/workbenches/engines.js";
+import { AgentStateHistoryModule } from "../src/workbenches/engines.js";
 import { gitEngineForTests } from "./helpers/agent-state-git-engine.js";
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
@@ -574,7 +574,7 @@ async function bootTestApp(
   if (plugins === undefined) {
     const engine = await gitEngineForTests();
     if (engine !== null) {
-      replacements.push([AgentStateEngines, { current: () => engine }]);
+      replacements.push([AgentStateHistoryModule, { engines: { current: () => engine } }]);
     }
   }
   try {
