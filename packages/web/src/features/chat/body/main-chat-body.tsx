@@ -30,6 +30,9 @@ import { PathCapsulesProvider } from "../../company";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
+/** The scroll-up backfill while the conversation's machine is out of reach. */
+const NO_LOAD = () => {};
+
 export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
   const {
     navigate,
@@ -215,13 +218,14 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                                   // loading): near-top scrolling prepends the previous window,
                                   // scroll position anchored (see MessageStream).
                                   older={{
-                                    // Nothing earlier is asked of a machine out of reach.
-                                    hasMore: offline === null && stream.older.hasMore,
+                                    hasMore: stream.older.hasMore,
                                     loading: stream.older.loading,
                                     error: stream.older.error,
                                     errorCause: stream.older.errorCause,
                                     prependedCount: stream.prefixItems.length,
-                                    onLoad: stream.loadOlder,
+                                    // Nothing earlier is asked of a machine out of reach; the
+                                    // row above keeps its place, saying nothing, until it is back.
+                                    onLoad: offline === null ? stream.loadOlder : NO_LOAD,
                                     transfer: stream.transfer,
                                     beyondTail: stream.older.beyondTail,
                                   }}
