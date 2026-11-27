@@ -98,6 +98,7 @@ export {
 export { parseSkillFrontmatter } from "./plugin/skill-frontmatter.js";
 export type { SkillMetadata } from "./plugin/skill-frontmatter.js";
 export {
+  libraryRoots,
   useInstalledPluginPrefix,
   useLibraryHost,
   usePushedPluginLibrary,

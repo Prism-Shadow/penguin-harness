@@ -200,6 +200,35 @@ describe("a plugin's server and Agent installs", () => {
       expect(await libraryNames()).not.toContain("notes");
     });
 
+    it("refuses a name the plugin library ships before npm runs", async () => {
+      await boot();
+      // A library-shipped name the build does not ship as a server module: exactly the install
+      // the library would silently shadow — the prefix copy is never listed or loaded.
+      const view = (await (
+        await admin.get("/api/projects/default_project/plugins/installed")
+      ).json()) as InstalledPluginsResponse;
+      const library = (await (await admin.get("/api/plugins")).json()) as PluginLibraryResponse;
+      const shadowed = library.groups
+        .flatMap((g) => g.plugins)
+        .map((p) => p.package)
+        .find((pkg) => pkg !== NOTES && !view.shipped.includes(pkg));
+      if (shadowed === undefined) {
+        throw new Error("no library-shipped name outside the module prefix");
+      }
+      const res = await admin.post("/api/projects/default_project/plugins/installed", {
+        specifier: shadowed,
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        error: {
+          code: "plugin_shipped",
+          message: expect.stringContaining("updating it requires a build release"),
+        },
+      });
+      expect(npm.calls).toEqual([]);
+      expect(npm.checks).toEqual([]);
+    });
+
     it("says a package is not published, or that the registry did not answer", async () => {
       await boot();
       npm.registry.says404 = true;

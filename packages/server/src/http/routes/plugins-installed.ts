@@ -26,7 +26,10 @@
  * under the name of a module the build ships would replace it for every Project — a zip saying
  * so is refused before it installs, and a link (whose name npm reads) is removed again; so is a
  * package that turns out to be no plugin at all. The refusal says that its install scripts have
- * already run.
+ * already run. A name the plugin LIBRARY ships — the build's own copy of a content plugin, which
+ * the library reads ahead of the prefix — refuses too (a name install before npm runs, a link or
+ * a zip with the package taken back out): such an install would land in the prefix and then never
+ * be listed or loaded, and the refusal says the build's copy is the one every Project uses.
  *
  * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
  * package name → requirement, Cargo's `[dependencies]` shape, plus a `[plugins.<machineId>]`
@@ -73,6 +76,8 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
   libraryParts,
+  libraryPluginPackage,
+  libraryRoots,
   PLUGIN_MACHINE_ID,
   type PluginRequirement,
   type PluginTables,
@@ -633,6 +638,35 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   const shippedNames = () => discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
 
   /**
+   * Whether the plugin LIBRARY ships `name` — the build's own copy of a content plugin (Skills,
+   * hooks, MCP servers), which the library reads ahead of the prefix: an install under such a
+   * name lands in the prefix and is never listed or loaded, silently. The same roots the library
+   * lists from answer, so a refusal here and a shadowing there cannot disagree. Null when this
+   * process has no library host (nothing is shipped).
+   */
+  const libraryShipped = (name: string): { version: string | null } | null => {
+    try {
+      for (const [root, entry] of libraryRoots()) {
+        if (root === name && !entry.installed) {
+          return { version: libraryPluginPackage(name)?.version ?? null };
+        }
+      }
+    } catch {
+      // No host package: the library fails loudly elsewhere; nothing is shipped here.
+    }
+    return null;
+  };
+
+  /** Why an install under a library-shipped name is refused: the build's copy always wins. */
+  const libraryShippedWhy = (name: string, version: string | null): string => {
+    const carries =
+      version === null
+        ? `${name} ships with this build`
+        : `${name} ${version} ships with this build`;
+    return `${carries}: the build's own copy is the one every Project uses, so a package installed under its name would be shadowed, not used — updating it requires a build release.`;
+  };
+
+  /**
    * Takes back a package an install just put in the prefix and refuses the install: one under the
    * name of a shipped module (409 `plugin_shipped`), or one that is no plugin (400
    * `not_a_plugin`). Its install scripts have run by now, and the refusal says so — and says so
@@ -668,6 +702,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         409,
         "plugin_shipped",
         `${installed.name} ships with this server: a package under its name would replace it for every Project.`,
+      );
+    }
+    const shipped = libraryShipped(installed.name);
+    if (shipped !== null) {
+      return refuseInstalled(
+        installed,
+        409,
+        "plugin_shipped",
+        libraryShippedWhy(installed.name, shipped.version),
       );
     }
     const kinds = kindsOf(installed.name);
@@ -765,6 +808,20 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // a listed plugin that is not on disk is exactly the state this route exists to avoid,
     // and npm failing must leave the deployment unchanged. A plugin asked of another machine
     // only is downloaded THERE, by that machine, when the list reaches it.
+    // A name the plugin LIBRARY ships refuses before npm runs: the build's copy of a content
+    // plugin is read ahead of the prefix, so the download would land and then never be listed
+    // or loaded — the silent shadow this refusal replaces. The version the build carries is in
+    // the message; a newer one asks for a build release.
+    if (runsHere) {
+      const libraryCopy = libraryShipped(source.name);
+      if (libraryCopy !== null) {
+        throw new HttpError(
+          409,
+          "plugin_shipped",
+          libraryShippedWhy(source.name, libraryCopy.version),
+        );
+      }
+    }
     const shipped = await shippedNames();
     const installed =
       runsHere && !shipped.includes(source.name)
@@ -858,6 +915,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         `${linked.name} ships with this server: a package under its name would replace it for every Project. Pass force (penguin plugin link --force) to replace it anyway — the build's own copy returns when this link is removed.`,
       );
     }
+    // A name the plugin LIBRARY ships has no force way past it: the library reads the build's
+    // copy ahead of the prefix, so even a forced link would sit in the prefix unlisted.
+    const libraryCopy = libraryShipped(linked.name);
+    if (libraryCopy !== null) {
+      await deps.packages.remove(deps.root, linked.name);
+      throw new HttpError(
+        409,
+        "plugin_shipped",
+        libraryShippedWhy(linked.name, libraryCopy.version),
+      );
+    }
     const kinds = kindsOf(linked.name);
     if (!kinds.library && !kinds.modules) {
       await deps.packages.remove(deps.root, linked.name);
@@ -882,6 +950,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         409,
         "plugin_shipped",
         `${archive.name} ships with this server: a package under its name would replace it for every Project.`,
+      );
+    }
+    // A name the plugin LIBRARY ships refuses too: the build's copy would shadow the upload.
+    const archiveCopy = libraryShipped(archive.name);
+    if (archiveCopy !== null) {
+      throw new HttpError(
+        409,
+        "plugin_shipped",
+        libraryShippedWhy(archive.name, archiveCopy.version),
       );
     }
     const current = await readInstalledVersion(pluginsPrefix(deps.root), archive.name);
