@@ -8,6 +8,7 @@
     "paths": {
       "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"],
       "@prismshadow/penguin-web/internal": ["../web/src/internal.ts"],
+      "@prismshadow/penguin-web/internal-hub": ["../web/src/internal-hub.ts"],
       "@prismshadow/penguin-library-agent/web": ["../../library/agent/src/web/index.ts"],
       "@prismshadow/penguin-library-agent/web/*": ["../../library/agent/src/web/*"],
       "@prismshadow/penguin-library-model/web": ["../../library/model/src/web/index.ts"],
