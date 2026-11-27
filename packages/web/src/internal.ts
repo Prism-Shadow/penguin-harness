@@ -544,6 +544,8 @@ export { useAuth } from "./state/auth";
 
 export { useLocale } from "./state/locale";
 
+export { jobFor } from "./features/machines/machines-view";
+
 export { useMachines } from "./state/machines";
 
 export { agentDisplayName, useProject } from "./state/project";
