@@ -3,6 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** feature
 - **Scope:** `browser-automation`, `browser-extension`, `cli`, `web`
+- **PR:** [#1923](https://github.com/Prism-Shadow/penguin-harness/pull/1923)
 
 [中文版](2026-11-26-browser-page-size.zh.md)
 
