@@ -23,9 +23,7 @@ import {
   formatSpan,
   S,
 } from "@prismshadow/penguin-web/internal";
-import type {
-  Tone,
-} from "@prismshadow/penguin-web/internal";
+import type { Tone } from "@prismshadow/penguin-web/internal";
 import { reasonText } from "./machine-card";
 import {
   canSyncConfig,

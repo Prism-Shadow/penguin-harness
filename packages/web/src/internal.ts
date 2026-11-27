@@ -40,9 +40,21 @@ export {
   useDockSessionId,
 } from "./features/dock/dock-terminal";
 export { filesApi, filesScopeKey, type FilesScope } from "./api/workspace-files";
-export { formatBytes, formatDateTime, formatRelativeLong, formatRelativeShort, formatShortDateTime, formatSpan } from "./lib/format";
+export {
+  formatBytes,
+  formatDateTime,
+  formatRelativeLong,
+  formatRelativeShort,
+  formatShortDateTime,
+  formatSpan,
+} from "./lib/format";
 export { cardBodyClick } from "./lib/card-open";
-export { dismissNotice, envOnlyNoticeId, skippedNoticeId, useNoticeDismissed } from "./lib/notice-dismissals";
+export {
+  dismissNotice,
+  envOnlyNoticeId,
+  skippedNoticeId,
+  useNoticeDismissed,
+} from "./lib/notice-dismissals";
 export { useDocumentTitle } from "./lib/use-document-title";
 export { useReaderFind } from "./lib/reader-find";
 export { fetchTextPreview } from "./lib/text-preview";

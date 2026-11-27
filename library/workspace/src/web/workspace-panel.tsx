@@ -5,11 +5,7 @@
  * props, and its own handled-once request guard is what the conversation-switch e2e covers — so
  * both branches below render the same element, which carries over from draft to conversation.
  */
-import {
-  DraftPanelEmpty,
-  useChatSession,
-  S,
-} from "@prismshadow/penguin-web/internal";
+import { DraftPanelEmpty, useChatSession, S } from "@prismshadow/penguin-web/internal";
 import { WorkspaceBrowser } from "./workspace-browser";
 
 export function WorkspacePanel({ active }: { active: boolean }) {

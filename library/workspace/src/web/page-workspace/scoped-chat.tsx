@@ -9,9 +9,7 @@ import {
   S,
   useProject,
 } from "@prismshadow/penguin-web/internal";
-import type {
-  OpenPage,
-} from "@prismshadow/penguin-web/internal";
+import type { OpenPage } from "@prismshadow/penguin-web/internal";
 
 /** A full-page chat reached from a machine-qualified workbench can be reloaded on that same machine. */
 export function ScopedChat({ page, children }: { page: OpenPage; children: ReactNode }) {

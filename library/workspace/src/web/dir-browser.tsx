@@ -36,11 +36,7 @@ import {
   withExpanded,
   failureNode,
 } from "@prismshadow/penguin-web/internal";
-import type {
-  FilesScope,
-  Listings,
-  TreeRow,
-} from "@prismshadow/penguin-web/internal";
+import type { FilesScope, Listings, TreeRow } from "@prismshadow/penguin-web/internal";
 
 export interface DirBrowserProps {
   /** The directory, as the Files panel addresses one. */

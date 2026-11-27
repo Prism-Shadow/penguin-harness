@@ -7,14 +7,8 @@
  */
 import { FileTree, type TreeToggle } from "@prismshadow/penguin-ui";
 
-import {
-  S,
-  formatBytes,
-  formatDateTime,
-} from "@prismshadow/penguin-web/internal";
-import type {
-  TreeRow,
-} from "@prismshadow/penguin-web/internal";
+import { S, formatBytes, formatDateTime } from "@prismshadow/penguin-web/internal";
+import type { TreeRow } from "@prismshadow/penguin-web/internal";
 
 export function WorkspaceTreeView({
   rows,

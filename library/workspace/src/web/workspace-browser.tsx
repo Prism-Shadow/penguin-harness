@@ -171,8 +171,6 @@ import type {
   Listings,
 } from "@prismshadow/penguin-web/internal";
 
-
-
 import { WorkspaceTreeView } from "./workspace-tree-view";
 
 /**

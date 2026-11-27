@@ -35,14 +35,8 @@ import type {
   RetryStatusProps,
   ToneName,
 } from "@prismshadow/penguin-ui";
-import {
-  S,
-  cardBodyClick,
-  formatRelativeShort,
-} from "@prismshadow/penguin-web/internal";
-import type {
-  Tone,
-} from "@prismshadow/penguin-web/internal";
+import { S, cardBodyClick, formatRelativeShort } from "@prismshadow/penguin-web/internal";
+import type { Tone } from "@prismshadow/penguin-web/internal";
 import {
   canSyncConfig,
   canUse,
