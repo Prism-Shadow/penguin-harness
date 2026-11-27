@@ -89,22 +89,32 @@ export class TabRegistry {
     if (tab !== undefined) this.tabs.set(id, this.owned(tab));
   }
 
-  /** Transfer existing pages and pending popups without recreating their guests. */
-  adoptSession(fromSessionId: string, sessionId: string): void {
-    if (fromSessionId === sessionId) return;
+  /**
+   * Transfer existing pages and pending popups without recreating their guests. A draft that
+   * became a Session on a machine names that machine: its pages are held for that machine's
+   * Session from now on. Returns the pages moved.
+   */
+  adoptSession(fromSessionId: string, sessionId: string, machineId?: string): number[] {
+    if (fromSessionId === sessionId) return [];
     const active = this.activeFor(fromSessionId);
     const targetActive = this.activeFor(sessionId);
+    const moved: number[] = [];
     for (const [id, owner] of this.owners) {
       if (owner !== fromSessionId) continue;
       this.owners.set(id, sessionId);
+      if (machineId !== undefined) this.machines.set(id, machineId);
+      moved.push(id);
       const tab = this.tabs.get(id);
-      if (tab) this.tabs.set(id, { ...tab, sessionId });
+      if (tab) this.tabs.set(id, this.owned(tab));
     }
     for (const open of this.opens.values()) {
-      if (open.sessionId === fromSessionId) open.sessionId = sessionId;
+      if (open.sessionId !== fromSessionId) continue;
+      open.sessionId = sessionId;
+      if (machineId !== undefined) open.machineId = machineId;
     }
     this.activeBySession.delete(fromSessionId);
     if (targetActive === null && active !== null) this.activeBySession.set(sessionId, active);
+    return moved;
   }
 
   private owned(tab: BuiltinBrowserTab): BuiltinBrowserTab {

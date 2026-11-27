@@ -10,7 +10,8 @@
  *   partition, the page is held for that Session and machine, and the agent gets it back.
  * - The agent's action runs in the person's browser, and the hub's window shows it at work.
  * - The hub's panel opens a page for a machine's conversation once the machine vouches for the
- *   Session, and the machine's agents see it.
+ *   Session, and the machine's agents see it. A draft's pages go to the conversation its first
+ *   send created on the machine.
  * - The admin switching to their Chrome re-dials the channel; with no Chrome paired the machine's
  *   agents hear exactly that.
  * - A machine that asks for more than its own pages — another page, a Project it does not serve,
@@ -383,6 +384,44 @@ describe("a machine's Session in the person's browser on the hub", () => {
     expect(p.shell.commands.find((command) => command.op === "clear-data")).toMatchObject({
       partition: partitionOf("work"),
     });
+  });
+
+  it("hands a draft's pages to the conversation its first send created on the machine", async () => {
+    const p = await pair();
+    await linked(p);
+    const opened = await p.hubCall("POST", "/tabs", {
+      url: "https://docs.example/draft",
+      sessionId: "work:draft-1",
+      projectId: "work",
+    });
+    expect(opened.status).toBe(200);
+    const { tab: page } = await json<{ tab: BuiltinBrowserTab }>(opened);
+    expect(page).toMatchObject({ sessionId: "work:draft-1", partition: partitionOf("work") });
+    expect(page.machineId).toBeUndefined();
+
+    const handed = await p.hubCall("POST", "/tabs/session", {
+      fromSessionId: "work:draft-1",
+      sessionId: "work-7",
+    });
+    expect(handed.status).toBe(204);
+    expect(p.hub.tabs.get(page.id)).toMatchObject({
+      sessionId: "work-7",
+      machineId: MACHINE,
+      partition: partitionOf("work"),
+    });
+    await until(
+      async () =>
+        (
+          await json<BuiltinBrowserStatus>(await p.agent("GET", "/status?sessionId=work-7"))
+        ).tabs.some((t) => t.id === page.id),
+      "the machine to hear of its page",
+    );
+    // A Session no machine of the draft's Project holds is given nothing.
+    const nowhere = await p.hubCall("POST", "/tabs/session", {
+      fromSessionId: "work:draft-2",
+      sessionId: "gone-1",
+    });
+    expect(nowhere.status).toBe(404);
   });
 
   it("follows the admin to their Chrome, and says when none is paired", async () => {
