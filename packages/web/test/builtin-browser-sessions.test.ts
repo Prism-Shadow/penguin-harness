@@ -319,7 +319,7 @@ it("gives a Session on a machine this window's browser, and opens its pages here
   dispatchBrowser({ type: "supported", supported: true });
   dispatchBrowser({ type: "status", status });
   const scope = { projectId: "p", machineId, agentId: "a", sessionId };
-  const rendered = await mount(
+  await mount(
     createElement(
       Fragment,
       null,
@@ -328,15 +328,17 @@ it("gives a Session on a machine this window's browser, and opens its pages here
     ),
   );
   expect(browserState().scope).toBe(sessionId);
-  const newTab = [...rendered.container.querySelectorAll("button")].find(
-    (button) => button.textContent === S.builtinBrowser.newTab,
-  );
-  expect(newTab).toBeDefined();
-  await act(async () => newTab!.click());
-  const opened = fetched.requests.find(
-    (request) => request.method === "POST" && request.path === "/api/builtin-browser/tabs",
-  );
-  expect(opened).toMatchObject({ machine: null, body: { sessionId, projectId: "p", machineId } });
+  // Shown with no page, the panel opens its first one itself: here, for the machine's Session.
+  const opens = () =>
+    fetched.requests.filter(
+      (request) => request.method === "POST" && request.path === "/api/builtin-browser/tabs",
+    );
+  await act(async () => undefined);
+  expect(opens()).toHaveLength(1);
+  expect(opens()[0]).toMatchObject({
+    machine: null,
+    body: { sessionId, projectId: "p", machineId },
+  });
   expect(fetched.requests.filter((request) => request.machine !== null)).toEqual([]);
   await act(async () => setDockScope(null));
 });
