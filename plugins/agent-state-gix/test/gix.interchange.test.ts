@@ -131,16 +131,39 @@ describe("agent-state-gix interchange with real Git", () => {
     expect(ls.stdout.toString()).not.toContain("workbenches/w1");
   });
 
-  it("a first commit with no files is the empty tree, same id from both sides", async () => {
-    const empty: AgentStateCommit = { ...c, rel: "workbenches/w-empty", files: null };
-    const gixSha = await engine.commit(empty);
-    const realSha = await realGitCommit(empty);
-    expect(gixSha).toBe(realSha);
+  it("a first commit with no files is the empty tree, same id from both sides — on a fresh branch", async () => {
+    // The main branch already carries commits at this point, so the CAS must and does refuse a
+    // fresh first commit there; the empty-tree first commit is pinned on its own repository.
+    await expect(
+      engine.commit({ ...c, files: undefined }),
+    ).rejects.toThrow(/refused/i);
+    const root = await fs.mkdtemp(path.join(import.meta.dirname!, "gix-empty-"));
+    try {
+      const gitdir = path.join(root, "repo.git");
+      expect(spawnSync(GIT, ["init", "--bare", "--initial-branch=main", gitdir]).status).toBe(0);
+      const empty: AgentStateCommit = { ...c, gitdir, rel: "workbenches/w-empty", files: null };
+      const gixSha = await engine.commit(empty);
+      const realSha = await realGitCommit(empty);
+      expect(gixSha).toBe(realSha);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true }).catch(() => undefined);
+    }
   });
 
   it("readBlobs answers what git cat-file answers", async () => {
+    // Self-contained: write a folder of its own, then read its blobs back.
     const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
-    const ls = run(c.gitdir, ["ls-tree", "-r", tip]);
+    const next: AgentStateCommit = {
+      ...c,
+      parent: tip,
+      rel: "workbenches/w-read",
+      files: [
+        { rel: "read/one.txt", body: Buffer.from("one\n") },
+        { rel: "read/two.bin", body: Buffer.from([0x00, 0xff, 0x10, 0x7f]) },
+      ],
+    };
+    const sha = await engine.commit(next);
+    const ls = run(c.gitdir, ["ls-tree", "-r", sha]);
     expect(ls.status).toBe(0);
     const oids = [...ls.stdout.toString().matchAll(/blob ([0-9a-f]{40})\t/g)].map((m) => m[1]!);
     expect(oids.length).toBeGreaterThan(0);
