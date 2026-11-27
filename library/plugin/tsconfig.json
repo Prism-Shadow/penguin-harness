@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "paths": {
       "@prismshadow/penguin-core": ["../../packages/core/src/index.ts"],
       "@prismshadow/penguin-core/cli": ["../../packages/core/src/cli/index.ts"],
