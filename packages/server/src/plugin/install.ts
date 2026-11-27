@@ -935,7 +935,7 @@ async function downloadChannelAsset(
       }
       if (received - reported >= 256 * 1024) {
         reported = received;
-        onProgress(received, total);
+        onProgress?.(received, total);
       }
     }
     onProgress?.(received, total);
