@@ -41,7 +41,10 @@ import {
   type PluginRow,
   type PluginView,
 } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
-import { pluginStatus, type PluginStatus } from "@prismshadow/penguin-library-plugin/web/plugin-status";
+import {
+  pluginStatus,
+  type PluginStatus,
+} from "@prismshadow/penguin-library-plugin/web/plugin-status";
 import { pluginUpdatePlan } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

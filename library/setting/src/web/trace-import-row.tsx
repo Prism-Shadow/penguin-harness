@@ -30,7 +30,11 @@ import {
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { isConversationAgent } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import {
+  agentDisplayName,
+  projectDisplayName,
+  useProject,
+} from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 

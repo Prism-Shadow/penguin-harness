@@ -44,7 +44,10 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
 import { formatRelativeLong } from "@prismshadow/penguin-web/internal";
-import { acceptPluginModuleRequests, usePluginModuleRequests } from "@prismshadow/penguin-web/internal";
+import {
+  acceptPluginModuleRequests,
+  usePluginModuleRequests,
+} from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";

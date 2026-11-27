@@ -9,7 +9,11 @@
  */
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { S } from "@prismshadow/penguin-web/internal";
-import { composeAiPrompt, pickDefaultAgent, type AiChatRequest } from "@prismshadow/penguin-web/internal";
+import {
+  composeAiPrompt,
+  pickDefaultAgent,
+  type AiChatRequest,
+} from "@prismshadow/penguin-web/internal";
 
 import { classifyImportSource } from "@prismshadow/penguin-web/internal";
 

@@ -22,7 +22,10 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSummary, PluginIndexEntry, PluginItem } from "@prismshadow/penguin-server/api";
-import { PluginCard, type PluginCardProps } from "@prismshadow/penguin-library-plugin/web/plugin-card";
+import {
+  PluginCard,
+  type PluginCardProps,
+} from "@prismshadow/penguin-library-plugin/web/plugin-card";
 import type { PluginRow } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
 import { LocaleProvider } from "../src/state/locale";
 import { setActiveStrings } from "../src/lib/strings";

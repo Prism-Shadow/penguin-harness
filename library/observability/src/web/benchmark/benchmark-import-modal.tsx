@@ -43,7 +43,12 @@ import { ApiError } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
-import { AiExamples, PromptFold, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal";
+import {
+  AiExamples,
+  PromptFold,
+  pickDefaultAgent,
+  useAiBridge,
+} from "@prismshadow/penguin-web/internal";
 import { benchmarkImportChat, buildBenchmarkImportPrompt } from "./benchmark-import-prompt";
 import { failureOf } from "@prismshadow/penguin-web/internal";
 

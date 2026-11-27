@@ -40,7 +40,12 @@ import {
 import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../lib/benchmark-merge";
 import { S } from "@prismshadow/penguin-web/internal";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
+import {
+  formatDateTime,
+  formatMoney,
+  formatScore,
+  humanizeDuration,
+} from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { createElement as h } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { PluginCard, type PluginCardProps } from "@prismshadow/penguin-library-plugin/web/plugin-card";
+import {
+  PluginCard,
+  type PluginCardProps,
+} from "@prismshadow/penguin-library-plugin/web/plugin-card";
 import { LocaleProvider } from "../src/state/locale";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

@@ -4,7 +4,10 @@
  * does not hold the page on it once the picker is gone.
  */
 import { describe, expect, it } from "vitest";
-import { samePluginTarget, viewedMachine } from "@prismshadow/penguin-library-plugin/web/viewed-machine";
+import {
+  samePluginTarget,
+  viewedMachine,
+} from "@prismshadow/penguin-library-plugin/web/viewed-machine";
 
 const SELF = "self-id";
 const GPU = "gpu-id";

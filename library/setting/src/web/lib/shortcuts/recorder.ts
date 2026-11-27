@@ -3,7 +3,12 @@
  * recorder button feeds it every keydown while recording and acts on what comes back — a
  * committed chord (bind), a committed null (unbind), or nothing yet.
  */
-import { chordOf, codeFromKey, isBindableChord, isModifierCode } from "@prismshadow/penguin-web/internal";
+import {
+  chordOf,
+  codeFromKey,
+  isBindableChord,
+  isModifierCode,
+} from "@prismshadow/penguin-web/internal";
 import type { Chord, KeyLike, Platform } from "@prismshadow/penguin-web/internal";
 
 export type RecorderNotice = "needsModifier";

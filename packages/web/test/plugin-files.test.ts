@@ -7,7 +7,10 @@
  * when the plugin contains no Skills or hooks.
  */
 import { describe, expect, it } from "vitest";
-import { groupPluginFiles, pluginTreeRows } from "@prismshadow/penguin-library-plugin/web/plugin-detail";
+import {
+  groupPluginFiles,
+  pluginTreeRows,
+} from "@prismshadow/penguin-library-plugin/web/plugin-detail";
 
 describe("groupPluginFiles", () => {
   it("exposes every workbench source file even without Skills or hooks", () => {

@@ -12,8 +12,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { BenchmarkSources, watchBenchmarkCases } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-sources";
-import type { BenchmarksView, CasesView } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-sources";
+import {
+  BenchmarkSources,
+  watchBenchmarkCases,
+} from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-sources";
+import type {
+  BenchmarksView,
+  CasesView,
+} from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-sources";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FetchRequest } from "./helpers/fetch";
 

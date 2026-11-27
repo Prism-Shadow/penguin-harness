@@ -80,7 +80,11 @@ import {
   type PluginGroupBy,
   type PluginRow,
 } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
-import { PluginStatusMark, rowTitle, webLink } from "@prismshadow/penguin-library-plugin/web/plugin-marks";
+import {
+  PluginStatusMark,
+  rowTitle,
+  webLink,
+} from "@prismshadow/penguin-library-plugin/web/plugin-marks";
 import type { PluginStatus } from "@prismshadow/penguin-library-plugin/web/plugin-status";
 import {
   IncompatibleNotice,

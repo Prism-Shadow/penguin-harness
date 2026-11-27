@@ -60,7 +60,12 @@ import { isConversationAgent } from "@prismshadow/penguin-web/internal";
 import { formatScore } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal";
+import {
+  PromptFold,
+  composeAiPrompt,
+  pickDefaultAgent,
+  useAiBridge,
+} from "@prismshadow/penguin-web/internal";
 import { ModelCatalogSelect } from "@prismshadow/penguin-web/internal";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {

@@ -27,7 +27,12 @@ import {
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { SettingsDialog } from "@prismshadow/penguin-library-setting/web";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
+import {
+  formatDateTime,
+  formatMoney,
+  formatScore,
+  humanizeDuration,
+} from "@prismshadow/penguin-web/internal";
 import type { Currency } from "@prismshadow/penguin-web/internal";
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
