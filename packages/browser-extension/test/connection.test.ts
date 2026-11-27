@@ -127,6 +127,13 @@ describe("commands", () => {
     expect(factory.last.reply("c1")).toMatchObject({ ok: true, result: { ran: "tabs" } });
   });
 
+  it("hands a set-window-size to the handler as the server sent it", async () => {
+    const { factory, handled } = connected();
+    factory.last.command("s1", { op: "set-window-size", tabId: 9, width: 1280, height: 800 });
+    await vi.waitFor(() => expect(factory.last.reply("s1")).toBeDefined());
+    expect(handled).toEqual([{ op: "set-window-size", tabId: 9, width: 1280, height: 800 }]);
+  });
+
   it("returns the handler's refusal as the error", async () => {
     const { factory } = connected({
       handle: async () => {
@@ -141,6 +148,16 @@ describe("commands", () => {
   it.each([
     ["a cdp command without a method", { op: "cdp", tabId: 3 }, "bad_command"],
     ["an open-tab without a url", { op: "open-tab", activate: true }, "bad_command"],
+    [
+      "a set-window-size without a height",
+      { op: "set-window-size", tabId: 3, width: 1280 },
+      "bad_command",
+    ],
+    [
+      "a set-window-size of no width",
+      { op: "set-window-size", tabId: 3, width: 0, height: 800 },
+      "bad_command",
+    ],
     ["a cookie write", { op: "set-cookies", cookies: [] }, "unknown_op"],
     ["a cache wipe", { op: "clear-data", storages: ["cookies"] }, "unknown_op"],
     ["an op nobody knows", { op: "format-disk" }, "unknown_op"],

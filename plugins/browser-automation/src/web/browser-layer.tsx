@@ -9,7 +9,9 @@
  * in creation order, never re-parented, and are laid OVER the dock's viewport slot by
  * coordinates (geometry.ts): the active tab covers the visible part of the slot, every other
  * page parks off-screen at a real size, so a page an agent works in while the dock is closed
- * keeps a desktop layout. While a browser panel is on screen a frame loop follows its slot,
+ * keeps a desktop layout. A tab given a fixed page size (`resize`, by the user or an agent) is
+ * laid out at that size wherever it is, and drawn scaled down to fit the slot, centred in it.
+ * While a browser panel is on screen a frame loop follows its slot,
  * because the dock resizes, slides and moves with the layout around it and nothing announces
  * all of those. The pages have no stacking order of their own: the Chat window is its own
  * stacking context and this layer comes after it in the tree, so the page on screen (and the
@@ -64,7 +66,13 @@ import {
   refreshBrowserStatus,
 } from "./browser-actions";
 import { subscribeBuiltinBrowserEvents, subscribeBuiltinBrowserResync } from "./browser-events";
-import { activeTab, guestByKey, shouldReveal, type BrowserGuest } from "./browser-state";
+import {
+  activeTab,
+  guestByKey,
+  shouldReveal,
+  type BrowserGuest,
+  type BrowserState,
+} from "./browser-state";
 import { browserState, dispatchBrowser, subscribeBrowser } from "./browser-store";
 import {
   DEFAULT_PARK_SIZE,
@@ -72,6 +80,7 @@ import {
   parkedPlacement,
   samePlacement,
   shownSize,
+  sizedPlacement,
   slotPlacement,
   type Placement,
   type Rect,
@@ -109,6 +118,8 @@ const VIEW_STYLE: CSSProperties = {
   top: 0,
   width: DEFAULT_PARK_SIZE.width,
   height: DEFAULT_PARK_SIZE.height,
+  // A page with a fixed size is drawn scaled about its top left corner (geometry.ts).
+  transformOrigin: "0 0",
 };
 const RING_STYLE: CSSProperties = { display: "none" };
 
@@ -163,6 +174,13 @@ function writeRect(style: CSSStyleDeclaration, rect: Rect): void {
   style.height = `${rect.height}px`;
 }
 
+/** A tab's fixed page size, for the guest showing it; null while it fits the panel. */
+function fixedSize(state: BrowserState, guest: BrowserGuest): Size | null {
+  if (guest.tabId === null) return null;
+  const viewport = state.tabs.find((tab) => tab.id === guest.tabId)?.viewport;
+  return viewport === undefined ? null : { width: viewport.width, height: viewport.height };
+}
+
 /**
  * Lays every hosted page out for this frame: the active tab over the visible slot, unless its
  * page is blank or crashed (the panel's own surface shows then: the blank state, or the crash
@@ -197,11 +215,19 @@ function placePages(ring: HTMLDivElement | null): void {
     const host = hosts.get(guest.key);
     if (host === undefined || host.frame === null || host.view === null) continue;
     const shown = showPage && onScreen !== null && guest.tabId !== null && guest.tabId === tab?.id;
-    const placement = shown ? onScreen : parkedPlacement(host.parkSize);
+    // A tab with a fixed size is that size on screen (scaled to fit) and parked alike.
+    const fixed = fixedSize(state, guest);
+    const placement =
+      shown && onScreen !== null
+        ? fixed === null
+          ? onScreen
+          : sizedPlacement(onScreen, fixed)
+        : parkedPlacement(fixed ?? host.parkSize);
     host.parkSize = shownSize(placement) ?? host.parkSize;
     if (samePlacement(host.applied, placement)) continue;
     writeRect(host.frame.style, placement.frame);
     writeRect(host.view.style, placement.view);
+    host.view.style.transform = placement.scale === 1 ? "" : `scale(${placement.scale})`;
     host.applied = placement;
   }
   if (ring !== null) {

@@ -44,10 +44,12 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
+  BuiltinBrowserViewportResult,
 } from "@prismshadow/penguin-server/api";
 import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { HttpError } from "@prismshadow/penguin-server/plugin";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
+import type { ViewportRequest } from "./viewport.js";
 import type { BrowserTiming } from "./backend-runtime.js";
 import { ExtensionHub } from "./extension-hub.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
@@ -513,6 +515,17 @@ export class BuiltinBrowser {
     sessionId?: string,
   ): Promise<unknown> {
     return this.runtime(actor).cdp(tab, method, params, sessionId);
+  }
+
+  /** POST /tabs/:tab/viewport: a fixed page size, the panel's again, or what the page reports. */
+  async resize(
+    actor: Actor,
+    tab: string,
+    request: ViewportRequest,
+    sessionId?: string,
+  ): Promise<BuiltinBrowserViewportResult> {
+    const { tab: resized, viewport } = await this.runtime(actor).resize(tab, request, sessionId);
+    return { tab: resized, ...viewport };
   }
 
   // --- the extension socket (extension-ws.ts) ------------------------------------

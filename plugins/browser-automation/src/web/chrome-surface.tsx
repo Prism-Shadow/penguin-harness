@@ -4,7 +4,8 @@
  *
  * - Connected: the tab strip lists the tabs the extension drives (× closes one in Chrome, + opens
  *   a new one there, a tab picked here comes to the front there too), the toolbar holds the
- *   address bar (Enter loads the address in that tab) and the menu, and in place of the page a
+ *   address bar (Enter loads the address in that tab), the page size control (a fixed size moves
+ *   the tab into a Chrome window of its own, sized to it) and the menu, and in place of the page a
  *   quiet card says the tab is open in Chrome, with "Show in Chrome". While an agent acts in the
  *   tab the card wears the pulsing ring and the toolbar the agent's mark, as on the built-in
  *   browser. With no tab yet, the card says where the agents' pages will appear.
@@ -49,6 +50,7 @@ import {
   tabBusy,
   type BrowserState,
 } from "./browser-state";
+import { PageSizeMenu } from "./page-size-menu";
 import { PairingDialog, PairingSteps } from "./pairing-dialog";
 
 export function ChromeSurface({ state, active }: { state: BrowserState; active: boolean }) {
@@ -163,6 +165,8 @@ export function ChromeSurface({ state, active }: { state: BrowserState; active: 
           <div className="min-w-0 flex-1" />
         )}
         <AgentBusyMark activity={connected ? currentActivity(state) : null} />
+        {/* The page is not drawn here: its size is its own Chrome window's, shown whole. */}
+        {connected && <PageSizeMenu tab={tab} slot={null} />}
         <Dropdown
           open={menuOpen}
           setOpen={setMenuOpen}

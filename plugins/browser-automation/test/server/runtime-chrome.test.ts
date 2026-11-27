@@ -18,6 +18,9 @@
  * - What the extension refuses with reaches the agent as the route's own answer: a tab gone 404,
  *   taken back 409, the extension paused 503, a refused command 403, a bad address 400, and
  *   Chrome's own CDP error 422.
+ * - A page size is a window of the tab's own sized to it when Chrome gives that size; when it
+ *   gives another, or the extension is too old to size windows, the size is emulated, sent again
+ *   before every later action; fitting again clears it and leaves the window as it is.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -49,6 +52,7 @@ const FAST = {
   openClaimMs: 300,
   closeWaitMs: 200,
   publishDelayMs: 0,
+  viewportSettleMs: 100,
 };
 
 let root: string;
@@ -334,5 +338,127 @@ describe("raw CDP on the user's Chrome", () => {
     const res = await h.call("POST", `/tabs/${tab.id}/cdp`, { method: "Page.getLayoutMetrics" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ result: { ok: 1 } });
+  });
+});
+
+/**
+ * A page in Chrome that knows its size: its window's content area (what `set-window-size` gave),
+ * unless a device-metrics override emulates another; the override's pixel ratio over the
+ * screen's 1.
+ */
+function sizedPage(chrome: FakeChrome) {
+  const window = { width: 1280, height: 720 };
+  let override: { width: number; height: number; scale: number } | null = null;
+  const sizes = chrome.windowGives;
+  chrome.windowGives = (width, height) => {
+    const given = sizes === null ? { width, height } : sizes(width, height);
+    Object.assign(window, given);
+    return given;
+  };
+  const overrides: unknown[] = [];
+  chrome.cdp = (tabId, method, params) => {
+    if (method === "Emulation.setDeviceMetricsOverride") {
+      overrides.push(params);
+      const p = params as { width: number; height: number; deviceScaleFactor: number };
+      override = { width: p.width, height: p.height, scale: p.deviceScaleFactor };
+      return {};
+    }
+    if (method === "Emulation.clearDeviceMetricsOverride") {
+      overrides.push(null);
+      override = null;
+      return {};
+    }
+    if (method === "Page.captureScreenshot") return { data: "iVBORw0KGgo=" };
+    if (method !== "Runtime.evaluate") return {};
+    if (expressionOf(params).includes("innerWidth, innerHeight, devicePixelRatio")) {
+      const emulated = override !== null && override.width > 0;
+      return evaluated([
+        emulated ? override!.width : window.width,
+        emulated ? override!.height : window.height,
+        override !== null && override.scale > 0 ? override.scale : 1,
+      ]);
+    }
+    return page(tabId, method, params);
+  };
+  return { window, overrides };
+}
+
+describe("a page size in the user's Chrome", () => {
+  it("sizes a window of the tab's own to it, and emulates nothing when Chrome gives that size", async () => {
+    const h = mount();
+    const chrome = await h.connect();
+    const { tab } = await json<{ tab: BuiltinBrowserTab }>(await h.call("POST", "/tabs", {}));
+    const { overrides } = sizedPage(chrome);
+
+    const res = await h.call("POST", `/tabs/${tab.id}/viewport`, { width: 1200, height: 660 });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      tab: { id: tab.id, viewport: { width: 1200, height: 660 } },
+      width: 1200,
+      height: 660,
+      scale: 1,
+    });
+    expect(chrome.commands).toContainEqual({
+      op: "set-window-size",
+      tabId: tab.id,
+      width: 1200,
+      height: 660,
+    });
+    // The window itself is that size: nothing is emulated over it.
+    expect(overrides).toEqual([null]);
+    await h.call("POST", `/tabs/${tab.id}/screenshot`, {});
+    expect(overrides).toEqual([null]);
+  });
+
+  it("emulates the size when Chrome gives the window another, again before each later action", async () => {
+    const h = mount();
+    const chrome = await h.connect();
+    const { tab } = await json<{ tab: BuiltinBrowserTab }>(await h.call("POST", "/tabs", {}));
+    // The screen holds no window that tall.
+    chrome.windowGives = (width, height) => ({ width, height: Math.min(height, 900) });
+    const { overrides } = sizedPage(chrome);
+
+    const res = await h.call("POST", `/tabs/${tab.id}/viewport`, { width: 1920, height: 1080 });
+    expect(await res.json()).toMatchObject({
+      tab: { viewport: { width: 1920, height: 1080, emulated: true } },
+      width: 1920,
+      height: 1080,
+    });
+    const emulation = { width: 1920, height: 1080, deviceScaleFactor: 0, mobile: false };
+    expect(overrides).toEqual([emulation]);
+    // The extension detaches after a minute of quiet, which drops the override: every action
+    // sends it again first.
+    await h.call("POST", `/tabs/${tab.id}/screenshot`, {});
+    expect(overrides).toEqual([emulation, emulation]);
+
+    // Fitting again clears it, and the window stays as it is.
+    const fit = await h.call("POST", `/tabs/${tab.id}/viewport`, { fit: true });
+    const fitted = await json<{ tab: BuiltinBrowserTab; width: number }>(fit);
+    expect(fitted.tab.viewport).toBeUndefined();
+    expect(fitted.width).toBe(1920);
+    expect(overrides.at(-1)).toBeNull();
+    expect(chrome.commands.filter((c) => c.op === "set-window-size")).toHaveLength(1);
+  });
+
+  it("emulates the size with an extension too old to size windows", async () => {
+    const h = mount();
+    const chrome = await h.connect();
+    const { tab } = await json<{ tab: BuiltinBrowserTab }>(await h.call("POST", "/tabs", {}));
+    const { overrides } = sizedPage(chrome);
+    chrome.windowGives = null;
+
+    const res = await h.call("POST", `/tabs/${tab.id}/viewport`, {
+      width: 390,
+      height: 844,
+      scale: 3,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      tab: { viewport: { width: 390, height: 844, scale: 3, emulated: true } },
+      width: 390,
+      height: 844,
+      scale: 3,
+    });
+    expect(overrides).toEqual([{ width: 390, height: 844, deviceScaleFactor: 3, mobile: false }]);
   });
 });

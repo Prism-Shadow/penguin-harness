@@ -10,8 +10,9 @@
 // the device's dark setting until the user picks a theme; the switches' focus ring, drawn for the
 // keyboard and never left by a click; the hello handshake and pings; open-tab into the "Penguin" group; a scan-like Runtime.evaluate;
 // a trusted click and typing through Input.*; a relayed CDP event; a page the tab opens joining
-// the group; refusals (a cookie method, a tab the server does not drive); close-tab; and a
-// revoke closing the socket for good.
+// the group; refusals (a cookie method, a tab the server does not drive); set-window-size moving
+// the tab into a window of its own, still grouped and driven, and sizing its page; close-tab;
+// and a revoke closing the socket for good.
 import { chromium } from "@playwright/test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -369,6 +370,82 @@ try {
     screenshotX(process.env.DISPLAY, process.env.E2E_SCREENSHOT);
     console.log(`screenshot: ${process.env.E2E_SCREENSHOT}`);
   }
+
+  // --- set-window-size: the tab alone in a window of its own, sized ---------------------------
+  const placement = (tabId) =>
+    worker.evaluate(async (id) => {
+      const t = await chrome.tabs.get(id);
+      const w = await chrome.windows.get(t.windowId);
+      const together = await chrome.tabs.query({ windowId: t.windowId });
+      const g = t.groupId < 0 ? null : await chrome.tabGroups.get(t.groupId);
+      return {
+        windowId: t.windowId,
+        window: { width: w.width, height: w.height },
+        content: { width: t.width, height: t.height },
+        alone: together.length === 1,
+        group: g && { title: g.title, color: g.color, windowId: g.windowId },
+      };
+    }, tabId);
+  const before = await placement(tab.id);
+  const sizeTo = (width, height) =>
+    stub
+      .request({ op: "set-window-size", tabId: tab.id, width, height })
+      .catch((err) => ({ error: err.message }));
+  const firstSize = await sizeTo(900, 600);
+  const moved = await eventually(async () => {
+    const now = await placement(tab.id);
+    return now.group !== null && now;
+  });
+  const viewport = await evaluate(tab.id, "[innerWidth, innerHeight]");
+  check(
+    "set-window-size moves the tab into a window of its own, its page at the size asked for",
+    firstSize.width === 900 &&
+      firstSize.height === 600 &&
+      moved?.windowId !== before.windowId &&
+      moved?.alone === true &&
+      viewport?.[0] === 900 &&
+      viewport?.[1] === 600,
+    JSON.stringify({ answer: firstSize, moved, viewport }),
+  );
+  const listedAfterMove = await stub.request({ op: "tabs" });
+  check(
+    "the moved tab is still driven, in a Penguin group in its new window, and never released",
+    moved?.group?.title === "Penguin" &&
+      moved.group.windowId === moved.windowId &&
+      listedAfterMove.tabs.some((t) => t.id === tab.id) &&
+      !stub.state.events.some((e) => e.kind === "tab-released"),
+    JSON.stringify(moved?.group),
+  );
+  const usersWindowAfter = await worker.evaluate(async (id) => {
+    const w = await chrome.windows.get(id);
+    const inside = await chrome.tabs.query({ windowId: id });
+    return { width: w.width, height: w.height, tabs: inside.map((t) => t.id) };
+  }, before.windowId);
+  check(
+    "the window the tab left keeps its size and its other tabs",
+    usersWindowAfter.width === before.window.width &&
+      usersWindowAfter.height === before.window.height &&
+      usersWindowAfter.tabs.includes(helpEvent?.tab.id),
+    JSON.stringify({ before: before.window, after: usersWindowAfter }),
+  );
+  const secondSize = await sizeTo(1000, 650);
+  const resized = await placement(tab.id);
+  check(
+    "sizing it again resizes its own window in place",
+    secondSize.width === 1000 &&
+      secondSize.height === 650 &&
+      resized.windowId === moved?.windowId &&
+      resized.content.width === 1000 &&
+      resized.content.height === 650,
+    JSON.stringify({ answer: secondSize, resized }),
+  );
+  // Far larger than the 1280×860 screen: Chrome refuses such a window rather than shrink it.
+  const tooLarge = await sizeTo(3000, 2000);
+  check(
+    "a size Chrome refuses answers the size the page kept",
+    tooLarge.width === 1000 && tooLarge.height === 650,
+    JSON.stringify(tooLarge),
+  );
 
   // --- close-tab ------------------------------------------------------------------------------
   const closeAnswers = [];

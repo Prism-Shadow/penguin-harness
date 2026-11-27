@@ -1,13 +1,18 @@
 /**
- * The driven-tab set (tab-set.ts) applied to Chrome: opening, closing and focusing a server's
- * tabs, keeping each server's Penguin group in each window, following Chrome's tab events, and
- * telling each server what changed for its tabs (and nothing about any other tab).
+ * The driven-tab set (tab-set.ts) applied to Chrome: opening, closing, focusing and sizing a
+ * server's tabs, keeping each server's Penguin group in each window, following Chrome's tab
+ * events, and telling each server what changed for its tabs (and nothing about any other tab).
+ *
+ * A tab given a fixed size is moved into a window the extension makes for it, where it sits
+ * alone and joins its server's group again; that window is then sized (window-size.ts). The
+ * user's own windows are never moved or resized, and new tabs keep opening in them.
  */
 import { isRestrictedUrl } from "./policy.js";
 import {
   drivenTabs,
   emptyTabSet,
   groupOf,
+  isOwnWindow,
   lookup,
   reduce,
   serverOfGroupKey,
@@ -17,6 +22,7 @@ import {
   type TabSetEffect,
   type TabSetState,
 } from "./tab-set.js";
+import { sizeContentArea, type Size } from "./window-size.js";
 import type { BuiltinBrowserTab, DesktopBrowserEvent, TabReleaseReason } from "./wire.js";
 
 /** The group colour every Penguin group gets. */
@@ -65,6 +71,8 @@ export class TabController {
   private state: TabSetState;
   /** Effects run one batch at a time, so grouping calls never interleave. */
   private work: Promise<void> = Promise.resolve();
+  /** Sizings run one at a time, so two for one tab never make two windows. */
+  private sizing: Promise<unknown> = Promise.resolve();
   private readonly log: (line: string) => void;
 
   constructor(private readonly options: TabControllerOptions) {
@@ -73,16 +81,19 @@ export class TabController {
   }
 
   /**
-   * A stored state brought back after a worker restart: tabs and groups Chrome no longer has are
-   * dropped without a word (no server is connected yet; each re-reads its tabs on `hello`).
+   * A stored state brought back after a worker restart: tabs, groups and windows Chrome no longer
+   * has are dropped without a word (no server is connected yet; each re-reads its tabs on `hello`).
    */
   static async restore(stored: TabSetState): Promise<TabSetState> {
-    const state: TabSetState = { tabs: {}, groups: {} };
+    const state = emptyTabSet();
     for (const [key, tab] of Object.entries(stored.tabs)) {
       if (await exists(() => chrome.tabs.get(tab.tabId))) state.tabs[key] = tab;
     }
     for (const [key, groupId] of Object.entries(stored.groups)) {
       if (await exists(() => chrome.tabGroups.get(groupId))) state.groups[key] = groupId;
+    }
+    for (const windowId of stored.windows) {
+      if (await exists(() => chrome.windows.get(windowId))) state.windows.push(windowId);
     }
     return state;
   }
@@ -158,6 +169,24 @@ export class TabController {
     if (tab?.windowId !== undefined) {
       await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
     }
+  }
+
+  /**
+   * `set-window-size`: the tab alone in a window of the extension's own, sized so its content
+   * area is `width` × `height`. Resolves with the content area Chrome then reports, which differs
+   * from the one asked for when the window is kept within the screen or above Chrome's smallest
+   * size, or refused for being far larger than the screen.
+   */
+  async setWindowSize(server: string, tabId: number, width: number, height: number): Promise<Size> {
+    this.drivable(server, tabId);
+    const run = this.sizing.then(async () => {
+      // Checked again: the tab may have been released while an earlier sizing ran.
+      this.drivable(server, tabId);
+      const windowId = await this.ownWindowFor(tabId);
+      return sizeContentArea(tabId, windowId, { width, height });
+    });
+    this.sizing = run.catch(() => {});
+    return run;
   }
 
   /**
@@ -252,6 +281,47 @@ export class TabController {
     void this.dispatch({ type: "group-removed", groupId });
   }
 
+  onWindowRemoved(windowId: number): void {
+    void this.dispatch({ type: "window-removed", windowId });
+  }
+
+  // --- the windows sized tabs sit in ---------------------------------------------------------
+
+  /**
+   * The window of the extension's own the tab sits alone in. A tab anywhere else is moved into a
+   * new one: the move keeps its page as it is, and leaves the window it came from and that
+   * window's other tabs alone.
+   */
+  private async ownWindowFor(tabId: number): Promise<number> {
+    const tab = await chrome.tabs.get(tabId);
+    if (isOwnWindow(this.state, tab.windowId)) {
+      const together = await chrome.tabs.query({ windowId: tab.windowId });
+      if (together.length === 1) return tab.windowId;
+    }
+    // A grouping still running lands first, so the group the move takes the tab out of is the
+    // last one recorded, and the one forgotten.
+    await this.work;
+    await this.dispatch({ type: "moving", tabId });
+    let window: chrome.windows.Window | undefined;
+    try {
+      window = await chrome.windows.create({ tabId, focused: false, type: "normal" });
+    } catch (err) {
+      await this.regroup(tabId);
+      throw err;
+    }
+    if (window?.id === undefined) throw new Error("Chrome did not make the window.");
+    await this.dispatch({ type: "moved", tabId, windowId: window.id });
+    return window.id;
+  }
+
+  /** The move failed: the tab is still in its group, and dragged out of it, it is released again. */
+  private async regroup(tabId: number): Promise<void> {
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    if (tab !== undefined && tab.groupId !== -1) {
+      await this.dispatch({ type: "grouped", tabId, groupId: tab.groupId });
+    }
+  }
+
   // --- effects -------------------------------------------------------------------------------
 
   private async run(effects: TabSetEffect[]): Promise<void> {
@@ -324,15 +394,26 @@ export class TabController {
     }
   }
 
+  /**
+   * Where a new tab opens: the window the server's group is in, else the last focused one. The
+   * windows the extension made for sized tabs are skipped, so a sized tab stays alone in its own;
+   * one of them is used only when the user has no other normal window open.
+   */
   private async windowFor(server: string): Promise<number | undefined> {
     for (const windowId of windowsOf(this.state, server)) {
+      if (isOwnWindow(this.state, windowId)) continue;
       const window = await chrome.windows.get(windowId).catch(() => undefined);
       if (window?.type === "normal") return windowId;
     }
     const focused = await chrome.windows
       .getLastFocused({ windowTypes: ["normal"] })
       .catch(() => undefined);
-    return focused?.id;
+    if (focused?.id === undefined || !isOwnWindow(this.state, focused.id)) return focused?.id;
+    const normal = await chrome.windows.getAll({ windowTypes: ["normal"] }).catch(() => []);
+    const users = normal.find(
+      (window) => window.id !== undefined && !isOwnWindow(this.state, window.id),
+    );
+    return users?.id ?? focused.id;
   }
 }
 

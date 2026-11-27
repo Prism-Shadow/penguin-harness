@@ -11,15 +11,19 @@
  * - Edges snap to whole pixels (edges rounded, not sizes), so a slot and its frame never open
  *   a seam; rectangles intersect, reporting no overlap as null.
  * - A frame that computes the same boxes writes nothing.
+ * - A tab with a fixed page size is laid out at that size, scaled down (never up) to fit the slot
+ *   whole and centred in it, its frame still the slot's visible part; parked, it keeps its size.
  */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PARK_SIZE,
   PARK_LEFT,
+  fitScale,
   intersect,
   parkedPlacement,
   samePlacement,
   shownSize,
+  sizedPlacement,
   slotPlacement,
   snapRect,
 } from "../../../plugins/browser-automation/src/web/geometry";
@@ -131,6 +135,59 @@ describe("parking", () => {
       height: 700,
     });
     expect(shownSize(parkedPlacement(DEFAULT_PARK_SIZE))).toBeNull();
+  });
+});
+
+describe("a fixed page size", () => {
+  const size = { width: 1200, height: 660 };
+
+  it("lays the page out at its size, scaled down to fit the slot whole and centred in it", () => {
+    const placement = sizedPlacement(slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE), size);
+    // 480 / 1200 = 0.4 is the tighter fit (700 / 660 would enlarge it).
+    expect(placement.scale).toBeCloseTo(0.4);
+    expect(placement.frame).toEqual(slot);
+    expect(placement.view).toEqual({
+      left: 0,
+      top: (700 - 660 * 0.4) / 2,
+      width: 1200,
+      height: 660,
+    });
+    // What it parks at afterwards is its own size, not the slot's.
+    expect(shownSize(placement)).toEqual(size);
+  });
+
+  it("never enlarges a page smaller than the slot: it sits at its own size in the middle", () => {
+    const placement = sizedPlacement(slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE), {
+      width: 320,
+      height: 480,
+    });
+    expect(placement.scale).toBe(1);
+    expect(placement.view).toEqual({ left: 80, top: 110, width: 320, height: 480 });
+  });
+
+  it("keeps the frame to what the dock's window shows while the page fits the whole slot", () => {
+    const dockWindow = { left: 1040, top: 100, width: 240, height: 700 };
+    const shown = slotPlacement({ ...slot, left: 1040 }, [dockWindow, viewport], DEFAULT_PARK_SIZE);
+    const placement = sizedPlacement(shown, size);
+    expect(placement.frame).toEqual(dockWindow);
+    expect(placement.scale).toBeCloseTo(0.4);
+    expect(placement.view.left).toBe(0);
+  });
+
+  it("parks at its own size when the slot is not on screen", () => {
+    expect(sizedPlacement(parkedPlacement(DEFAULT_PARK_SIZE), size)).toEqual(parkedPlacement(size));
+  });
+
+  it("fits a box by its tighter edge, and leaves a degenerate box at 1", () => {
+    expect(fitScale({ width: 600, height: 330 }, size)).toBe(0.5);
+    expect(fitScale({ width: 2400, height: 1320 }, size)).toBe(1);
+    expect(fitScale({ width: 0, height: 700 }, size)).toBe(1);
+  });
+
+  it("writes again when only the scale changes", () => {
+    const shown = slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE);
+    const a = sizedPlacement(shown, size);
+    expect(samePlacement(a, { ...a, scale: 0.5 })).toBe(false);
   });
 });
 

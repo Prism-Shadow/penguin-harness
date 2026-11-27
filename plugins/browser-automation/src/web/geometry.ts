@@ -10,6 +10,10 @@
  * Each page is two boxes: a clipping FRAME at the visible part of the slot, and the VIEW inside
  * it at the slot's full size. While a dock slides open, the frame grows with it and the page
  * slides in whole, instead of being re-laid-out at every intermediate width.
+ *
+ * A tab given a fixed page size (`resize`) keeps its VIEW at that size wherever it is — on
+ * screen, parked — so the page really is that size; on screen the view is scaled down (never
+ * up) to fit the slot whole, and centred in it (`sizedPlacement`).
  */
 
 export interface Rect {
@@ -30,11 +34,15 @@ export const PARK_LEFT = -20000;
 /** The size of a page that has never been on screen: a common desktop viewport. */
 export const DEFAULT_PARK_SIZE: Size = { width: 1280, height: 800 };
 
-/** One page's boxes for this frame. `view` is relative to `frame`. */
+/**
+ * One page's boxes for this frame. `view` is relative to `frame`; `scale` is the factor the view
+ * is drawn at about its top left corner (1: as laid out).
+ */
 export interface Placement {
   shown: boolean;
   frame: Rect;
   view: Rect;
+  scale: number;
 }
 
 /** The overlap of two rectangles, or null when they do not overlap. */
@@ -68,6 +76,35 @@ export function parkedPlacement(size: Size): Placement {
     shown: false,
     frame: { left: PARK_LEFT, top: 0, width: size.width, height: size.height },
     view: { left: 0, top: 0, width: size.width, height: size.height },
+    scale: 1,
+  };
+}
+
+/** The factor a page of `size` is drawn at to fit `box` whole: never above 1. */
+export function fitScale(box: Size, size: Size): number {
+  if (box.width <= 0 || box.height <= 0 || size.width <= 0 || size.height <= 0) return 1;
+  return Math.min(1, box.width / size.width, box.height / size.height);
+}
+
+/**
+ * A page of a fixed `size` on screen: laid out at that size, scaled to fit the slot `shown` places
+ * the page over (its `view`), and centred in it on whole pixels. The frame stays the slot's
+ * visible part, so the room around the page is the panel's own.
+ */
+export function sizedPlacement(shown: Placement, size: Size): Placement {
+  if (!shown.shown) return parkedPlacement(size);
+  const slot = shown.view;
+  const scale = fitScale(slot, size);
+  return {
+    shown: true,
+    frame: shown.frame,
+    view: {
+      left: slot.left + Math.round((slot.width - size.width * scale) / 2),
+      top: slot.top + Math.round((slot.height - size.height * scale) / 2),
+      width: size.width,
+      height: size.height,
+    },
+    scale,
   };
 }
 
@@ -135,6 +172,7 @@ export function slotPlacement(
       width: whole.width,
       height: whole.height,
     },
+    scale: 1,
   };
 }
 
@@ -150,6 +188,10 @@ function sameRect(a: Rect, b: Rect): boolean {
 /** Whether two placements need no DOM write between them. */
 export function samePlacement(a: Placement | undefined, b: Placement): boolean {
   return (
-    a !== undefined && a.shown === b.shown && sameRect(a.frame, b.frame) && sameRect(a.view, b.view)
+    a !== undefined &&
+    a.shown === b.shown &&
+    a.scale === b.scale &&
+    sameRect(a.frame, b.frame) &&
+    sameRect(a.view, b.view)
   );
 }

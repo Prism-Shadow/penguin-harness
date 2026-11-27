@@ -332,6 +332,30 @@ export function parsePoint(raw: string, t: BrowserMessages): { x: number; y: num
   return { x: Number(m[1]), y: Number(m[2]) };
 }
 
+/** The edges a page size may have, CSS px (the server's own bounds). */
+const SIZE_MIN = 200;
+const SIZE_MAX = 4096;
+
+/** `resize <w>x<h>`: two whole CSS pixel counts (`1200x660`, `1200×660`, `1200*660`). */
+export function parseSize(raw: string, t: BrowserMessages): { width: number; height: number } {
+  const m = /^\s*(\d{1,5})\s*[x×*]\s*(\d{1,5})\s*$/i.exec(raw);
+  const width = Number(m?.[1]);
+  const height = Number(m?.[2]);
+  if (m === null || [width, height].some((n) => n < SIZE_MIN || n > SIZE_MAX)) {
+    throw invalid(t.browser.sizeInvalid(raw));
+  }
+  return { width, height };
+}
+
+/** `--scale`: a device pixel ratio from 1 to 4. */
+export function parseScale(raw: string, t: BrowserMessages): number {
+  const value = Number(raw.trim());
+  if (raw.trim() === "" || !Number.isFinite(value) || value < 1 || value > 4) {
+    throw invalid(t.browser.scaleInvalid(raw));
+  }
+  return value;
+}
+
 /** `--params`: a JSON object. */
 export function parseParams(raw: string, t: BrowserMessages): Record<string, unknown> {
   let value: unknown;

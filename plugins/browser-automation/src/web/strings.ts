@@ -56,6 +56,7 @@ export const zh = {
       type: "输入文字",
       screenshot: "截取屏幕",
       cdp: "发送调试命令",
+      resize: "调整页面尺寸",
     },
     /** The panel where the browser cannot run; the title, then why. */
     unavailableTitle: "内置浏览器不可用",
@@ -263,6 +264,26 @@ export const zh = {
     /** Empties the field; saving it then removes the homepage. */
     homepageClear: "清除",
     homepageFailed: (reason: string): string => `无法保存主页：${reason}`,
+    /**
+     * The toolbar's page size button (its name), and its tooltip: fitting the panel, or the fixed
+     * size with the zoom it is shown at in the panel (none in the user's Chrome, which shows it whole).
+     */
+    pageSize: "页面尺寸",
+    pageSizeFit: "页面尺寸：适应面板",
+    pageSizeFixed: (width: number, height: number, percent: number | null): string =>
+      `页面尺寸：${width} × ${height}${percent === null ? "" : ` · ${percent}%`}`,
+    /** Its menu: back to the panel's size, a size, or the custom size dialog. */
+    fitPanel: "适应面板",
+    sizeChoice: (width: number, height: number): string => `${width} × ${height}`,
+    customSize: "自定义尺寸…",
+    /** The custom size dialog. */
+    customSizeTitle: "自定义页面尺寸",
+    customSizeIntro: "页面会按这个尺寸排版，截图也是这个尺寸。",
+    sizeWidth: "宽",
+    sizeHeight: "高",
+    sizeHint: "CSS 像素，200 到 4096",
+    sizeApply: "应用",
+    resizeFailed: (reason: string): string => `无法调整页面尺寸：${reason}`,
     /** A tab whose page crashed: the panel's notice in its place, with Reload as the action. */
     crashedTitle: "此页面已崩溃",
     /** The notice's body when the page ran out of memory (the system took its memory back). */
@@ -389,6 +410,7 @@ export const en: BrowserStrings = {
       type: "typing",
       screenshot: "taking a screenshot",
       cdp: "sending a DevTools command",
+      resize: "resizing the page",
     },
     unavailableTitle: "Built-in browser unavailable",
     unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
@@ -569,6 +591,20 @@ export const en: BrowserStrings = {
     homepageUseCurrent: "Use current page",
     homepageClear: "Clear",
     homepageFailed: (reason: string): string => `Could not save the homepage: ${reason}`,
+    pageSize: "Page size",
+    pageSizeFit: "Page size: fit to panel",
+    pageSizeFixed: (width: number, height: number, percent: number | null): string =>
+      `Page size: ${width} × ${height}${percent === null ? "" : ` · ${percent}%`}`,
+    fitPanel: "Fit to panel",
+    sizeChoice: (width: number, height: number): string => `${width} × ${height}`,
+    customSize: "Custom size…",
+    customSizeTitle: "Custom page size",
+    customSizeIntro: "The page is laid out at this size, and screenshots are taken at it.",
+    sizeWidth: "Width",
+    sizeHeight: "Height",
+    sizeHint: "CSS pixels, 200 to 4096",
+    sizeApply: "Apply",
+    resizeFailed: (reason: string): string => `Could not change the page size: ${reason}`,
     crashedTitle: "This page crashed",
     crashedOutOfMemory: "It ran out of memory. Close tabs you no longer need, then reload it.",
     crashedBody: "Reload it to try again.",

@@ -664,6 +664,85 @@ describe("click, type, screenshot, cdp", () => {
   });
 });
 
+describe("resize", () => {
+  const sized = { ...ORDERS, viewport: { width: 1200, height: 660, scale: 2 } };
+
+  it("fixes the page size with its pixel ratio and prints the size the page reports", async () => {
+    routes["POST /tabs/active/viewport"] = () => ({
+      body: { tab: sized, width: 1200, height: 660, scale: 2 },
+    });
+    expect(await cli(["browser", "resize", "1200x660", "--scale", "2"])).toBe(0);
+    expect(lastBody()).toEqual({ width: 1200, height: 660, scale: 2 });
+    expect(out()).toBe(
+      `tab 12 · Your Orders · ${ORDERS.url}\nsize: 1200x660 · 2x pixels · fixed\n`,
+    );
+  });
+
+  it("fits the panel again with --fit, and with no size reads the page's size", async () => {
+    routes["POST /tabs/15/viewport"] = () => ({
+      body: { tab: GOOGLE, width: 576, height: 702, scale: 1 },
+    });
+    expect(await cli(["browser", "resize", "--fit", "--tab", "15"])).toBe(0);
+    expect(lastBody()).toEqual({ fit: true });
+    expect(await cli(["browser", "resize", "--tab", "15"])).toBe(0);
+    expect(lastBody()).toEqual({});
+    expect(
+      out()
+        .split("\n")
+        .filter((line) => line.startsWith("size:")),
+    ).toEqual([
+      "size: 576x702 · 1x pixels · fits the Browser panel",
+      "size: 576x702 · 1x pixels · fits the Browser panel",
+    ]);
+  });
+
+  it("says when the size is emulated in the user's Chrome, and when the page did not take it", async () => {
+    routes["POST /tabs/active/viewport"] = (body) =>
+      body?.width === 1920
+        ? {
+            body: {
+              tab: { ...ORDERS, viewport: { width: 1920, height: 1080, emulated: true } },
+              width: 1920,
+              height: 1080,
+              scale: 1,
+            },
+          }
+        : {
+            body: {
+              tab: { ...ORDERS, viewport: { width: 1280, height: 800 } },
+              width: 576,
+              height: 702,
+              scale: 1,
+            },
+          };
+    expect(await cli(["browser", "resize", "1920x1080"])).toBe(0);
+    expect(out()).toContain(`size: ${t.browser.sizeValue(1920, 1080, 1, "emulated")}\n`);
+    expect(await cli(["browser", "resize", "1280x800"])).toBe(0);
+    expect(out()).toContain(`note: ${t.browser.sizeNotTaken(1280, 800)}\n`);
+  });
+
+  it("refuses a malformed size, a ratio out of range, a size with --fit and --scale alone, without a request", async () => {
+    for (const args of [
+      ["resize", "1200"],
+      ["resize", "100x660"],
+      ["resize", "1200x660", "--scale", "9"],
+      ["resize", "1200x660", "--fit"],
+      ["resize", "--scale", "2"],
+    ]) {
+      expect(await cli(["browser", ...args]), args.join(" ")).toBe(1);
+    }
+    expect(browserRequests()).toEqual([]);
+    expect(err().split("\n")).toEqual([
+      `error: invalid_argument: ${t.browser.sizeInvalid("1200")}`,
+      `error: invalid_argument: ${t.browser.sizeInvalid("100x660")}`,
+      `error: invalid_argument: ${t.browser.scaleInvalid("9")}`,
+      `error: invalid_argument: ${t.browser.sizeAndFit()}`,
+      `error: invalid_argument: ${t.browser.scaleWithoutSize()}`,
+      "",
+    ]);
+  });
+});
+
 describe("import and history", () => {
   const SOURCES = [
     {

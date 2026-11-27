@@ -14,6 +14,9 @@
  *   POST   /tabs/:tab/activate         focus a tab (the user) or switch to it (the agent)
  *   DELETE /tabs/:tab                  close a tab
  *   POST   /tabs/:tab/navigate|scan|exec|click|type|screenshot|cdp   the agent's actions
+ *   POST   /tabs/:tab/viewport         the page size: {width, height, scale?} fixes it, {fit: true}
+ *                                      fits the panel again, {} reads it (viewport.ts); the
+ *                                      user's from the panel, or an agent's
  *   GET    /import/sources             system browser profiles that can be imported, and the
  *                                      caller's connected Chrome extension (built-in)
  *   POST   /import                     import cookies and / or history from one (built-in); through
@@ -54,6 +57,7 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
+  BuiltinBrowserViewportResult,
 } from "@prismshadow/penguin-server/api";
 import {
   HttpError,
@@ -70,6 +74,8 @@ import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
 import { BrowserUnavailableError } from "./service.js";
 import type { Actor, BuiltinBrowser } from "./service.js";
+import { SCALE_MAX, SCALE_MIN, VIEWPORT_MAX, VIEWPORT_MIN } from "./viewport.js";
+import type { ViewportRequest } from "./viewport.js";
 
 type Body = Record<string, unknown>;
 
@@ -126,6 +132,34 @@ function optNumber(body: Body, key: string): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value))
     throw badRequest(`${key} must be a number.`);
   return value;
+}
+
+/**
+ * A resize's body: `{width, height, scale?}` fixes the page size, `{fit: true}` fits the panel
+ * again, and neither only reads what the page reports.
+ */
+function viewportRequest(body: Body): ViewportRequest {
+  const width = optInt(body, "width", VIEWPORT_MIN, VIEWPORT_MAX);
+  const height = optInt(body, "height", VIEWPORT_MIN, VIEWPORT_MAX);
+  const scale = optNumber(body, "scale");
+  const fit = optBool(body, "fit") === true;
+  if (scale !== undefined && (scale < SCALE_MIN || scale > SCALE_MAX)) {
+    throw badRequest(`scale must be a device pixel ratio from ${SCALE_MIN} to ${SCALE_MAX}.`);
+  }
+  if (fit) {
+    if (width !== undefined || height !== undefined || scale !== undefined) {
+      throw badRequest("fit takes no width, height or scale.");
+    }
+    return { kind: "fit" };
+  }
+  if (width === undefined && height === undefined) {
+    if (scale !== undefined) throw badRequest("scale goes with a width and a height.");
+    return { kind: "read" };
+  }
+  if (width === undefined || height === undefined) {
+    throw badRequest("A page size takes both width and height.");
+  }
+  return { kind: "fixed", width, height, ...(scale !== undefined ? { scale } : {}) };
 }
 
 /** The session an Agent's CLI names (PENGUIN_SESSION_ID), so the window can follow its work. */
@@ -531,6 +565,17 @@ export function builtinBrowserRoutes(
       sessionIdOf(body) ?? sessionIdQuery(c),
     );
     return c.json({ result });
+  });
+
+  app.post("/tabs/:tab/viewport", async (c) => {
+    const body = await jsonBody(c);
+    const result = await browser.resize(
+      bodyActor(c, body),
+      c.req.param("tab"),
+      viewportRequest(body),
+      sessionIdOf(body) ?? sessionIdQuery(c),
+    );
+    return c.json(result satisfies BuiltinBrowserViewportResult);
   });
 
   app.get("/import/sources", async (c) =>

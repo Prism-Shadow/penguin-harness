@@ -53,6 +53,8 @@ import { parseTab } from "./shell-link.js";
 import type { ShellLinkTiming } from "./shell-link.js";
 import { TabRegistry } from "./tabs.js";
 import type { OpenRequest } from "./tabs.js";
+import { ViewportSizer } from "./viewport.js";
+import type { MeasuredViewport, ViewportRequest } from "./viewport.js";
 
 export interface BrowserTiming extends ShellLinkTiming, ActionTiming {
   /** How long an opened tab has to be claimed by a window (built-in), or created by the extension (chrome). */
@@ -65,6 +67,8 @@ export interface BrowserTiming extends ShellLinkTiming, ActionTiming {
   publishDelayMs: number;
   /** After an agent's action in a tab (or a new tab opening), how long it runs unthrottled. */
   throttleGraceMs: number;
+  /** How long a resized page gets to report its new size before the answer gives what it reports. */
+  viewportSettleMs: number;
 }
 
 /**
@@ -81,7 +85,12 @@ const RELEASED_KEPT = 100;
 
 export const DEFAULT_RUNTIME_TIMING: Pick<
   BrowserTiming,
-  "openClaimMs" | "closeWaitMs" | "tabsTimeoutMs" | "publishDelayMs" | "throttleGraceMs"
+  | "openClaimMs"
+  | "closeWaitMs"
+  | "tabsTimeoutMs"
+  | "publishDelayMs"
+  | "throttleGraceMs"
+  | "viewportSettleMs"
 > = {
   openClaimMs: 15_000,
   closeWaitMs: 5_000,
@@ -90,6 +99,7 @@ export const DEFAULT_RUNTIME_TIMING: Pick<
   // stops (a ticking title); the windows get the tab list at most five times a second.
   publishDelayMs: 200,
   throttleGraceMs: 30_000,
+  viewportSettleMs: 3_000,
 };
 /** How long the shell gets to apply a throttling change. */
 const THROTTLE_TIMEOUT_MS = 5_000;
@@ -154,6 +164,7 @@ export class BrowserBackendRuntime {
   readonly link: BrowserLink;
   private readonly driver: BrowserDriver;
   private readonly actions: BrowserActions;
+  private readonly viewports: ViewportSizer;
   private readonly timing: typeof DEFAULT_RUNTIME_TIMING;
   /** How long an opened web page gets to load before POST /tabs answers. */
   private readonly loadWaitMs: number;
@@ -198,6 +209,16 @@ export class BrowserBackendRuntime {
       now,
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
       ...(deps.timing ? { timing: deps.timing } : {}),
+    });
+    this.viewports = new ViewportSizer({
+      backend: this.backend,
+      driver: this.driver,
+      tabs: this.tabs,
+      command: (command, tabId) => this.command(command, tabId),
+      changed: () => this.schedulePublish(),
+      now,
+      settleMs: this.timing.viewportSettleMs,
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
     });
     this.link.onEvent((event) => this.onLinkEvent(event));
     this.link.onConnect(() => this.refreshTabs());
@@ -414,6 +435,27 @@ export class BrowserBackendRuntime {
     return this.act(tab, "cdp", sessionId, (tabId, actions) => actions.cdp(tabId, method, params));
   }
 
+  /**
+   * POST /tabs/:tab/viewport (viewport.ts). An agent's resize (it names its session) is an
+   * action like the others, announced while it runs; the user's own, from the panel, is not.
+   */
+  async resize(
+    tab: string,
+    request: ViewportRequest,
+    sessionId?: string,
+  ): Promise<{ tab: BuiltinBrowserTab; viewport: MeasuredViewport }> {
+    const run = async (tabId: number) => {
+      const viewport = await this.viewports.resize(tabId, request);
+      return { tab: this.tabOrThrow(tabId), viewport };
+    };
+    if (sessionId !== undefined) return this.act(tab, "resize", sessionId, run);
+    await this.ready();
+    const tabId = this.resolve(tab);
+    const crashed = this.tabs.get(tabId)?.crashed;
+    if (crashed !== undefined) throw tabCrashedError(tabId, crashed);
+    return run(tabId);
+  }
+
   /** A command for the link itself (the built-in browser's cookies and data), past the availability check. */
   async request(command: DesktopBrowserCommand, timeoutMs: number): Promise<unknown> {
     await this.ready();
@@ -604,6 +646,7 @@ export class BrowserBackendRuntime {
     if (this.tabs.activate(tabId)) this.schedulePublish();
     this.activity(tabId, action, sessionId, 1);
     try {
+      if (action !== "resize") await this.viewports.reassert(tabId);
       return await run(tabId, this.actions);
     } catch (err) {
       if (this.released.has(tabId)) throw tabReleasedError(tabId);
@@ -650,12 +693,16 @@ export class BrowserBackendRuntime {
     sessionId?: string;
     partition?: string | undefined;
   }): OpenRequest {
+    // A popup starts at its opener's page size.
+    const viewport =
+      opts.openerTabId !== undefined ? this.tabs.get(opts.openerTabId)?.viewport : undefined;
     const request = this.tabs.createOpen({
       url: opts.url,
       partition: opts.partition ?? "persist:penguin-browser",
       activate: opts.activate,
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
       ...(opts.openerTabId !== undefined ? { openerTabId: opts.openerTabId } : {}),
+      ...(viewport !== undefined ? { viewport } : {}),
     });
     this.deps.publish({
       type: "builtin_browser_open",

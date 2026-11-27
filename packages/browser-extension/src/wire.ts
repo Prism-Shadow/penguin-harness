@@ -89,6 +89,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isTabId = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value);
 
+/** One side of a page size: whole px, the way Chrome takes a window's size. */
+const isPixels = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+
 /** The most CDP event names one `cdp` command may ask to relay. */
 const MAX_RELAYED_EVENTS = 64;
 
@@ -146,6 +150,13 @@ export function parseCommandMessage(data: unknown): ParsedCommand | null {
     case "activate-tab":
       if (!isTabId(command.tabId)) return { id, error: "bad_command" };
       return { id, command: { op: command.op, tabId: command.tabId } };
+    case "set-window-size": {
+      const { tabId, width, height } = command;
+      if (!isTabId(tabId) || !isPixels(width) || !isPixels(height)) {
+        return { id, error: "bad_command" };
+      }
+      return { id, command: { op: "set-window-size", tabId, width, height } };
+    }
     default:
       // set-cookies, clear-data and throttle included: this link has no cookie store and no
       // throttling, so it answers them as a shell that never heard of them would.

@@ -24,6 +24,7 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
+  BuiltinBrowserViewportResult,
 } from "@prismshadow/penguin-server/api";
 import { cutText, renderTable } from "@prismshadow/penguin-library-cli";
 import type { BrowserMessages } from "./browser.messages.js";
@@ -233,6 +234,32 @@ export function renderCdpResult(result: unknown, t: BrowserMessages): string {
       ? `${cutText(text, RETURN_LIMIT)} ${t.browser.truncatedJson()}`
       : text,
   ]);
+}
+
+/**
+ * `resize`: the tab, then `size:` as the page reports it — fixed or fitting the panel — and a
+ * `note:` when a size asked for did not take in time.
+ */
+export function renderResize(
+  res: BuiltinBrowserViewportResult,
+  asked: { width: number; height: number } | null,
+  t: BrowserMessages,
+): string {
+  const { viewport } = res.tab;
+  const mode = viewport === undefined ? "fit" : viewport.emulated === true ? "emulated" : "fixed";
+  const rows = [
+    tabHead(res.tab, t),
+    t.browser.line(
+      t.browser.label.size,
+      t.browser.sizeValue(res.width, res.height, res.scale, mode),
+    ),
+  ];
+  if (asked !== null && (res.width !== asked.width || res.height !== asked.height)) {
+    rows.push(
+      t.browser.line(t.browser.label.note, t.browser.sizeNotTaken(asked.width, asked.height)),
+    );
+  }
+  return lines(rows);
 }
 
 export function renderImportSources(

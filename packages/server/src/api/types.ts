@@ -176,6 +176,7 @@ import type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabMetrics,
+  BuiltinBrowserViewport,
   ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
@@ -1461,6 +1462,7 @@ export type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabMetrics,
+  BuiltinBrowserViewport,
   ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
@@ -5718,6 +5720,19 @@ export interface BuiltinBrowserDialog {
   type: "alert" | "confirm" | "prompt" | "beforeunload";
   message: string;
   accepted: boolean;
+}
+
+/**
+ * POST /api/builtin-browser/tabs/:tab/viewport: the tab as it stands (its `viewport` absent while
+ * it fits the panel), and the page's viewport as the page itself reports it once the change took.
+ */
+export interface BuiltinBrowserViewportResult {
+  tab: BuiltinBrowserTab;
+  /** `innerWidth` × `innerHeight`, CSS px. */
+  width: number;
+  height: number;
+  /** `devicePixelRatio`: a screenshot is `width × scale` pixels wide. */
+  scale: number;
 }
 
 /** POST /api/builtin-browser/tabs/:tab/screenshot. */

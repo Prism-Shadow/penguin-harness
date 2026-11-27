@@ -57,7 +57,9 @@ import { HomepageDialog } from "./homepage-dialog";
 import { ImportDialog } from "./import-dialog";
 import { heavyTabMemory, loadWarningText } from "./load";
 import { NewTabPage } from "./new-tab-page";
+import { PageSizeMenu } from "./page-size-menu";
 import { useAutoFirstTab } from "./use-auto-first-tab";
+import { useBoxSize } from "./use-box-size";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
 
@@ -200,6 +202,7 @@ function BrowserSurface({
   // workbench tab shown over the Chat window parks the page instead: the page is laid over the
   // slot from outside the window, so hiding the window does not hide it).
   const slotRef = useRef<HTMLDivElement | null>(null);
+  const slotSize = useBoxSize(slotRef);
   const [slotId] = useState(() => Symbol("builtin-browser-slot"));
   const windowShown = useWindowShown();
   useLayoutEffect(() => {
@@ -283,11 +286,14 @@ function BrowserSurface({
         onSetHomepage={() => setHomepageOpen(true)}
         onOpenExternal={openExternal}
         onDevTools={() => drive(tabId, (view) => view.openDevTools())}
+        pageSize={<PageSizeMenu tab={tab} slot={slotSize} />}
       />
+      {/* A page with a fixed size is drawn scaled down inside the slot: the muted ground around
+          it shows where the page ends, whatever the page's own background. */}
       <div
         ref={slotRef}
         data-testid="builtin-browser-viewport"
-        className="relative min-h-0 flex-1 overflow-hidden"
+        className={`relative min-h-0 flex-1 overflow-hidden ${tab?.viewport !== undefined ? "bg-surface-muted" : ""}`}
       >
         {firstTabAvailable && (
           <div className="flex h-full items-center justify-center">

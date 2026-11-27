@@ -1,7 +1,7 @@
 /**
  * The built-in browser's toolbar: back, forward, reload (stop while the page loads), Home
  * while a homepage is set, the address bar, the mark of an agent at work while one drives the
- * browser, the load warning while the server gives one, and the overflow menu: import from a
+ * browser, the load warning while the server gives one, the page size control, and the overflow menu: import from a
  * system browser, clear browsing data, set the homepage, open the page in the system browser,
  * developer tools. Which browser the agents drive is chosen in Settings › Browser, not here.
  *
@@ -34,6 +34,7 @@ export function ToolButton({
   label,
   disabled = false,
   tooltipSuppressed = false,
+  on = false,
   onClick,
   children,
   ...aria
@@ -41,10 +42,13 @@ export function ToolButton({
   label: string;
   disabled?: boolean;
   tooltipSuppressed?: boolean;
+  /** A setting the button stands for is in force: its glyph takes the accent. */
+  on?: boolean;
   onClick: () => void;
   children: ReactNode;
   "aria-haspopup"?: "menu";
   "aria-expanded"?: boolean;
+  "data-testid"?: string;
 }) {
   return (
     <Tooltip label={label} placement="bottom" suppressed={tooltipSuppressed}>
@@ -54,7 +58,7 @@ export function ToolButton({
         disabled={disabled}
         onClick={onClick}
         {...aria}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-fg-muted transition-colors duration-150 hover:text-fg disabled:text-fg-subtle disabled:opacity-60"
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm transition-colors duration-150 disabled:text-fg-subtle disabled:opacity-60 ${on ? "text-accent" : "text-fg-muted hover:text-fg"}`}
       >
         {children}
       </button>
@@ -88,6 +92,8 @@ export interface BrowserToolbarProps {
   /** Null when the page is not a web page the system browser could open. */
   onOpenExternal: (() => void) | null;
   onDevTools: () => void;
+  /** The page size control (page-size-menu.tsx), before the overflow menu. */
+  pageSize?: ReactNode;
 }
 
 /** The mark of an agent at work in the browser: an icon in the busy tone, named by its tooltip. */
@@ -174,6 +180,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           </span>
         </Tooltip>
       )}
+      {props.pageSize}
       <Dropdown
         open={menuOpen}
         setOpen={setMenuOpen}
