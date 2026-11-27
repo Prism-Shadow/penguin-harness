@@ -3,7 +3,7 @@
 - **Date:** 2026-11-26
 - **Type:** fix
 - **Scope:** `messaging`
-- **PR:** [#N](https://github.com/Prism-Shadow/penguin-harness/pull/N)
+- **PR:** [#1919](https://github.com/Prism-Shadow/penguin-harness/pull/1919)
 
 [中文版](2026-11-26-wechat-upload-url-fallback.zh.md)
 
