@@ -17,14 +17,15 @@ import { createElement as h, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
+import type { HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
 import type { HistoryMessage } from "@prismshadow/penguin-server/api";
 import { ElidedBodiesContext } from "../src/features/chat/elided-body";
 import { SessionWorkGroup } from "../src/features/chat/work-group";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
-import { SessionToolCall } from "../src/features/chat/tool-call-card";
+import { SessionToolCall, sessionBadgeIds } from "../src/features/chat/tool-call-card";
 import { createStreamController } from "../src/lib/amsp/stream-controller";
 import type { StreamController } from "../src/lib/amsp/stream-controller";
-import { findToolCard } from "../src/lib/amsp/stream-model";
+import { createStreamModel, findToolCard, type ToolCallItem } from "../src/lib/amsp/stream-model";
 import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";
 import { button, click, mount, run, unmountAll } from "./helpers/dom";
@@ -165,5 +166,48 @@ describe("unfolding a folded tool output", () => {
     expect(stream.bodies).toHaveLength(0);
     await click(container.querySelector('.ui-tree button[aria-expanded="false"]')!);
     expect(stream.bodies.map((b) => b.ref)).toEqual(["r-1"]);
+  });
+});
+
+describe("sessionBadgeIds", () => {
+  const sid = (n: number) => `session-2026-11-25-10-00-00-${n.toString(16).padStart(8, "0")}`;
+  const item = (over: Partial<ToolCallItem>): ToolCallItem => ({
+    kind: "tool_call",
+    id: 1,
+    toolCallId: "call_1",
+    name: "exec_command",
+    argumentsText: "{}",
+    callStreaming: false,
+    callComplete: true,
+    output: `done\n${sid(0x4a5b6c7d)}\n`,
+    outputStreaming: false,
+    outputComplete: true,
+    ...over,
+  });
+
+  it("takes the first five distinct ids on a line of their own; a duplicate does not spend the quota", () => {
+    const output = [sid(1), sid(2), sid(1), sid(3), sid(4), sid(5), sid(6)]
+      .map((id) => `${id}\n`)
+      .join("");
+    expect(sessionBadgeIds(item({ output }))).toEqual([sid(1), sid(2), sid(3), sid(4), sid(5)]);
+  });
+
+  it("reads none while the output is still streaming: its buffer's end is not a line's end", () => {
+    const streaming = item({ output: `done\n${sid(0x4a5b6c7d)}`, outputComplete: false });
+    expect(sessionBadgeIds(streaming)).toEqual([]);
+  });
+
+  it("reads nothing while the output is folded: a cut can split a line into a fake one", () => {
+    const folded = item({
+      elidedOutput: {
+        record: {} as HistoryRecordLike,
+        entries: [{ path: "payload.output", bytes: 1, head: 9, ref: "r1" }],
+      },
+    });
+    expect(sessionBadgeIds(folded)).toEqual([]);
+  });
+
+  it("reads none from a bound subagent's card, whose chip already leads there", () => {
+    expect(sessionBadgeIds(item({ subagent: createStreamModel() }))).toEqual([]);
   });
 });

@@ -103,6 +103,112 @@ describe("resolveReplyLink", () => {
     expect(resolveReplyLink("~/notes.md", WS)).toEqual({ kind: "none" });
     expect(resolveReplyLink("%E9%B9", WS)).toEqual({ kind: "none" });
   });
+
+  it("an internal /chat/:sessionId or /org route resolves as a route", () => {
+    expect(resolveReplyLink("/chat/session-2026-11-19-09-52-07-48a86320", WS)).toEqual({
+      kind: "route",
+      to: "/chat/session-2026-11-19-09-52-07-48a86320",
+    });
+    expect(resolveReplyLink("/chat/2556a209", WS)).toEqual({ kind: "route", to: "/chat/2556a209" });
+    expect(resolveReplyLink("/org", WS)).toEqual({ kind: "route", to: "/org" });
+    expect(resolveReplyLink("/org/tickets", WS)).toEqual({
+      kind: "route",
+      to: "/org/tickets",
+    });
+    expect(resolveReplyLink("/org/tickets?state=open#top", WS)).toEqual({
+      kind: "route",
+      to: "/org/tickets?state=open#top",
+    });
+  });
+
+  it("an absolute URL on the page's own origin resolves as a route", () => {
+    const origin = "http://localhost:17469";
+    // The URL parser's normalization is what the origin comparison reads, so case, default
+    // ports and protocol-relative spellings all land on the route; query and hash ride.
+    expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS, origin)).toEqual({
+      kind: "route",
+      to: "/chat/2556a209",
+    });
+    expect(resolveReplyLink("HTTP://LOCALHOST:17469/chat/x?y=1#z", WS, origin)).toEqual({
+      kind: "route",
+      to: "/chat/x?y=1#z",
+    });
+    expect(resolveReplyLink("//localhost:17469/org/tickets", WS, origin)).toEqual({
+      kind: "route",
+      to: "/org/tickets",
+    });
+    expect(resolveReplyLink("http://localhost:17469/chat/../chat/x", WS, origin)).toEqual({
+      kind: "route",
+      to: "/chat/x",
+    });
+    expect(resolveReplyLink("HTTP://LOCALHOST/chat/x?y=1#z", WS, "http://localhost")).toEqual({
+      kind: "route",
+      to: "/chat/x?y=1#z",
+    });
+    expect(resolveReplyLink("http://localhost:80/chat/x", WS, "http://localhost")).toEqual({
+      kind: "route",
+      to: "/chat/x",
+    });
+  });
+
+  it("an absolute URL on another origin — another deployment's port included — stays external", () => {
+    const origin = "http://localhost:17469";
+    // Same host, another port: another deployment on this machine is not this app.
+    expect(resolveReplyLink("http://localhost:9200/chat/2556a209", WS, origin)).toEqual({
+      kind: "external",
+    });
+    expect(resolveReplyLink("http://localhost:9200/org/tickets", WS, origin)).toEqual({
+      kind: "external",
+    });
+    // A different spelling of the same machine is a different origin, not this app.
+    expect(resolveReplyLink("http://127.0.0.1:17469/chat/2556a209", WS, origin)).toEqual({
+      kind: "external",
+    });
+    // Another scheme, or no page origin known: a URL carrying its own host is never claimed.
+    expect(resolveReplyLink("https://localhost:17469/chat/2556a209", WS, origin)).toEqual({
+      kind: "external",
+    });
+    expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS)).toEqual({
+      kind: "external",
+    });
+    // On its own origin, a URL that is not a route path is still just another page.
+    expect(resolveReplyLink("http://localhost:17469/file.md", WS, origin)).toEqual({
+      kind: "external",
+    });
+  });
+
+  it("an href on another host stays external, however much it resembles a local route", () => {
+    for (const href of [
+      "https://evil.com/chat/session-2026-11-19-09-52-07-48a86320",
+      "//evil.com/chat/x",
+      "http://localhost.evil.com/chat/x",
+      "http://127.0.0.1.evil.com/chat/x",
+      "http://localhost@evil.com/chat/x",
+      "http://localhost:80@evil.com/chat/x",
+      "http://localhost./chat/x",
+      "https://example.com/org/tickets",
+    ]) {
+      expect(resolveReplyLink(href, WS)).toEqual({ kind: "external" });
+    }
+  });
+
+  it("a path that is not an app route goes on to the file sorting, as before", () => {
+    // The URL parser normalizes these first: what is left is outside both route families, and
+    // the chat family is one non-empty segment, as the id itself is.
+    expect(resolveReplyLink("/chat/", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat//", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat/x/y", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat/x/../..", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("http://localhost/chat/x/../../etc", WS)).toEqual({
+      kind: "external",
+    });
+    expect(resolveReplyLink("http://localhost/file.md", WS)).toEqual({ kind: "external" });
+    expect(resolveReplyLink(`${WS}/out/pelican-bike.html`, WS)).toEqual({
+      kind: "file",
+      path: "out/pelican-bike.html",
+    });
+  });
 });
 
 /** A click event carrying just what the handlers read. */
@@ -120,7 +226,11 @@ describe("replyLinkBehavior", () => {
 
   it("a Workspace file opens in the Files panel instead of a new tab", () => {
     const openFile = vi.fn();
-    const behavior = replyLinkBehavior("./pelican-bike.html", { workspace: WS, openFile });
+    const behavior = replyLinkBehavior("./pelican-bike.html", {
+      workspace: WS,
+      openFile,
+      openRoute: vi.fn(),
+    });
     expect(behavior.target).toBeUndefined();
     expect(behavior.rel).toBeUndefined();
     const event = click();
@@ -132,27 +242,34 @@ describe("replyLinkBehavior", () => {
   it("a file that may not exist still opens the panel on its path", () => {
     // No existence check on the way: the panel's own state reports a missing file.
     const openFile = vi.fn();
-    replyLinkBehavior("missing/nowhere.html", { workspace: WS, openFile }).onClick!(click());
+    replyLinkBehavior("missing/nowhere.html", { workspace: WS, openFile, openRoute: vi.fn() })
+      .onClick!(click());
     expect(openFile).toHaveBeenCalledExactlyOnceWith("missing/nowhere.html");
   });
 
   it("an external link keeps the new tab and no click handler", () => {
     const openFile = vi.fn();
-    const behavior = replyLinkBehavior("https://example.com", { workspace: WS, openFile });
+    const behavior = replyLinkBehavior("https://example.com", {
+      workspace: WS,
+      openFile,
+      openRoute: vi.fn(),
+    });
     expect(behavior).toBe(NEW_TAB);
     expect(behavior.onClick).toBeUndefined();
   });
 
   it("an href with nowhere to go neither navigates nor opens anything", () => {
     const openFile = vi.fn();
+    const openRoute = vi.fn();
     for (const href of ["../secret.txt", "/etc/hosts", ""]) {
-      const behavior = replyLinkBehavior(href, { workspace: WS, openFile });
+      const behavior = replyLinkBehavior(href, { workspace: WS, openFile, openRoute });
       expect(behavior.target).toBeUndefined();
       const event = click();
       behavior.onClick!(event);
       expect(event.preventDefault).toHaveBeenCalledOnce();
     }
     expect(openFile).not.toHaveBeenCalled();
+    expect(openRoute).not.toHaveBeenCalled();
   });
 
   it("an anchor scrolls to the nearest element with that id, without navigating", () => {
@@ -171,7 +288,11 @@ describe("replyLinkBehavior", () => {
       querySelector: (selector: string) => (selector === "#user-content-fn-1" ? inReply : null),
     };
     const paragraph = { parentElement: reply, querySelector: () => null };
-    const behavior = replyLinkBehavior("#user-content-fn-1", { workspace: WS, openFile });
+    const behavior = replyLinkBehavior("#user-content-fn-1", {
+      workspace: WS,
+      openFile,
+      openRoute: vi.fn(),
+    });
     expect(behavior.target).toBeUndefined();
     const event = click({ parentElement: paragraph });
     behavior.onClick!(event);
@@ -179,5 +300,55 @@ describe("replyLinkBehavior", () => {
     expect(inReply.scrollIntoView).toHaveBeenCalledOnce();
     expect(elsewhere.scrollIntoView).not.toHaveBeenCalled();
     expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("an internal route navigates in-place instead of being blocked", () => {
+    const openFile = vi.fn();
+    const openRoute = vi.fn();
+    const behavior = replyLinkBehavior("/chat/session-2026-11-19-09-52-07-48a86320", {
+      workspace: WS,
+      openFile,
+      openRoute,
+    });
+    expect(behavior.target).toBeUndefined();
+    const event = click();
+    behavior.onClick!(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(openRoute).toHaveBeenCalledExactlyOnceWith("/chat/session-2026-11-19-09-52-07-48a86320");
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("a route on the page's own origin navigates in-place on a plain click and is the browser's on a modified one", () => {
+    const openRoute = vi.fn();
+    const href = "http://localhost:17469/chat/2556a209";
+    const behavior = replyLinkBehavior(href, {
+      workspace: WS,
+      origin: "http://localhost:17469",
+      openFile: vi.fn(),
+      openRoute,
+    });
+    // Plain: in place, on the path the URL parser normalized out of the href.
+    const plain = click();
+    behavior.onClick!(plain);
+    expect(plain.preventDefault).toHaveBeenCalledOnce();
+    expect(openRoute).toHaveBeenCalledExactlyOnceWith("/chat/2556a209");
+    // Ctrl (or any modifier): the browser's own gesture — new tab, nothing prevented.
+    const modified = Object.assign(click(), { ctrlKey: true });
+    behavior.onClick!(modified);
+    expect(modified.preventDefault).not.toHaveBeenCalled();
+    expect(openRoute).toHaveBeenCalledOnce();
+  });
+
+  it("a route on another deployment's origin keeps the browser's own new tab", () => {
+    const openRoute = vi.fn();
+    const behavior = replyLinkBehavior("http://localhost:9200/chat/2556a209", {
+      workspace: WS,
+      origin: "http://localhost:17469",
+      openFile: vi.fn(),
+      openRoute,
+    });
+    expect(behavior).toBe(NEW_TAB);
+    expect(behavior.onClick).toBeUndefined();
+    expect(openRoute).not.toHaveBeenCalled();
   });
 });

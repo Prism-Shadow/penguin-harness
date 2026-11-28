@@ -33,12 +33,14 @@ import {
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";
+import { openTempSession } from "../../company";
 import type { useMainChatTranscript } from "./main-chat-transcript";
 
 /** Exact consecutive main ChatPage statements 76..128; called once, in original order. */
 export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscript>) {
   const {
     navigate,
+    company,
     setCurrentAgentId,
     reloadAgents,
     agents,
@@ -137,6 +139,42 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
+
+  const selectedOrgId = selected?.orgId ?? null;
+  const selectedTitle = selected?.title ?? "";
+  // An organization session joined by any route — a deep link, a ticket dialog, the history —
+  // joins the company sidebar's Temporary group here, once per VISIT: the ref marks the
+  // conversation entered, so the caches refreshing while the reader stays (the roster, the
+  // title) do not write again, and an entry the reader dismissed is not written back. Leaving
+  // and coming back is a new visit, and lists it again, the way opening it from its ticket
+  // does. Whether the session is a desk is the sidebar's draw-time call (org-session-groups
+  // filters the rows by the live roster on every render), and this is the list's one writer —
+  // the dialog that opens a session from a ticket only navigates.
+  const routedVisitRef = useRef<string | null>(null);
+  useEffect(() => {
+    const visit =
+      projectId && selectedSessionId && selectedAgentId && selectedOrgId
+        ? `${user?.userId ?? ""}|${projectId}|${selectedOrgId}|${selectedSessionId}`
+        : null;
+    if (visit === routedVisitRef.current) return;
+    routedVisitRef.current = visit;
+    if (visit === null || !projectId || !selectedOrgId || !selectedSessionId || !selectedAgentId)
+      return;
+    openTempSession(user?.userId ?? null, projectId, selectedOrgId, {
+      sessionId: selectedSessionId,
+      agentId: selectedAgentId,
+      title: selectedTitle,
+    });
+    // The visit is the conversation entered, not its caches or its title: the sidebar names
+    // the row from the organization's sessions route once that route has read the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.userId, projectId, selectedSessionId, selectedAgentId, selectedOrgId]);
+
+  useEffect(() => {
+    if (!draft && selectedSessionId && routeSessionId && routeSessionId !== selectedSessionId) {
+      navigate(`/chat/${selectedSessionId}`, { replace: true });
+    }
+  }, [draft, selectedSessionId, routeSessionId, navigate]);
 
   // Agents tab AUTO-OPEN (the one automatic tab action): the pure tracker
   // (advancePanelTaskScope, unit-tested) brings the agents tab to the front on the CURRENT
@@ -346,7 +384,9 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     // its answer stays valid across the list churn that re-runs this effect. Tying its
     // lifetime to one run is what made a deep link issue a dozen identical requests. One
     // lookup per Session in flight, the list's loading read when it settles, and an answer
-    // about a Session the route has left dropped: see route-probe.ts.
+    // about a Session the route has left dropped: see route-probe.ts. The route carries the
+    // Session's full id — a linkified id is always the whole `session-…-xxxxxxxx`, so the
+    // lookup is one direct read and nothing else: no suffix matching, no enumeration.
     routeProbe.run(
       probeKey,
       async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),

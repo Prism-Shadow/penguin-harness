@@ -18,6 +18,7 @@
  * pending approval carries, which the server always sends whole.
  */
 import { useMemo } from "react";
+import { Link } from "react-router";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
 import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
 
@@ -282,6 +283,36 @@ function extractStringField(argsJson: string, field: string): PartialField | nul
   return { value: out, complete: false };
 }
 
+const TICKET_SESSION_LINE_RE =
+  /^\s*(session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8})\s*$/gm;
+
+function extractOutputSessionIds(output: string): string[] {
+  const ids: string[] = [];
+  for (const m of output.matchAll(TICKET_SESSION_LINE_RE)) {
+    const id = m[1]!;
+    if (!ids.includes(id)) ids.push(id);
+    if (ids.length >= 5) break;
+  }
+  return ids;
+}
+
+/**
+ * The session ids this card's footer shows as jump badges: none for a bound subagent's card
+ * (its chip already leads there), none while the output is folded — the preview's cut can split
+ * a line and make half of one read as a line of its own — none while the output is still
+ * streaming (its buffer's end is not a line's end), and otherwise the first five distinct ids
+ * that stand on a line of their own in the whole output.
+ */
+export function sessionBadgeIds(item: ToolCallItem): string[] {
+  if (item.subagent) return [];
+  if (!item.outputComplete) return [];
+  const folded = (item.elidedOutput?.entries ?? []).some(
+    (e) => e.path === "payload.output" && e.head > 0 && e.head < item.output.length,
+  );
+  if (folded) return [];
+  return extractOutputSessionIds(stripAnsi(item.output));
+}
+
 export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const { toolAliases } = useTheme();
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
@@ -307,6 +338,11 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   const output = useMemo(
     () => stripAnsi(elidedPreview(item.output, item.elidedOutput, "payload.output", "\n…\n")),
     [item.output, item.elidedOutput],
+  );
+  const outputSessionIds = useMemo(
+    () => sessionBadgeIds(item),
+    // The read inputs, not the item's identity: the stream re-creates the item on every delta.
+    [item.subagent, item.output, item.elidedOutput, item.outputComplete],
   );
   // A child's inline image that came folded has no picture to draw until it is fetched.
   const images = item.images?.filter((src) => src !== "") ?? [];
@@ -408,6 +444,21 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
             agentId={agentIdFromRunSubagentArgs(item.argumentsText)}
             ctx={ctx}
           />
+        ) : outputSessionIds.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {outputSessionIds.map((sid) => (
+              // The Router's own link: an internal navigation with the history entry and the
+              // unsaved-form guard; a modified or middle click keeps the browser's default.
+              <Link
+                key={sid}
+                to={`/chat/${sid}`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-raised px-2.5 py-1 font-mono text-xs text-fg transition-colors hover:bg-surface-hover"
+              >
+                <span>↗</span>
+                <span>{sid}</span>
+              </Link>
+            ))}
+          </div>
         ) : undefined
       }
     />

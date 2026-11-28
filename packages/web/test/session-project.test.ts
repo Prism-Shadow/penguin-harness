@@ -87,6 +87,13 @@ describe("resolveRoutedSession", () => {
     expect(resolveRoutedSession("session-a", [], SESSION, "project-b")).toBeNull();
     expect(resolveRoutedSession("session-a", [SESSION], SESSION, "project-b")).toBeNull();
   });
+
+  it("answers nothing for a suffix-shaped id: links carry the Session's full id only", () => {
+    const full: SessionInfo = { ...SESSION, sessionId: "session-2026-11-10-10-40-17-2556a209" };
+    // No suffix matching: a bare 8-hex id names no Session here, and the direct lookup of it
+    // is the 404 the page owns up to in place.
+    expect(resolveRoutedSession("2556a209", [full], full, "project-a")).toBeNull();
+  });
 });
 
 describe("routedView", () => {

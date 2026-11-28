@@ -78,7 +78,12 @@ export function heldRouteSession(
   projectId: string | null,
 ): SessionInfo | null {
   if (listed !== null) return listed;
-  if (held === null || held.sessionId !== routeSessionId || !ofProject(held, projectId))
+  if (
+    held === null ||
+    routeSessionId === null ||
+    held.sessionId !== routeSessionId ||
+    !ofProject(held, projectId)
+  )
     return null;
   return probeSaysGone ? null : held;
 }

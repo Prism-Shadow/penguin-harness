@@ -11,6 +11,7 @@
  * Retry a failed or stopped run's last line offers.
  */
 import { useState } from "react";
+import { Link } from "react-router";
 import type { ReactNode } from "react";
 import {
   AssistantText,
@@ -254,6 +255,35 @@ function ReconnectLine({
   );
 }
 
+const USER_SESSION_ID_RE =
+  /(?<![A-Za-z0-9._~+=@%/\\-])session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}(?![A-Za-z0-9_~+=@%/\\-]|\.[A-Za-z0-9])/g;
+
+function linkifySessionIds(text: string): ReactNode {
+  const matches = Array.from(text.matchAll(USER_SESSION_ID_RE));
+  if (matches.length === 0) return text;
+  const parts: ReactNode[] = [];
+  let last = 0;
+  matches.forEach((m, i) => {
+    const idx = m.index!;
+    const sid = m[0];
+    if (idx > last) parts.push(text.slice(last, idx));
+    parts.push(
+      // The Router's own link: an internal navigation with the history entry and the
+      // unsaved-form guard; a modified or middle click keeps the browser's default.
+      <Link
+        key={`sid-${i}-${idx}`}
+        to={`/chat/${sid}`}
+        className="font-mono underline decoration-current/40 underline-offset-2 hover:decoration-current"
+      >
+        {sid}
+      </Link>,
+    );
+    last = idx + sid.length;
+  });
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 export function MessageItem({
   item,
   ctx,
@@ -324,7 +354,7 @@ export function MessageItem({
           {(text || carried) && (
             <MessageRow>
               {carried && <SentAttachments images={shown} files={files} size="md" />}
-              {text && <MessageBubble variant="user">{text}</MessageBubble>}
+              {text && <MessageBubble variant="user">{linkifySessionIds(text)}</MessageBubble>}
               <SentMessageMeta atMs={item.atMs} {...(text ? { copyText: text } : {})} />
             </MessageRow>
           )}
@@ -369,7 +399,7 @@ export function MessageItem({
               ? { attachments: <SentAttachments images={shown} files={steerFiles} size="sm" /> }
               : {})}
           >
-            {steerText}
+            {linkifySessionIds(steerText)}
           </MessageBubble>
           <SentMessageMeta atMs={item.atMs} copyText={steerText} />
         </MessageRow>
