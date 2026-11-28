@@ -1,126 +1,199 @@
 // @vitest-environment jsdom
 /**
- * Unified multi-plugin download modal & AI source-config assist:
- * 1. Opens in review/consent mode showing count and why each plugin is needed; never downloads
- *    silently before confirmation.
- * 2. Downloads multiple plugins in one modal with one unified progress bar driven by live SSE
- *    stage & byte progress.
- * 3. On failure, stays open, displays the error, recommends configuring plugin download sources
- *    manually (onOpenSources) or with an Agent (onConfigureWithAi), and retries failed items only.
+ * Unified multi-plugin bottom-right download dock & AI source-config assist:
+ * 1. Opens in review/consent mode showing structured `PluginInstallReason`s (`feature`,
+ *    `requester`, `requiredBy`, `update`) and clickable links with zero silent downloads.
+ * 2. Uses a flat `rounded-sm` surface (no nested boxes, no secondary folding) and folds into one
+ *    32px integrated progress bar showing "Downloading X/N plugins…".
+ * 3. Deduplicates identical `(machineId, specifier)` items while keeping multi-machine entries
+ *    grouped and downloading concurrently across machines.
+ * 4. On failure, stays open, displays the error, recommends manual Plugin Sources and Agent-assisted
+ *    configuration, and retries failed items only.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import {
   PluginBatchInstallModal,
+  batchItemKey,
   batchOverallPercent,
   currentItemFraction,
+  mergeBatchItems,
   type BatchPluginItem,
 } from "../src/features/plugins/plugin-batch-install";
 import { pluginSourceConfigRequest } from "../src/features/plugins/plugin-source-assist";
 import { setActiveStrings } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
-import { click, mount, settle, unmountAll } from "./helpers/dom";
-
-beforeEach(() => {
-  localStorage.setItem("penguin.lang", "en");
-  setActiveStrings(en);
-});
-afterEach(unmountAll);
+import { EN_STRINGS } from "../src/lib/strings-en";
+import { click, mount, settle, unmount } from "./ui-harness";
 
 const ITEMS: BatchPluginItem[] = [
   {
     specifier: "@acme/alpha",
-    title: "Alpha Plugin",
+    title: "Alpha",
     version: "1.0.0",
-    reason: "Provides alpha automation tools.",
+    reasons: [{ kind: "feature", label: "Sandbox" }],
   },
   {
     specifier: "@acme/beta",
-    title: "Beta Plugin",
+    title: "Beta",
     version: "2.1.0",
-    reason: "Provides beta connectors.",
+    reasons: [
+      { kind: "requester", label: "Agent: qa-helper" },
+      { kind: "requiredBy", label: "@acme/alpha" },
+    ],
   },
 ];
 
-describe("batchOverallPercent", () => {
-  it("advances smoothly across multiple items with live SSE stage and byte progress", () => {
-    const start = batchOverallPercent(ITEMS, {
-      "@acme/alpha": { status: "running", stage: { stage: "checking" }, progress: null, error: null },
-      "@acme/beta": { status: "pending", stage: null, progress: null, error: null },
-    });
-    const halfFirst = batchOverallPercent(ITEMS, {
-      "@acme/alpha": {
-        status: "running",
-        stage: { stage: "installing", source: "channel" },
-        progress: { received: 500, total: 1000 },
-        error: null,
+describe("batch install progress math and deduplication", () => {
+  it("computes unified progress across pending, running, done, and failed items", () => {
+    expect(batchOverallPercent([], {})).toBe(100);
+    expect(
+      batchOverallPercent(ITEMS, {
+        "@acme/alpha": { status: "pending", stage: null, progress: null, error: null },
+        "@acme/beta": { status: "pending", stage: null, progress: null, error: null },
+      }),
+    ).toBe(0);
+    expect(
+      batchOverallPercent(ITEMS, {
+        [batchItemKey(ITEMS[0]!)]: {
+          status: "done",
+          stage: null,
+          progress: null,
+          error: null,
+        },
+        [batchItemKey(ITEMS[1]!)]: {
+          status: "running",
+          stage: { stage: "downloading" },
+          progress: { received: 500, total: 1000 },
+          error: null,
+        },
+      }),
+    ).toBe(76);
+    // Failed items do not inflate overall progress.
+    expect(
+      batchOverallPercent(ITEMS, {
+        [batchItemKey(ITEMS[0]!)]: {
+          status: "failed",
+          stage: null,
+          progress: null,
+          error: "502",
+        },
+        [batchItemKey(ITEMS[1]!)]: {
+          status: "pending",
+          stage: null,
+          progress: null,
+          error: null,
+        },
+      }),
+    ).toBe(0);
+    expect(currentItemFraction({ stage: "checking" }, null)).toBe(0.1);
+    expect(currentItemFraction({ stage: "loading" }, null)).toBe(0.94);
+  });
+
+  it("merges duplicate (machineId, specifier) items by combining reasons while keeping distinct machines separate", () => {
+    const merged = mergeBatchItems([
+      {
+        specifier: "@acme/wsl",
+        title: "WSL",
+        machineId: "m1",
+        reasons: [{ kind: "feature", label: "Sandbox" }],
       },
-      "@acme/beta": { status: "pending", stage: null, progress: null, error: null },
-    });
-    const firstDoneSecondHalf = batchOverallPercent(ITEMS, {
-      "@acme/alpha": { status: "done", stage: null, progress: null, error: null },
-      "@acme/beta": {
-        status: "running",
-        stage: { stage: "installing", source: "channel" },
-        progress: { received: 500, total: 1000 },
-        error: null,
+      {
+        specifier: "@acme/wsl",
+        title: "WSL",
+        machineId: "m1",
+        version: "0.2.3",
+        reasons: [
+          { kind: "feature", label: "Sandbox" },
+          { kind: "requester", label: "Alice" },
+        ],
       },
-    });
-    const allDone = batchOverallPercent(ITEMS, {
-      "@acme/alpha": { status: "done", stage: null, progress: null, error: null },
-      "@acme/beta": { status: "done", stage: null, progress: null, error: null },
-    });
-    expect(start).toBeGreaterThan(0);
-    expect(halfFirst).toBeGreaterThan(start);
-    expect(halfFirst).toBeLessThan(50);
-    expect(firstDoneSecondHalf).toBeGreaterThan(50);
-    expect(firstDoneSecondHalf).toBeLessThan(100);
-    expect(allDone).toBe(100);
-    expect(currentItemFraction({ stage: "loading" }, null)).toBeGreaterThan(0.9);
+      {
+        specifier: "@acme/wsl",
+        title: "WSL",
+        machineId: "m2",
+        reasons: [{ kind: "feature", label: "Sandbox" }],
+      },
+    ]);
+
+    expect(merged).toHaveLength(2);
+    expect(merged[0]?.version).toBe("0.2.3");
+    expect(merged[0]?.reasons).toEqual([
+      { kind: "feature", label: "Sandbox" },
+      { kind: "requester", label: "Alice" },
+    ]);
+    expect(merged[1]?.machineId).toBe("m2");
   });
 });
 
 describe("pluginSourceConfigRequest", () => {
-  it("prefills a temporary workspace prompt with failed plugin specifiers and errors", () => {
-    const agents = [{ agentId: "assistant" }] as AgentSummary[];
-    const req = pluginSourceConfigRequest(
-      [{ specifier: "@acme/beta", error: "ETIMEDOUT connecting to github.com" }],
-      agents,
-    );
-    expect(req).not.toBeNull();
-    expect(req!.agentId).toBe("assistant");
-    expect(req!.workspace).toBe("");
-    expect(req!.text).toContain("@acme/beta");
-    expect(req!.text).toContain("ETIMEDOUT connecting to github.com");
-    expect(req!.text).toContain("gh-proxy.com");
-  });
+  const agents = [
+    { agentId: "a1", name: "Helper", model: "m" },
+    { agentId: "a2", name: "Secondary", model: "m" },
+  ] as unknown as AgentSummary[];
 
-  it("returns null when no agent exists", () => {
-    expect(pluginSourceConfigRequest([{ specifier: "@acme/beta", error: "err" }], [])).toBeNull();
+  it("builds a /chat/new handoff mentioning failed plugins and mirror/source options", () => {
+    const req = pluginSourceConfigRequest(agents, [
+      { specifier: "@acme/alpha", error: "timed out reaching github.com" },
+    ]);
+    expect(req.path).toBe("/chat/new");
+    expect(req.state.agentId).toBe("a1");
+    expect(req.state.draft).toContain("@acme/alpha");
+    expect(req.state.draft).toContain("timed out reaching github.com");
+    expect(req.state.draft).toContain("gh-proxy.com");
   });
 });
 
 describe("PluginBatchInstallModal", () => {
-  it("shows count and reasons without starting any download until confirmed, then shows unified progress", async () => {
-    const started: string[] = [];
+  beforeEach(() => {
+    setActiveStrings(EN_STRINGS);
+  });
+
+  afterEach(async () => {
+    await unmount();
+  });
+
+  it("shows structured reasons and clickable links before consent with zero silent downloads, then runs sequentially", async () => {
     let releaseFirst!: () => void;
+    const started: string[] = [];
+    const onOpenPlugin = vi.fn();
+    const onFeatureClick = vi.fn();
+    const onDepClick = vi.fn();
+
+    const items: BatchPluginItem[] = [
+      {
+        specifier: "@acme/alpha",
+        title: "Alpha",
+        version: "1.0.0",
+        onOpenPlugin,
+        reasons: [
+          { kind: "feature", label: "Sandbox", onClick: onFeatureClick },
+          { kind: "requester", label: "Alice" },
+        ],
+      },
+      {
+        specifier: "@acme/beta",
+        title: "Beta",
+        version: "2.1.0",
+        reasons: [
+          { kind: "update", from: "2.0.0", to: "2.1.0" },
+          { kind: "requiredBy", label: "@acme/alpha", onClick: onDepClick },
+          { kind: "requiredBy", label: "@acme/gamma" },
+        ],
+      },
+    ];
+
     const runInstall = vi.fn(
       (
         item: BatchPluginItem,
         cb: {
           onProgress: (r: number, t: number | null) => void;
-          onStage: (
-            s:
-              | { stage: "checking" }
-              | { stage: "installing"; source: "channel" }
-              | { stage: "loading" },
-          ) => void;
+          onStage: (s: { stage: "checking" | "downloading" | "loading" }) => void;
         },
       ) => {
         started.push(item.specifier);
         if (item.specifier === "@acme/alpha") {
-          cb.onStage({ stage: "installing", source: "channel" });
+          cb.onStage({ stage: "downloading" });
           cb.onProgress(512 * 1024, 1024 * 1024);
           return new Promise<{ loadError?: string }>((resolve) => {
             releaseFirst = () => resolve({});
@@ -130,13 +203,12 @@ describe("PluginBatchInstallModal", () => {
         return Promise.resolve({});
       },
     );
-
     const onComplete = vi.fn();
+
     await mount(
       h(PluginBatchInstallModal, {
         open: true,
-        summaryReason: "Selected 2 plugins for QA verification.",
-        items: ITEMS,
+        items,
         runInstall,
         onComplete,
         onClose: vi.fn(),
@@ -145,20 +217,41 @@ describe("PluginBatchInstallModal", () => {
 
     const modal = document.body.querySelector('[data-testid="batch-plugin-install-modal"]')!;
     expect(modal).not.toBeNull();
-    // Review phase: zero silent downloads, displays count + summary reason + each plugin's reason.
+    // Outer radius uses rounded-sm (never rounded-lg).
+    expect(modal.className).toContain("rounded-sm");
+    expect(modal.className).not.toContain("rounded-lg");
+    // Zero silent downloads before confirmation.
     expect(runInstall).not.toHaveBeenCalled();
-    expect(modal.textContent).toContain("2 plugins");
-    expect(modal.textContent).toContain("Selected 2 plugins for QA verification.");
-    expect(modal.textContent).toContain("Provides alpha automation tools.");
-    expect(modal.textContent).toContain("Provides beta connectors.");
 
-    // Confirm download: unified progress bar appears and shows live byte progress.
+    // Structured reasons render cleanly and links invoke callbacks.
+    expect(modal.textContent).toContain("@acme/alpha");
+    expect(modal.textContent).toContain("For Sandbox");
+    expect(modal.textContent).toContain("Requested by Alice");
+    expect(modal.textContent).toContain("Update 2.0.0 → 2.1.0");
+    expect(modal.textContent).toContain("Required by @acme/alpha, @acme/gamma");
+
+    const alphaButtons = Array.from(modal.querySelectorAll("button")).filter(
+      (b) => b.textContent === "@acme/alpha",
+    );
+    expect(alphaButtons.length).toBeGreaterThanOrEqual(2);
+    await click(alphaButtons[0]!);
+    expect(onOpenPlugin).toHaveBeenCalledTimes(1);
+    await click(alphaButtons[1]!);
+    expect(onDepClick).toHaveBeenCalledTimes(1);
+
+    const sandboxBtn = Array.from(modal.querySelectorAll("button")).find(
+      (b) => b.textContent === "Sandbox",
+    )!;
+    await click(sandboxBtn);
+    expect(onFeatureClick).toHaveBeenCalledTimes(1);
+
+    // Confirm download: unified progress bar appears and shows live progress.
     const confirmBtn = modal.querySelector('[data-testid="batch-install-confirm"]') as HTMLButtonElement;
-    expect(confirmBtn).not.toBeNull();
     await click(confirmBtn);
     await settle();
 
     expect(started).toEqual(["@acme/alpha"]);
+    expect(modal.textContent).toContain("Downloading 1/2 plugins…");
     const bar = modal.querySelector('[role="progressbar"]');
     expect(bar).not.toBeNull();
     expect(Number(bar!.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
@@ -177,60 +270,7 @@ describe("PluginBatchInstallModal", () => {
     expect(modal.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("100");
   });
 
-  it("recommends manual and Agent-assisted config on failure, and retries failed items only", async () => {
-    let failBeta = true;
-    const calls: string[] = [];
-    const runInstall = vi.fn(async (item: BatchPluginItem) => {
-      calls.push(item.specifier);
-      if (item.specifier === "@acme/beta" && failBeta) {
-        throw new Error("could not reach github.com");
-      }
-      return {};
-    });
-    const onOpenSources = vi.fn();
-    const onConfigureWithAi = vi.fn();
-
-    await mount(
-      h(PluginBatchInstallModal, {
-        open: true,
-        summaryReason: "Install plugins.",
-        items: ITEMS,
-        runInstall,
-        onOpenSources,
-        onConfigureWithAi,
-        onClose: vi.fn(),
-      }),
-    );
-
-    const modal = document.body.querySelector('[data-testid="batch-plugin-install-modal"]')!;
-    await click(modal.querySelector('[data-testid="batch-install-confirm"]') as HTMLButtonElement);
-    await settle();
-    await settle();
-
-    // Failure recovery panel visible with both manual & Agent buttons.
-    const recovery = modal.querySelector('[data-testid="batch-install-failure-recovery"]');
-    expect(recovery).not.toBeNull();
-    expect(modal.textContent).toContain("could not reach github.com");
-
-    await click(modal.querySelector('[data-testid="batch-failure-manual-config"]') as HTMLButtonElement);
-    expect(onOpenSources).toHaveBeenCalledTimes(1);
-
-    await click(modal.querySelector('[data-testid="batch-failure-agent-config"]') as HTMLButtonElement);
-    expect(onConfigureWithAi).toHaveBeenCalledWith([
-      { specifier: "@acme/beta", error: "could not reach github.com" },
-    ]);
-
-    // Retry only retries @acme/beta, skipping already-installed @acme/alpha.
-    failBeta = false;
-    calls.length = 0;
-    await click(modal.querySelector('[data-testid="batch-install-retry"]') as HTMLButtonElement);
-    await settle();
-    await settle();
-    expect(calls).toEqual(["@acme/beta"]);
-    expect(modal.querySelector('[data-testid="batch-install-failure-recovery"]')).toBeNull();
-  });
-
-  it("docks non-blockingly at the bottom-right and supports folding and expanding while downloading", async () => {
+  it("folds into one 32px progress bar with clear 'Downloading X/N plugins…' wording", async () => {
     let release!: () => void;
     const runInstall = vi.fn(
       (_item: BatchPluginItem, cb: { onProgress: (r: number, t: number | null) => void }) => {
@@ -244,7 +284,6 @@ describe("PluginBatchInstallModal", () => {
     await mount(
       h(PluginBatchInstallModal, {
         open: true,
-        summaryReason: "Non-blocking dock test.",
         items: ITEMS,
         runInstall,
         onClose: vi.fn(),
@@ -258,12 +297,15 @@ describe("PluginBatchInstallModal", () => {
     await click(modal.querySelector('[data-testid="batch-install-confirm"]') as HTMLButtonElement);
     await settle();
 
-    // Fold during download: body collapses, unified progress bar remains live in corner strip.
+    // Fold during download: body collapses into a single 32px integrated progress bar.
     await click(modal.querySelector('[data-testid="batch-install-toggle-fold"]') as HTMLButtonElement);
     await settle();
     expect(modal.getAttribute("data-expanded")).toBe("false");
     expect(modal.querySelector('[data-testid="batch-install-body"]')).toBeNull();
-    expect(modal.querySelector('[role="progressbar"]')).not.toBeNull();
+    const progressEl = modal.querySelector('[role="progressbar"]');
+    expect(progressEl).not.toBeNull();
+    expect(progressEl!.className).toContain("h-8");
+    expect(modal.textContent).toContain("Downloading 1/2 plugins…");
 
     // Expand again: full body and plugin list return.
     await click(modal.querySelector('[data-testid="batch-install-toggle-fold"]') as HTMLButtonElement);
@@ -273,5 +315,79 @@ describe("PluginBatchInstallModal", () => {
 
     release();
     await settle();
+  });
+
+  it("groups multi-machine downloads, runs machines concurrently, and retries failed items only", async () => {
+    let failRemote = true;
+    const started: string[] = [];
+    const multiItems: BatchPluginItem[] = [
+      {
+        specifier: "@acme/wsl",
+        title: "WSL",
+        machineId: "local",
+        machineLabel: "This server",
+        reasons: [{ kind: "feature", label: "Sandbox" }],
+      },
+      {
+        specifier: "@acme/bwrap",
+        title: "Bwrap",
+        machineId: "gpu-node-1",
+        machineLabel: "gpu-node-1",
+        reasons: [{ kind: "feature", label: "Sandbox" }],
+      },
+    ];
+
+    const runInstall = vi.fn(async (item: BatchPluginItem) => {
+      started.push(`${item.machineId}:${item.specifier}`);
+      if (item.machineId === "gpu-node-1" && failRemote) {
+        throw new Error("could not reach github.com");
+      }
+      return {};
+    });
+    const onOpenSources = vi.fn();
+    const onConfigureWithAi = vi.fn();
+
+    await mount(
+      h(PluginBatchInstallModal, {
+        open: true,
+        items: multiItems,
+        runInstall,
+        onOpenSources,
+        onConfigureWithAi,
+        onClose: vi.fn(),
+      }),
+    );
+
+    const modal = document.body.querySelector('[data-testid="batch-plugin-install-modal"]')!;
+    expect(modal.querySelector('[data-testid="batch-machine-local"]')).not.toBeNull();
+    expect(modal.querySelector('[data-testid="batch-machine-gpu-node-1"]')).not.toBeNull();
+
+    await click(modal.querySelector('[data-testid="batch-install-confirm"]') as HTMLButtonElement);
+    await settle();
+    await settle();
+
+    // Local succeeded even while gpu-node-1 failed.
+    expect(started).toEqual(["local:@acme/wsl", "gpu-node-1:@acme/bwrap"]);
+    const recovery = modal.querySelector('[data-testid="batch-install-failure-recovery"]');
+    expect(recovery).not.toBeNull();
+    expect(modal.textContent).toContain("gpu-node-1");
+    expect(modal.textContent).toContain("could not reach github.com");
+
+    await click(modal.querySelector('[data-testid="batch-failure-manual-config"]') as HTMLButtonElement);
+    expect(onOpenSources).toHaveBeenCalledTimes(1);
+
+    await click(modal.querySelector('[data-testid="batch-failure-agent-config"]') as HTMLButtonElement);
+    expect(onConfigureWithAi).toHaveBeenCalledWith([
+      { specifier: "@acme/bwrap", error: "could not reach github.com" },
+    ]);
+
+    // Retry only retries the failed remote item, skipping already-installed local item.
+    failRemote = false;
+    started.length = 0;
+    await click(modal.querySelector('[data-testid="batch-install-retry"]') as HTMLButtonElement);
+    await settle();
+    await settle();
+    expect(started).toEqual(["gpu-node-1:@acme/bwrap"]);
+    expect(modal.querySelector('[data-testid="batch-install-failure-recovery"]')).toBeNull();
   });
 });

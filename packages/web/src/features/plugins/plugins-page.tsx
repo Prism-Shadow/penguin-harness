@@ -253,8 +253,6 @@ export function PluginsPage() {
   const [batchSelected, setBatchSelected] = useState<string[]>([]);
   const [batchModal, setBatchModal] = useState<{
     items: BatchPluginItem[];
-    machineId: string;
-    machineLabel: string;
   } | null>(null);
 
   /** The plugins trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
@@ -1566,32 +1564,51 @@ export function PluginsPage() {
                   disabled={pickedRows.length === 0 || pendingSpecifier !== null}
                   data-testid="batch-download-open"
                   onClick={() => {
-                    const targetMachine =
-                      pickedRows.map((r) => moduleTarget(r, viewMachine)).find((m) => m !== undefined) ??
-                      selfId;
-                    if (targetMachine === undefined) return;
-                    const machineLabel =
-                      targetMachine === selfId
-                        ? S.plugins.installModel.thisServer
-                        : (machineChoices.find((c) => c.value === targetMachine)?.label ??
-                          targetMachine);
-                    const items: BatchPluginItem[] = pickedRows.map((r) => {
+                    const items: BatchPluginItem[] = [];
+                    for (const r of pickedRows) {
+                      const targetMachine = moduleTarget(r, viewMachine) ?? selfId;
+                      if (targetMachine === undefined) continue;
+                      const targetLabel =
+                        targetMachine === selfId
+                          ? S.plugins.installModel.thisServer
+                          : (machineChoices.find((c) => c.value === targetMachine)?.label ??
+                            targetMachine);
                       const entry = r.module?.entry;
-                      const desc =
-                        entry !== undefined
-                          ? localizedText(locale, entry.description, entry.descriptionZh)
-                          : "";
-                      return {
+                      const localVer = entry?.localInstall?.version;
+                      const reasons: NonNullable<BatchPluginItem["reasons"]> =
+                        entry?.localInstall?.updateAvailable &&
+                        localVer !== undefined &&
+                        entry.version !== undefined
+                          ? [
+                              { kind: "update", from: localVer, to: entry.version },
+                              {
+                                kind: "requester",
+                                label: S.plugins.installModel.batch.reasonManual,
+                                manual: true,
+                              },
+                            ]
+                          : [
+                              {
+                                kind: "requester",
+                                label: S.plugins.installModel.batch.reasonManual,
+                                manual: true,
+                              },
+                            ];
+                      items.push({
                         specifier: r.module!.specifier,
                         title:
                           entry !== undefined
                             ? localizedText(locale, entry.title ?? r.name, entry.titleZh) || r.name
                             : r.name,
                         ...(entry?.version !== undefined ? { version: entry.version } : {}),
-                        reason: desc || S.plugins.installModel.batch.defaultItemReason,
-                      };
-                    });
-                    setBatchModal({ items, machineId: targetMachine, machineLabel });
+                        machineId: targetMachine,
+                        machineLabel: targetLabel,
+                        reasons,
+                        onOpenPlugin: () => openDetail(r),
+                      });
+                    }
+                    if (items.length === 0) return;
+                    setBatchModal({ items });
                   }}
                 >
                   {S.plugins.installModel.batch.downloadSelected(pickedRows.length)}
@@ -1738,23 +1755,22 @@ export function PluginsPage() {
       {batchModal !== null && projectId !== null && (
         <PluginBatchInstallModal
           open
-          summaryReason={S.plugins.installModel.batch.selectedSummaryReason(batchModal.items.length)}
-          machineLabel={batchModal.machineLabel}
           impactNote={S.plugins.applyConfirmWarning(true)}
           items={batchModal.items}
           runInstall={async (item, { onProgress, onStage }) => {
+            const targetMachine = item.machineId ?? selfId ?? "";
             const spec = item.version ? `${item.specifier}@${item.version}` : item.specifier;
             const next = await api.installPluginStream(
               projectId,
               spec,
-              batchModal.machineId,
+              targetMachine,
               onProgress,
               onStage,
             );
             notifyPluginsChanged(projectId);
             if (isCurrentVisit()) {
               installedPlugins.accept(installedPluginsKey(projectId, null), next);
-              if (batchModal.machineId === selfId) {
+              if (targetMachine === selfId) {
                 pluginLibrary.invalidate(LIBRARY_KEY);
                 pluginIndex.invalidate(INDEX_KEY);
                 void reloadAgents().catch(() => undefined);

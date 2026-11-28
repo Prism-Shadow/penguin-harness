@@ -3334,45 +3334,49 @@ export const en: Strings = {
           ...failed.map((f) => `- ${f.specifier}: ${f.error}`),
         ].join("\n"),
       batch: {
-        title: (count: number) => `Download ${count} ${count === 1 ? "plugin" : "plugins"}`,
-        countBadge: (count: number) => `${count} ${count === 1 ? "plugin" : "plugins"}`,
-        whyHeading: "Why these plugins need to be downloaded",
-        startDownload: (count: number) => `Download and install (${count})`,
-        progressLabel: (count: number) => `Combined install progress for ${count} plugins`,
-        runningItem: (current: number, total: number, title: string, step: string) =>
-          `Installing ${current} of ${total}: ${title} — ${step}`,
-        allDoneSummary: (count: number) => `All ${count} plugins downloaded and installed.`,
-        partialSummary: (done: number, failed: number, total: number) =>
-          `${done} of ${total} completed, ${failed} failed.`,
-        statusReady: "Ready",
+        headerReview: (count: number) =>
+          `Download ${count} ${count === 1 ? "plugin" : "plugins"}`,
+        headerRunning: (current: number, total: number) =>
+          `Downloading ${current}/${total} ${total === 1 ? "plugin" : "plugins"}…`,
+        headerDone: (done: number, total: number) =>
+          `${done}/${total} ${total === 1 ? "plugin" : "plugins"} installed`,
+        headerFailed: (failed: number) =>
+          `${failed} ${failed === 1 ? "plugin" : "plugins"} download failed`,
+        startDownload: (count: number) => `Download (${count})`,
+        progressLabel: (count: number) =>
+          `Unified install progress for ${count} ${count === 1 ? "plugin" : "plugins"}`,
         statusPending: "Queued",
-        statusDone: "Done",
+        statusDone: "✓",
         statusFailed: "Failed",
-        failedRecommendTitle: "Download failed — configure plugin download sources",
-        failedRecommendBody:
-          "The default download source may be slow or unreachable on this network. Open Plugin sources to configure mirrors (such as gh-proxy.com or npmmirror) manually, or ask an Agent to help configure it.",
-        runningNote:
-          "You can fold this panel to the bottom-right corner and keep working while downloads continue.",
-        fold: "Fold download panel",
-        expand: "Expand download panel",
-        foldedReview: (count: number) => `${count} ${count === 1 ? "plugin" : "plugins"} waiting to download · click to expand`,
-        foldedRunning: (current: number, total: number, title: string) =>
-          `Downloading ${current} of ${total} · ${title}`,
-        foldedDone: (count: number) => `${count} ${count === 1 ? "plugin" : "plugins"} installed`,
-        foldedFailed: (failed: number) => `${failed} failed · click to expand and configure sources`,
+        failedRecommendTitle: "Download failed. Configure plugin sources.",
+        fold: "Fold download dock",
+        expand: "Expand download dock",
+        foldedReview: (count: number) =>
+          `${count} ${count === 1 ? "plugin" : "plugins"} to download`,
+        foldedRunning: (current: number, total: number) =>
+          `Downloading ${current}/${total} ${total === 1 ? "plugin" : "plugins"}…`,
+        foldedDone: (done: number, total: number) =>
+          `${done}/${total} ${total === 1 ? "plugin" : "plugins"} installed`,
+        foldedFailed: (failed: number) =>
+          `${failed} ${failed === 1 ? "plugin" : "plugins"} failed`,
         retryFailed: (count: number) => `Retry failed (${count})`,
+        machinesCount: (count: number) => `${count} machines`,
+        machineCountBadge: (count: number) => `${count}`,
+        machineFailedBadge: (failed: number) => `${failed} failed`,
+        reasonManual: "Selected manually",
+        reasonForPrefix: "For ",
+        reasonRequestedByPrefix: "Requested by ",
+        reasonRequestedBySuffix: "",
+        reasonRequiredByPrefix: "Required by ",
+        reasonRequiredBySuffix: "",
+        reasonListSep: ", ",
+        reasonUpdate: (from: string, to: string) => `Update ${from} → ${to}`,
         selectMode: "Batch download",
         exitSelectMode: "Done selecting",
         selectedCount: (count: number) => `${count} selected`,
         selectAllDownloadable: (count: number) => `Select all downloadable (${count})`,
         clearSelection: "Clear",
         downloadSelected: (count: number) => `Download selected (${count})`,
-        selectedSummaryReason: (count: number) =>
-          `You selected ${count} plugins to download and install on the target server. Once confirmed, they download sequentially in this single modal with a unified progress bar — nothing downloads in the background before you confirm.`,
-        sandboxSummaryReason: (machine: string, count: number) =>
-          `Sandbox is enabled on ${machine}, which needs these ${count} OS sandbox backend ${count === 1 ? "plugin" : "plugins"} downloaded and installed before isolated execution can run.`,
-        sandboxItemReason: "Required sandbox execution backend plugin for this operating system.",
-        defaultItemReason: "Install on this server for use by this project and its agents.",
       },
       uninstallTitle: (name: string) => `Uninstall ${name} from the server`,
       uninstallBody: (name: string, agents: number) =>

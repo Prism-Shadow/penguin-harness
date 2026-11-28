@@ -1,8 +1,9 @@
 /**
  * The question the Sandbox card asks when its switch is turned on and the machine has no
  * sandbox backend for its OS: uses the unified PluginBatchInstallModal so the user sees how many
- * backend plugins are needed, why they are needed, a single unified SSE progress bar during
- * download, and both manual + Agent-assisted source configuration if any download fails.
+ * backend plugins are needed, why they are needed (structured `feature` reason), a single unified
+ * SSE progress bar during download, and both manual + Agent-assisted source configuration if any
+ * download fails.
  */
 import type { InstallStage } from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -39,17 +40,17 @@ export function SandboxBackendPrompt({
 }) {
   if (pkgs === null) return null;
   const P = S.settings.sandboxBackendPrompt;
-  const B = S.plugins.installModel.batch;
   const items: BatchPluginItem[] = pkgs.map((pkg) => ({
     specifier: pkg,
     title: pkg,
-    reason: B.sandboxItemReason,
+    machineLabel: machineName,
+    pluginHref: `/plugins?plugin=${encodeURIComponent(pkg)}`,
+    reasons: [{ kind: "feature", label: S.settings.sandboxTitle }],
   }));
   return (
     <PluginBatchInstallModal
       open
       title={P.title}
-      summaryReason={B.sandboxSummaryReason(machineName, items.length)}
       machineLabel={machineName}
       impactNote={P.cost}
       dontAskLabel={P.dontAsk}

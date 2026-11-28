@@ -1,24 +1,25 @@
 /**
  * Minimalist, theme-adaptive bottom-right plugin download dock:
  * - Non-blocking (`aria-modal="false"`, no backdrop scrim) so the user keeps working undisturbed.
- * - Folded: a single sleek status-bar strip (`sm:w-72`) with live percent/bytes and a flush
- *   bottom progress edge.
- * - Expanded: compact (`sm:w-[340px]`), high-density monospace telemetry showing count, why each
- *   plugin is needed (before consent — zero silent downloads), one unified progress bar across
- *   all N plugins, and manual + Agent-assisted source config recommendations on failure.
- * - Uses semantic overlay/theme tokens (`bg-overlay`, `border-line`, `text-fg`, `text-fg-muted`,
- *   `toneInk`) so it adapts cleanly across Modern, Geek, GitHub, Pixel, light and dark themes.
+ * - Single flat `rounded-sm` surface with flush hairline dividers (no box-in-box nesting) and
+ *   only one fold level (dock header ↔ 32px merged progress bar — no secondary folding so no
+ *   package is ever hidden before consent).
+ * - Structured `PluginInstallReason` union (`feature`, `requester`, `requiredBy`, `update`) with
+ *   clickable plugin and reason links; deduplicates identical `(machineId, specifier)` entries by
+ *   merging their reasons.
+ * - Supports multi-machine batches grouped cleanly by machine (distinct machines download in
+ *   parallel; packages within one machine download sequentially).
+ * - On failure, keeps the dock open with concise source-config recommendations (manual Plugin
+ *   Sources settings + Agent-assisted configuration + file import) and retries failed items only.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Button,
   Checkbox,
-  CloseButton,
   GlyphIcon,
   ICON_SIZE,
   ICONS,
-  ProgressBar,
 } from "@prismshadow/penguin-ui";
 import type { InstallStage } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -29,12 +30,50 @@ import { toneInk } from "../../lib/tone";
 import { installStepWords, type DownloadProgress } from "./install-progress";
 import type { FailedPluginDownload } from "./plugin-source-assist";
 
+/** Structured reason explaining why a specific plugin package needs to be downloaded. */
+export type PluginInstallReason =
+  | {
+      kind: "feature";
+      label: string;
+      href?: string | undefined;
+      onClick?: (() => void) | undefined;
+    }
+  | {
+      kind: "requester";
+      label: string;
+      /** True for direct manual user selection (renders `label` directly instead of "Requested by …"). */
+      manual?: boolean | undefined;
+      href?: string | undefined;
+      onClick?: (() => void) | undefined;
+    }
+  | {
+      kind: "requiredBy";
+      label: string;
+      href?: string | undefined;
+      onClick?: (() => void) | undefined;
+    }
+  | {
+      kind: "update";
+      from: string;
+      to: string;
+    };
+
 export interface BatchPluginItem {
   specifier: string;
   title: string;
   version?: string | undefined;
-  /** Why this plugin needs to be downloaded. */
-  reason: string;
+  /** Target machine id; defaults to `"local"` for single-machine batches. */
+  machineId?: string | undefined;
+  /** Display name of the target machine for multi-machine grouping. */
+  machineLabel?: string | undefined;
+  /** Structured reasons explaining why this package is needed. */
+  reasons?: readonly PluginInstallReason[] | undefined;
+  /** Optional plain-text fallback reason when structured reasons are not passed. */
+  reason?: string | undefined;
+  /** Optional URL to inspect the plugin (e.g. `/plugins?plugin=...`). */
+  pluginHref?: string | undefined;
+  /** Optional click handler to inspect the plugin in place (e.g. opening its detail modal). */
+  onOpenPlugin?: (() => void) | undefined;
   libraryOnly?: boolean | undefined;
 }
 
@@ -45,6 +84,54 @@ export interface BatchItemState {
   stage: InstallStage | null;
   progress: DownloadProgress | null;
   error: string | null;
+}
+
+const DEFAULT_MACHINE_ID = "local";
+
+/** Stable identity key `(machineId, specifier)` for a queued plugin download. */
+export function batchItemKey(item: Pick<BatchPluginItem, "machineId" | "specifier">): string {
+  return `${item.machineId ?? DEFAULT_MACHINE_ID}::${item.specifier}`;
+}
+
+function reasonFingerprint(r: PluginInstallReason): string {
+  if (r.kind === "update") return `update:${r.from}->${r.to}`;
+  return `${r.kind}:${r.label}:${r.href ?? ""}`;
+}
+
+/** Deduplicates items sharing `(machineId, specifier)` by merging their structured reasons. */
+export function mergeBatchItems(items: readonly BatchPluginItem[]): BatchPluginItem[] {
+  const byKey = new Map<string, BatchPluginItem>();
+  const order: string[] = [];
+  for (const item of items) {
+    const key = batchItemKey(item);
+    const existing = byKey.get(key);
+    if (existing === undefined) {
+      byKey.set(key, {
+        ...item,
+        ...(item.reasons !== undefined ? { reasons: [...item.reasons] } : {}),
+      });
+      order.push(key);
+      continue;
+    }
+    const mergedReasons: PluginInstallReason[] = [...(existing.reasons ?? [])];
+    const seen = new Set(mergedReasons.map(reasonFingerprint));
+    for (const r of item.reasons ?? []) {
+      const fp = reasonFingerprint(r);
+      if (!seen.has(fp)) {
+        seen.add(fp);
+        mergedReasons.push(r);
+      }
+    }
+    byKey.set(key, {
+      ...existing,
+      version: existing.version ?? item.version,
+      pluginHref: existing.pluginHref ?? item.pluginHref,
+      onOpenPlugin: existing.onOpenPlugin ?? item.onOpenPlugin,
+      reason: existing.reason ?? item.reason,
+      ...(mergedReasons.length > 0 ? { reasons: mergedReasons } : {}),
+    });
+  }
+  return order.map((k) => byKey.get(k)!);
 }
 
 /** Fractional progress (0..1) of the currently running item from its live SSE stage and bytes. */
@@ -73,7 +160,7 @@ export function batchOverallPercent(
   if (items.length === 0) return 100;
   let sum = 0;
   for (const item of items) {
-    const st = states[item.specifier];
+    const st = states[batchItemKey(item)] ?? states[item.specifier];
     if (st === undefined || st.status === "pending") continue;
     if (st.status === "done") {
       sum += 1;
@@ -88,8 +175,7 @@ function formatTransferAmount(progress: DownloadProgress | null): string | null 
   if (progress === null) return null;
   const { received, total } = progress;
   if (total !== null && total > 0) {
-    const pct = Math.floor((received / total) * 100);
-    return `${formatBytes(received)}/${formatBytes(total)} (${pct}%)`;
+    return `${formatBytes(received)}/${formatBytes(total)}`;
   }
   return received > 0 ? formatBytes(received) : null;
 }
@@ -97,8 +183,8 @@ function formatTransferAmount(progress: DownloadProgress | null): string | null 
 export interface PluginBatchInstallModalProps {
   open: boolean;
   title?: string | undefined;
-  /** Overall explanation of why these plugins need to be downloaded. */
-  summaryReason: string;
+  /** Optional fallback note when callers do not pass structured per-item reasons. */
+  summaryReason?: string | undefined;
   machineLabel?: string | undefined;
   impactNote?: string | undefined;
   items: readonly BatchPluginItem[];
@@ -122,9 +208,161 @@ type ModalPhase = "review" | "running" | "done" | "failed";
 function initialStates(items: readonly BatchPluginItem[]): Record<string, BatchItemState> {
   const map: Record<string, BatchItemState> = {};
   for (const item of items) {
-    map[item.specifier] = { status: "pending", stage: null, progress: null, error: null };
+    map[batchItemKey(item)] = { status: "pending", stage: null, progress: null, error: null };
   }
   return map;
+}
+
+interface MachineGroup {
+  machineId: string;
+  machineLabel: string;
+  items: BatchPluginItem[];
+}
+
+function groupByMachine(
+  items: readonly BatchPluginItem[],
+  fallbackLabel: string,
+): MachineGroup[] {
+  const groups = new Map<string, MachineGroup>();
+  const order: string[] = [];
+  for (const item of items) {
+    const id = item.machineId ?? DEFAULT_MACHINE_ID;
+    let group = groups.get(id);
+    if (group === undefined) {
+      group = {
+        machineId: id,
+        machineLabel: item.machineLabel ?? fallbackLabel,
+        items: [],
+      };
+      groups.set(id, group);
+      order.push(id);
+    }
+    group.items.push(item);
+  }
+  return order.map((id) => groups.get(id)!);
+}
+
+function ReasonLink({
+  label,
+  href,
+  onClick,
+  mono = false,
+}: {
+  label: string;
+  href?: string | undefined;
+  onClick?: (() => void) | undefined;
+  mono?: boolean | undefined;
+}) {
+  const cls = `${mono ? "font-mono " : ""}text-accent underline decoration-line underline-offset-2 hover:decoration-accent`;
+  if (onClick !== undefined) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className={`inline cursor-pointer border-0 bg-transparent p-0 text-left ${cls}`}
+      >
+        {label}
+      </button>
+    );
+  }
+  if (href !== undefined) {
+    return (
+      <a
+        href={href}
+        onClick={(e) => e.stopPropagation()}
+        className={cls}
+      >
+        {label}
+      </a>
+    );
+  }
+  return <span className={mono ? "font-mono text-fg-muted" : "text-fg-muted"}>{label}</span>;
+}
+
+function ItemReasonsLine({
+  reasons,
+  fallbackReason,
+}: {
+  reasons?: readonly PluginInstallReason[] | undefined;
+  fallbackReason?: string | undefined;
+}) {
+  const B = S.plugins.installModel.batch;
+  if (reasons === undefined || reasons.length === 0) {
+    if (!fallbackReason) return null;
+    return (
+      <div className="mt-0.5 truncate text-[10.5px] leading-snug text-fg-muted">
+        {fallbackReason}
+      </div>
+    );
+  }
+
+  const requiredBy = reasons.filter(
+    (r): r is Extract<PluginInstallReason, { kind: "requiredBy" }> => r.kind === "requiredBy",
+  );
+  const others = reasons.filter((r) => r.kind !== "requiredBy");
+  const segments: ReactNode[] = [];
+
+  others.forEach((r, idx) => {
+    if (r.kind === "feature") {
+      segments.push(
+        <span key={`f-${idx}`}>
+          {B.reasonForPrefix}
+          <ReasonLink label={r.label} href={r.href} onClick={r.onClick} />
+        </span>,
+      );
+    } else if (r.kind === "requester") {
+      if (r.manual) {
+        segments.push(
+          <span key={`req-${idx}`}>
+            <ReasonLink label={r.label} href={r.href} onClick={r.onClick} />
+          </span>,
+        );
+      } else {
+        segments.push(
+          <span key={`req-${idx}`}>
+            {B.reasonRequestedByPrefix}
+            <ReasonLink label={r.label} href={r.href} onClick={r.onClick} />
+            {B.reasonRequestedBySuffix}
+          </span>,
+        );
+      }
+    } else if (r.kind === "update") {
+      segments.push(
+        <span key={`upd-${idx}`} className="font-mono">
+          {B.reasonUpdate(r.from, r.to)}
+        </span>,
+      );
+    }
+  });
+
+  if (requiredBy.length > 0) {
+    segments.push(
+      <span key="reqby">
+        {B.reasonRequiredByPrefix}
+        {requiredBy.map((r, idx) => (
+          <span key={`${r.label}-${idx}`}>
+            {idx > 0 ? B.reasonListSep : null}
+            <ReasonLink label={r.label} href={r.href} onClick={r.onClick} mono />
+          </span>
+        ))}
+        {B.reasonRequiredBySuffix}
+      </span>,
+    );
+  }
+
+  return (
+    <div className="mt-0.5 truncate text-[10.5px] leading-snug text-fg-muted">
+      {segments.map((seg, idx) => (
+        <span key={idx}>
+          {idx > 0 ? <span className="mx-1 opacity-45">·</span> : null}
+          {seg}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export function PluginBatchInstallModal({
@@ -133,7 +371,7 @@ export function PluginBatchInstallModal({
   summaryReason,
   machineLabel,
   impactNote,
-  items,
+  items: rawItems,
   runInstall,
   dontAskLabel,
   onOpenSources,
@@ -145,10 +383,16 @@ export function PluginBatchInstallModal({
   const words = S.plugins.installModel;
   const B = words.batch;
 
+  const items = useMemo(() => mergeBatchItems(rawItems), [rawItems]);
+  const machineGroups = useMemo(
+    () => groupByMachine(items, machineLabel ?? words.thisServer),
+    [items, machineLabel, words.thisServer],
+  );
+  const multiMachine = machineGroups.length > 1;
+
   const [phase, setPhase] = useState<ModalPhase>("review");
   const [expanded, setExpanded] = useState(true);
   const [states, setStates] = useState<Record<string, BatchItemState>>(() => initialStates(items));
-  const [activeIndex, setActiveIndex] = useState<number>(0);
   const [dontAsk, setDontAsk] = useState(false);
   const [furthestPct, setFurthestPct] = useState(0);
   const runningRef = useRef(false);
@@ -162,14 +406,13 @@ export function PluginBatchInstallModal({
   }, []);
 
   // Reset state whenever the dock opens with a new list of items.
-  const itemKey = items.map((i) => `${i.specifier}@${i.version ?? ""}`).join("|");
+  const itemKey = items.map((i) => `${batchItemKey(i)}@${i.version ?? ""}`).join("|");
   useEffect(() => {
     if (!open) return;
     if (runningRef.current) return;
     setPhase("review");
     setExpanded(true);
     setStates(initialStates(items));
-    setActiveIndex(0);
     setFurthestPct(0);
     setDontAsk(false);
   }, [open, itemKey]);
@@ -184,92 +427,103 @@ export function PluginBatchInstallModal({
     }
   }, [phase, rawPercent, furthestPct]);
 
-  const updateItem = (specifier: string, patch: Partial<BatchItemState>) => {
-    if (!mountedRef.current) return;
-    setStates((prev) => ({
-      ...prev,
-      [specifier]: {
-        ...(prev[specifier] ?? { status: "pending", stage: null, progress: null, error: null }),
-        ...patch,
-      },
+  const doneCount = items.filter((i) => states[batchItemKey(i)]?.status === "done").length;
+  const failedItems: FailedPluginDownload[] = items
+    .filter((i) => states[batchItemKey(i)]?.status === "failed")
+    .map((i) => ({
+      specifier: i.specifier,
+      error: states[batchItemKey(i)]?.error ?? S.common.failed,
     }));
-  };
 
-  const execute = async (onlyFailed: boolean) => {
-    if (runningRef.current || items.length === 0) return;
+  const currentOrdinal = Math.min(items.length, doneCount + 1);
+
+  const runQueue = async (targets: readonly BatchPluginItem[]) => {
+    if (runningRef.current || targets.length === 0) return;
     runningRef.current = true;
     setPhase("running");
+    setFurthestPct(0);
 
-    const nextStates: Record<string, BatchItemState> = {};
-    for (const item of items) {
-      const prev = states[item.specifier];
-      if (onlyFailed && prev?.status === "done") {
-        nextStates[item.specifier] = prev;
-      } else {
-        nextStates[item.specifier] = {
-          status: "pending",
-          stage: null,
-          progress: null,
-          error: null,
-        };
+    const targetKeys = new Set(targets.map(batchItemKey));
+    setStates((prev) => {
+      const next = { ...prev };
+      for (const item of targets) {
+        next[batchItemKey(item)] = { status: "pending", stage: null, progress: null, error: null };
       }
-    }
-    setStates(nextStates);
-    setFurthestPct(batchOverallPercent(items, nextStates));
+      return next;
+    });
 
-    const installed: string[] = [];
+    const installed: string[] = items
+      .filter((i) => !targetKeys.has(batchItemKey(i)) && states[batchItemKey(i)]?.status === "done")
+      .map((i) => i.specifier);
     const failed: FailedPluginDownload[] = [];
 
-    for (let idx = 0; idx < items.length; idx += 1) {
-      const item = items[idx]!;
-      if (nextStates[item.specifier]?.status === "done") {
-        installed.push(item.specifier);
-        continue;
-      }
-      if (mountedRef.current) setActiveIndex(idx);
-      updateItem(item.specifier, { status: "running", stage: null, progress: null, error: null });
-      let lastStage: InstallStage | null = null;
-      let lastProgress: DownloadProgress | null = null;
-      try {
-        const res = await runInstall(item, {
-          onProgress: (received, total) => {
-            lastProgress = { received, total };
-            updateItem(item.specifier, { progress: lastProgress });
-          },
-          onStage: (stage) => {
-            lastStage = stage;
-            lastProgress = null;
-            updateItem(item.specifier, { stage, progress: null });
-          },
-        });
-        if (res.loadError) {
-          failed.push({ specifier: item.specifier, error: res.loadError });
-          updateItem(item.specifier, {
-            status: "failed",
-            stage: lastStage,
-            progress: lastProgress,
-            error: res.loadError,
-          });
-        } else {
-          installed.push(item.specifier);
-          updateItem(item.specifier, { status: "done", error: null });
+    // Run distinct machines concurrently, and packages within each machine sequentially.
+    const targetGroups = groupByMachine(targets, machineLabel ?? words.thisServer);
+    await Promise.all(
+      targetGroups.map(async (group) => {
+        for (const item of group.items) {
+          if (!mountedRef.current) break;
+          const key = batchItemKey(item);
+          setStates((prev) => ({
+            ...prev,
+            [key]: { status: "running", stage: { stage: "checking" }, progress: null, error: null },
+          }));
+
+          try {
+            const res = await runInstall(item, {
+              onProgress: (received, total) => {
+                if (!mountedRef.current) return;
+                setStates((prev) => {
+                  const cur = prev[key];
+                  if (!cur || cur.status !== "running") return prev;
+                  return { ...prev, [key]: { ...cur, progress: { received, total } } };
+                });
+              },
+              onStage: (stage) => {
+                if (!mountedRef.current) return;
+                setStates((prev) => {
+                  const cur = prev[key];
+                  if (!cur || cur.status !== "running") return prev;
+                  return { ...prev, [key]: { ...cur, stage } };
+                });
+              },
+            });
+            if (!mountedRef.current) break;
+            if (res.loadError) {
+              failed.push({ specifier: item.specifier, error: res.loadError });
+              setStates((prev) => ({
+                ...prev,
+                [key]: {
+                  status: "failed",
+                  stage: null,
+                  progress: null,
+                  error: res.loadError ?? S.common.failed,
+                },
+              }));
+            } else {
+              installed.push(item.specifier);
+              setStates((prev) => ({
+                ...prev,
+                [key]: { status: "done", stage: null, progress: null, error: null },
+              }));
+            }
+          } catch (err) {
+            if (!mountedRef.current) break;
+            const message =
+              err instanceof ApiError
+                ? apiErrorText(err)
+                : err instanceof Error && err.message.trim() !== ""
+                  ? err.message
+                  : apiErrorText(err);
+            failed.push({ specifier: item.specifier, error: message });
+            setStates((prev) => ({
+              ...prev,
+              [key]: { status: "failed", stage: null, progress: null, error: message },
+            }));
+          }
         }
-      } catch (err) {
-        const msg =
-          err instanceof ApiError
-            ? apiErrorText(err)
-            : err instanceof Error && err.message
-              ? err.message
-              : apiErrorText(err);
-        failed.push({ specifier: item.specifier, error: msg });
-        updateItem(item.specifier, {
-          status: "failed",
-          stage: lastStage,
-          progress: lastProgress,
-          error: msg,
-        });
-      }
-    }
+      }),
+    );
 
     runningRef.current = false;
     if (!mountedRef.current) return;
@@ -277,396 +531,446 @@ export function PluginBatchInstallModal({
     onComplete?.({ installed, failed });
   };
 
-  if (!open || typeof document === "undefined") return null;
+  if (!open || items.length === 0) return null;
 
-  const doneCount = items.filter((i) => states[i.specifier]?.status === "done").length;
-  const failedItems: FailedPluginDownload[] = items
-    .map((i) => {
-      const st = states[i.specifier];
-      return st?.status === "failed"
-        ? { specifier: i.specifier, error: st.error ?? "" }
-        : null;
-    })
-    .filter((x): x is FailedPluginDownload => x !== null);
+  const statusIcon =
+    phase === "done"
+      ? ICONS.checkCircle
+      : phase === "failed"
+        ? ICONS.triangleAlert
+        : ICONS.download;
+  const statusInk =
+    phase === "done"
+      ? toneInk.success
+      : phase === "failed"
+        ? toneInk.attention
+        : "text-accent";
+  const fillBg =
+    phase === "done"
+      ? "bg-success"
+      : phase === "failed"
+        ? "bg-attention"
+        : "bg-accent";
 
-  const activeItem = items[activeIndex] ?? items[0];
-  const activeState = activeItem ? states[activeItem.specifier] : undefined;
-  const activeSentence =
-    activeItem && activeState
-      ? installStepWords(activeState.progress, activeState.stage, true, false)
-      : words.starting;
-  const activeTransfer = activeState ? formatTransferAmount(activeState.progress) : null;
-
-  const handleClose = () => {
-    if (phase === "running") return;
-    onClose({ dontAskAgain: dontAsk });
-  };
-
-  const heading = title ?? B.title(items.length);
-  const tone = phase === "done" ? "success" : phase === "failed" ? "attention" : "accent";
-  const iconToneClass =
-    phase === "done" ? toneInk.success : phase === "failed" ? toneInk.attention : "text-accent";
-
-  const foldedLine =
+  const statusHeadline =
     phase === "review"
-      ? B.countBadge(items.length)
-      : phase === "running" && activeItem
-        ? `${activeIndex + 1}/${items.length} ${activeItem.title}`
+      ? title ?? B.headerReview(items.length)
+      : phase === "running"
+        ? B.headerRunning(currentOrdinal, items.length)
         : phase === "done"
-          ? `${doneCount}/${items.length} ${B.statusDone}`
-          : `${failedItems.length} ${B.statusFailed}`;
+          ? B.headerDone(doneCount, items.length)
+          : B.headerFailed(failedItems.length);
+
+  const foldedText =
+    phase === "review"
+      ? B.foldedReview(items.length)
+      : phase === "running"
+        ? B.foldedRunning(currentOrdinal, items.length)
+        : phase === "done"
+          ? B.foldedDone(doneCount, items.length)
+          : B.foldedFailed(failedItems.length);
+
+  const headerMeta =
+    phase === "review"
+      ? multiMachine
+        ? B.machinesCount(machineGroups.length)
+        : (machineGroups[0]?.machineLabel ?? machineLabel ?? words.thisServer)
+      : `${displayPercent}%`;
+
+  const failedMachines = multiMachine
+    ? machineGroups
+        .filter((g) => g.items.some((i) => states[batchItemKey(i)]?.status === "failed"))
+        .map((g) => g.machineLabel)
+    : [];
 
   const dock = (
-    <div
-      className="pointer-events-none fixed inset-x-3 bottom-3 z-toast flex justify-end sm:left-auto"
-      data-testid="batch-plugin-install-dock"
-    >
+    <div className="pointer-events-none fixed inset-x-3 bottom-3 z-toast flex justify-end sm:inset-x-auto sm:right-4 sm:bottom-4">
       <section
-        role="dialog"
+        role="region"
         aria-modal="false"
-        aria-label={heading}
+        aria-label={statusHeadline}
         data-testid="batch-plugin-install-modal"
+        data-phase={phase}
         data-expanded={expanded ? "true" : "false"}
-        className={`pointer-events-auto w-full overflow-hidden rounded-lg border border-line bg-overlay shadow-lg ${
-          expanded ? "sm:w-[340px]" : "sm:w-64"
+        className={`pointer-events-auto overflow-hidden rounded-sm border border-line bg-overlay text-fg shadow-lg transition-[width] duration-150 ${
+          expanded ? "w-full sm:w-[360px]" : "w-full sm:w-[272px]"
         }`}
       >
-        {/* Folded: one single integrated 32px progress bar (fill + edge + status on one line) */}
         {!expanded ? (
+          /* Folded: merged into ONE single 32px integrated progress bar (`rounded-sm`). */
           <div
-            role="status"
+            role={phase !== "review" ? "progressbar" : "status"}
+            aria-label={B.progressLabel(items.length)}
+            aria-valuemin={phase !== "review" ? 0 : undefined}
+            aria-valuemax={phase !== "review" ? 100 : undefined}
+            aria-valuenow={phase !== "review" ? displayPercent : undefined}
             data-testid="batch-install-progress"
-            className="relative flex h-8 items-center gap-1.5 overflow-hidden px-2.5"
+            className="relative h-8 overflow-hidden"
           >
             {phase !== "review" && (
               <>
                 <div
-                  role="progressbar"
-                  aria-label={B.progressLabel(items.length)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={displayPercent}
-                  data-layout-motion=""
-                  className={`pointer-events-none absolute inset-y-0 left-0 opacity-15 ${
-                    phase === "done"
-                      ? "bg-tone-success-emphasis"
-                      : phase === "failed"
-                        ? "bg-tone-attention-emphasis"
-                        : "bg-accent"
-                  }`}
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-y-0 left-0 opacity-15 transition-[width] duration-150 ${fillBg}`}
                   style={{ width: `${displayPercent}%` }}
                 />
                 <div
-                  aria-hidden
-                  data-layout-motion=""
-                  className={`pointer-events-none absolute bottom-0 left-0 h-0.5 ${
-                    phase === "done"
-                      ? "bg-tone-success-emphasis"
-                      : phase === "failed"
-                        ? "bg-tone-attention-emphasis"
-                        : "bg-accent"
-                  }`}
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute bottom-0 left-0 h-[2px] transition-[width] duration-150 ${fillBg}`}
                   style={{ width: `${displayPercent}%` }}
                 />
               </>
             )}
             <button
               type="button"
-              className="relative flex min-w-0 flex-1 items-center gap-1.5 text-left"
               onClick={() => setExpanded(true)}
+              aria-expanded={false}
+              aria-label={B.expand}
+              data-testid="batch-install-toggle-fold"
+              className="relative flex h-full w-full cursor-pointer items-center gap-1.5 px-2.5 text-left hover:bg-surface-hover/40"
             >
-              <GlyphIcon
-                d={
-                  phase === "done"
-                    ? ICONS.checkCircle
-                    : phase === "failed"
-                      ? ICONS.triangleAlert
-                      : ICONS.download
-                }
-                size={13}
-                className={`shrink-0 ${iconToneClass}`}
-              />
+              <span className={`flex shrink-0 items-center ${statusInk}`}>
+                <GlyphIcon d={statusIcon} size={ICON_SIZE.inlineGlyph} />
+              </span>
               <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
-                {foldedLine}
+                {foldedText}
               </span>
               {phase !== "review" && (
                 <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
-                  {phase === "running" && activeTransfer !== null
-                    ? `${displayPercent}% · ${activeTransfer.split(" ")[0]}`
-                    : `${displayPercent}%`}
+                  {displayPercent}%
                 </span>
               )}
+              <span className="flex shrink-0 items-center text-fg-muted">
+                <GlyphIcon d={ICONS.chevronUp} size={ICON_SIZE.inlineGlyph} />
+              </span>
             </button>
-            <button
-              type="button"
-              aria-expanded={false}
-              aria-label={B.expand}
-              title={B.expand}
-              data-testid="batch-install-toggle-fold"
-              onClick={() => setExpanded(true)}
-              className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
-            >
-              <GlyphIcon d={ICONS.chevronUp} size={12} />
-            </button>
-            {phase !== "running" && <CloseButton onClose={handleClose} className="relative -mr-1" />}
           </div>
         ) : (
+          /* Expanded: single flat surface, flush hairline dividers, zero nested boxes & zero secondary folding. */
           <>
-            {/* Expanded slim 1-row header */}
-            <div className="flex items-center gap-2 px-2.5 py-2">
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                onClick={() => setExpanded(false)}
+            {/* Header (only fold toggle) */}
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              aria-expanded={true}
+              aria-label={B.fold}
+              data-testid="batch-install-toggle-fold"
+              className="flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-2 text-left hover:bg-surface-hover/50"
+            >
+              <span className={`flex shrink-0 items-center ${statusInk}`}>
+                <GlyphIcon d={statusIcon} size={ICON_SIZE.inlineGlyph} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-fg">
+                {statusHeadline}
+              </span>
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+                {headerMeta}
+              </span>
+              <span className="flex shrink-0 items-center text-fg-muted">
+                <GlyphIcon d={ICONS.chevronDown} size={ICON_SIZE.inlineGlyph} />
+              </span>
+            </button>
+
+            {/* Flush progress / divider hairline */}
+            {phase !== "review" ? (
+              <div
+                role="progressbar"
+                aria-label={B.progressLabel(items.length)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={displayPercent}
+                data-testid="batch-install-progress"
+                className="h-[2px] w-full bg-line"
               >
-                <GlyphIcon
-                  d={
-                    phase === "done"
-                      ? ICONS.checkCircle
-                      : phase === "failed"
-                        ? ICONS.triangleAlert
-                        : ICONS.download
-                  }
-                  size={14}
-                  className={`shrink-0 ${iconToneClass}`}
+                <div
+                  className={`h-full transition-[width] duration-150 ${fillBg}`}
+                  style={{ width: `${displayPercent}%` }}
                 />
-                <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
-                  {heading}
-                </span>
-                <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
-                  {phase === "review"
-                    ? `${items.length}`
-                    : `${doneCount}/${items.length} · ${displayPercent}%`}
-                </span>
-              </button>
-              <div className="flex shrink-0 items-center gap-0.5">
-                <button
-                  type="button"
-                  aria-expanded={true}
-                  aria-label={B.fold}
-                  title={B.fold}
-                  data-testid="batch-install-toggle-fold"
-                  onClick={() => setExpanded(false)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
+              </div>
+            ) : (
+              <div className="h-px w-full bg-line" />
+            )}
+
+            {/* Flush scrollable package list (every package directly visible, no secondary folding) */}
+            <div
+              className="max-h-[220px] overflow-y-auto"
+              data-testid="batch-install-body"
+            >
+              {summaryReason && items.every((i) => !i.reasons?.length && !i.reason) && (
+                <div
+                  className="border-b border-line/60 px-2.5 py-1.5 text-[11px] text-fg-muted"
+                  data-testid="batch-install-reason"
                 >
-                  <GlyphIcon d={ICONS.chevronDown} size={12} />
-                </button>
-                {phase !== "running" && <CloseButton onClose={handleClose} className="-mr-1" />}
+                  {summaryReason}
+                </div>
+              )}
+
+              <div data-testid="batch-install-list">
+                {machineGroups.map((group, groupIdx) => {
+                  const groupDone = group.items.filter(
+                    (i) => states[batchItemKey(i)]?.status === "done",
+                  ).length;
+                  const groupFailed = group.items.filter(
+                    (i) => states[batchItemKey(i)]?.status === "failed",
+                  ).length;
+                  const groupBadge =
+                    phase === "review"
+                      ? B.machineCountBadge(group.items.length)
+                      : groupFailed > 0
+                        ? B.machineFailedBadge(groupFailed)
+                        : groupDone === group.items.length
+                          ? `${groupDone}/${group.items.length} ✓`
+                          : `${groupDone}/${group.items.length}`;
+
+                  return (
+                    <div key={group.machineId} data-testid={`batch-machine-${group.machineId}`}>
+                      {multiMachine && (
+                        <div
+                          className={`sticky top-0 flex items-center justify-between bg-surface-subtle/90 px-2.5 py-1 font-mono text-[10px] ${
+                            groupIdx > 0 ? "border-t border-line" : ""
+                          } border-b border-line/60`}
+                        >
+                          <span className="truncate font-semibold text-fg">
+                            {group.machineLabel}
+                          </span>
+                          <span
+                            className={`shrink-0 tabular-nums ${
+                              groupFailed > 0
+                                ? toneInk.attention
+                                : groupDone === group.items.length && phase !== "review"
+                                  ? toneInk.success
+                                  : "text-fg-muted"
+                            }`}
+                          >
+                            {groupBadge}
+                          </span>
+                        </div>
+                      )}
+
+                      <ul className="divide-y divide-line/60">
+                        {group.items.map((item) => {
+                          const key = batchItemKey(item);
+                          const st = states[key] ?? {
+                            status: "pending" as const,
+                            stage: null,
+                            progress: null,
+                            error: null,
+                          };
+                          const itemTransfer =
+                            st.status === "running" ? formatTransferAmount(st.progress) : null;
+
+                          const rightLabel =
+                            st.status === "pending"
+                              ? phase === "review"
+                                ? item.version !== undefined
+                                  ? `v${item.version}`
+                                  : ""
+                                : B.statusPending
+                              : st.status === "running"
+                                ? itemTransfer ?? installStepWords(st.progress, st.stage, true)
+                                : st.status === "done"
+                                  ? "✓"
+                                  : B.statusFailed;
+
+                          const rightTone =
+                            st.status === "done"
+                              ? toneInk.success
+                              : st.status === "failed"
+                                ? toneInk.attention
+                                : st.status === "running"
+                                  ? "text-fg"
+                                  : "text-fg-muted";
+
+                          return (
+                            <li
+                              key={key}
+                              className="px-2.5 py-1.5"
+                              data-testid={`batch-item-${item.specifier}`}
+                            >
+                              <div className="flex items-baseline justify-between gap-2">
+                                {item.onOpenPlugin !== undefined ? (
+                                  <button
+                                    type="button"
+                                    onClick={item.onOpenPlugin}
+                                    title={item.title}
+                                    className="min-w-0 cursor-pointer truncate border-0 bg-transparent p-0 text-left font-mono text-[11.5px] font-medium text-fg underline decoration-line underline-offset-2 hover:decoration-fg"
+                                  >
+                                    {item.specifier}
+                                  </button>
+                                ) : item.pluginHref !== undefined ? (
+                                  <a
+                                    href={item.pluginHref}
+                                    title={item.title}
+                                    className="min-w-0 truncate font-mono text-[11.5px] font-medium text-fg underline decoration-line underline-offset-2 hover:decoration-fg"
+                                  >
+                                    {item.specifier}
+                                  </a>
+                                ) : (
+                                  <span
+                                    title={item.title}
+                                    className="min-w-0 truncate font-mono text-[11.5px] font-medium text-fg"
+                                  >
+                                    {item.specifier}
+                                  </span>
+                                )}
+                                {rightLabel !== "" && (
+                                  <span
+                                    className={`shrink-0 font-mono text-[10px] tabular-nums ${rightTone}`}
+                                  >
+                                    {rightLabel}
+                                  </span>
+                                )}
+                              </div>
+
+                              <ItemReasonsLine
+                                reasons={item.reasons}
+                                fallbackReason={item.reason}
+                              />
+
+                              {st.status === "failed" && st.error && (
+                                <p className={`mt-0.5 break-all font-mono text-[10px] ${toneInk.attention}`}>
+                                  {st.error}
+                                </p>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Expanded unified progress bar */}
-            {phase !== "review" && (
-              <div role="status" data-testid="batch-install-progress" className="px-2.5 pb-2">
-                <ProgressBar
-                  value={displayPercent}
-                  max={100}
-                  size="xs"
-                  tone={tone}
-                  label={B.progressLabel(items.length)}
-                />
-                <div className="mt-1 flex items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-fg-muted">
-                  <span className="min-w-0 truncate text-fg">
-                    {phase === "running" && activeItem
-                      ? `${activeIndex + 1}/${items.length} ${activeItem.title} · ${activeSentence}`
-                      : phase === "done"
-                        ? B.allDoneSummary(doneCount)
-                        : B.partialSummary(doneCount, failedItems.length, items.length)}
-                  </span>
-                  {phase === "running" && activeTransfer !== null && (
-                    <span className="shrink-0">{activeTransfer}</span>
+            {/* Flush failure recovery strip (no nested box) */}
+            {phase === "failed" && failedItems.length > 0 && (
+              <div
+                className="space-y-1.5 border-t border-line bg-surface-subtle/70 px-2.5 py-2 text-[11px]"
+                data-testid="batch-install-failure-recovery"
+              >
+                <div className={`font-medium ${toneInk.attention}`}>
+                  {failedMachines.length > 0
+                    ? `${failedMachines.join(", ")}: ${B.failedRecommendTitle}`
+                    : B.failedRecommendTitle}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {onOpenSources && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="rounded-xs"
+                      data-testid="batch-failure-manual-config"
+                      onClick={onOpenSources}
+                    >
+                      {words.openPluginSources}
+                    </Button>
+                  )}
+                  {onConfigureWithAi && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      className="rounded-xs"
+                      data-testid="batch-failure-agent-config"
+                      onClick={() => onConfigureWithAi(failedItems)}
+                    >
+                      {words.askAgentToConfigureSources}
+                    </Button>
+                  )}
+                  {onImportFile && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="rounded-xs"
+                      data-testid="batch-failure-import-file"
+                      onClick={onImportFile}
+                    >
+                      {words.importInstead}
+                    </Button>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Flush footer */}
+            {phase === "review" && (
+              <div className="flex items-center justify-between gap-2 border-t border-line px-2.5 py-1.5">
+                <div className="min-w-0 flex-1">
+                  {dontAskLabel ? (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-fg-muted select-none">
+                      <Checkbox checked={dontAsk} onChange={setDontAsk} />
+                      <span className="truncate">{dontAskLabel}</span>
+                    </label>
+                  ) : impactNote ? (
+                    <span className="block truncate text-[10px] text-fg-muted" title={impactNote}>
+                      {impactNote}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="rounded-xs"
+                    onClick={() => onClose({ dontAskAgain: dontAsk })}
+                  >
+                    {S.common.cancel}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="rounded-xs"
+                    data-testid="batch-install-confirm"
+                    onClick={() => void runQueue(items)}
+                  >
+                    {B.startDownload(items.length)}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {phase === "failed" && (
+              <div className="flex items-center justify-end gap-1.5 border-t border-line px-2.5 py-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="rounded-xs"
+                  onClick={() => onClose({ dontAskAgain: false })}
+                >
+                  {S.common.close}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-xs"
+                  data-testid="batch-install-retry"
+                  onClick={() =>
+                    void runQueue(
+                      items.filter((i) => states[batchItemKey(i)]?.status === "failed"),
+                    )
+                  }
+                >
+                  {B.retryFailed(failedItems.length)}
+                </Button>
+              </div>
+            )}
+
+            {phase === "done" && (
+              <div className="flex items-center justify-end border-t border-line px-2.5 py-1.5">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="rounded-xs"
+                  onClick={() => onClose({ dontAskAgain: false })}
+                >
+                  {S.common.done}
+                </Button>
               </div>
             )}
           </>
-        )}
-
-        {/* Expanded compact body */}
-        {expanded && (
-          <div
-            className="max-h-[60vh] space-y-2 overflow-y-auto border-t border-line/60 px-2.5 py-2"
-            data-testid="batch-install-body"
-          >
-            {/* Review meta + why */}
-            {phase === "review" && (
-              <div className="space-y-0.5 text-[11px]" data-testid="batch-install-reason">
-                <div className="flex items-center justify-between gap-2 text-fg">
-                  <span className="font-medium">{B.whyHeading}</span>
-                  <span className="font-mono text-fg-muted">
-                    {B.countBadge(items.length)} · {machineLabel ?? words.thisServer}
-                  </span>
-                </div>
-                <p className="break-words text-fg-muted">{summaryReason}</p>
-              </div>
-            )}
-
-            {/* High-density per-plugin list */}
-            <ul
-              className="max-h-36 divide-y divide-line/60 overflow-y-auto rounded-md border border-line/70 bg-surface-subtle/40"
-              data-testid="batch-install-list"
-            >
-              {items.map((item) => {
-                const st = states[item.specifier] ?? {
-                  status: "pending" as const,
-                  stage: null,
-                  progress: null,
-                  error: null,
-                };
-                const itemTransfer =
-                  st.status === "running" ? formatTransferAmount(st.progress) : null;
-                return (
-                  <li
-                    key={item.specifier}
-                    className="space-y-0.5 px-2.5 py-1.5 text-[11px]"
-                    data-testid={`batch-item-${item.specifier}`}
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 truncate">
-                        <span className="font-medium text-fg">{item.title}</span>
-                        <span className="ml-1.5 font-mono text-[10px] text-fg-muted">
-                          {item.specifier}
-                          {item.version !== undefined ? `@${item.version}` : ""}
-                        </span>
-                      </span>
-                      <span
-                        className={`inline-flex shrink-0 items-center gap-1 font-mono text-[10px] tabular-nums ${
-                          st.status === "done"
-                            ? toneInk.success
-                            : st.status === "failed"
-                              ? toneInk.attention
-                              : st.status === "running"
-                                ? "text-accent"
-                                : "text-fg-muted"
-                        }`}
-                      >
-                        {st.status === "done" && (
-                          <GlyphIcon d={ICONS.checkCircle} size={ICON_SIZE.inlineGlyph} />
-                        )}
-                        {st.status === "failed" && (
-                          <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
-                        )}
-                        <span>
-                          {st.status === "pending"
-                            ? phase === "review"
-                              ? B.statusReady
-                              : B.statusPending
-                            : st.status === "running"
-                              ? itemTransfer ?? installStepWords(st.progress, st.stage, true)
-                              : st.status === "done"
-                                ? B.statusDone
-                                : B.statusFailed}
-                        </span>
-                      </span>
-                    </div>
-                    {(phase === "review" || st.status === "failed") && (
-                      <p className="truncate text-fg-muted" title={item.reason}>
-                        {item.reason}
-                      </p>
-                    )}
-                    {st.status === "failed" && st.error && (
-                      <p className={`break-words font-mono text-[10px] ${toneInk.attention}`}>
-                        {st.error}
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-
-            {phase === "review" && impactNote && (
-              <p className="text-[11px] text-fg-muted">{impactNote}</p>
-            )}
-
-            {phase === "review" && dontAskLabel && (
-              <Checkbox checked={dontAsk} label={dontAskLabel} onChange={setDontAsk} />
-            )}
-
-            {/* Compact failure recovery block (theme-adaptive, no oversized Notice padding) */}
-            {phase === "failed" && (
-              <div
-                className="space-y-1.5 rounded-md border border-line bg-surface-subtle/70 px-2.5 py-2 text-[11px]"
-                data-testid="batch-install-failure-recovery"
-              >
-                <p className={`font-medium ${toneInk.attention}`}>{B.failedRecommendTitle}</p>
-                <p className="break-words text-fg-muted">{B.failedRecommendBody}</p>
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  {onOpenSources !== undefined && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={onOpenSources}
-                      data-testid="batch-failure-manual-config"
-                    >
-                      <GlyphIcon d={ICONS.gear} />
-                      {words.sourcesSettings}
-                    </Button>
-                  )}
-                  {onConfigureWithAi !== undefined && (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => onConfigureWithAi(failedItems)}
-                      data-testid="batch-failure-agent-config"
-                    >
-                      <GlyphIcon d={ICONS.wand} />
-                      {words.configureWithAi}
-                    </Button>
-                  )}
-                  {onImportFile !== undefined && (
-                    <Button size="sm" variant="link" onClick={onImportFile}>
-                      {words.importFromFile}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Compact footer actions (only rendered when there are buttons) */}
-            {phase !== "running" && (
-              <div className="flex items-center justify-end gap-1.5">
-                {phase === "review" && (
-                  <>
-                    <Button size="sm" variant="ghost" onClick={handleClose}>
-                      {S.common.cancel}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => void execute(false)}
-                      data-testid="batch-install-confirm"
-                    >
-                      {B.startDownload(items.length)}
-                    </Button>
-                  </>
-                )}
-                {phase === "failed" && (
-                  <>
-                    <Button size="sm" variant="ghost" onClick={handleClose}>
-                      {S.common.close}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void execute(true)}
-                      data-testid="batch-install-retry"
-                    >
-                      {B.retryFailed(failedItems.length)}
-                    </Button>
-                  </>
-                )}
-                {phase === "done" && (
-                  <Button size="sm" variant="primary" onClick={handleClose}>
-                    {words.finish}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
         )}
       </section>
     </div>
   );
 
-  return createPortal(dock, document.body);
+  return typeof document !== "undefined" ? createPortal(dock, document.body) : dock;
 }
