@@ -10,6 +10,7 @@
  * runtime assertion against `packages/core/src/kernel/index.ts`.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   Bind,
   Component,
@@ -451,4 +452,10 @@ await verify(
   },
 );
 
-console.log(JSON.stringify({ ok: true, results }));
+const payload = JSON.stringify({ ok: true, results });
+const resultFile = process.env.PENGUIN_SAMPLE_RESULT_FILE;
+if (resultFile) {
+  fs.writeFileSync(resultFile, payload, "utf8");
+} else {
+  console.log(payload);
+}

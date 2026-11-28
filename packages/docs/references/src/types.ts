@@ -15,6 +15,7 @@ export interface ParsedDoc {
 export interface ParamItem {
   name: string;
   optional: boolean;
+  rest?: boolean;
   type: string;
   defaultVal: string;
 }
@@ -37,6 +38,7 @@ export interface UnionVariant {
 export interface UseField {
   field: string;
   type: string;
+  typeRefs: string[];
   from: string | null;
   raw: string;
 }
@@ -44,6 +46,7 @@ export interface UseField {
 export interface ProvideField {
   field: string;
   type: string;
+  typeRefs: string[];
   raw: string;
 }
 
@@ -51,6 +54,7 @@ export interface BindField {
   field: string;
   id: string;
   type: string;
+  typeRefs: string[];
   raw: string;
 }
 
@@ -223,7 +227,7 @@ export interface CliCommandRecord {
 
 export interface ExtractedData {
   repo: string;
-  git: { sha: string; date: string; subject: string };
+  git: { sha: string; date: string; shortDate: string; subject: string };
   modules: ModuleRecord[];
   components: ComponentRecord[];
   ifaces: IfaceRecord[];

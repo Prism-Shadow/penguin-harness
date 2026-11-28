@@ -1,12 +1,13 @@
 import type { Element } from "hast";
 import { toHtml } from "hast-util-to-html";
+import ts from "typescript";
 import {
   type CodeHighlighter,
   rewriteKernelRootInHast,
   stripSelfLinksInHast,
   type SymbolLinkResolver,
 } from "../highlight.js";
-import { renderMarkdownHtml, slugOf } from "../jsdoc.js";
+import { isSafeUrl, renderMarkdownHtml, slugOf } from "../jsdoc.js";
 import type {
   ComponentRecord,
   ExtractedData,
@@ -22,6 +23,20 @@ import type {
   SlotRecord,
   VerifiedSample,
 } from "../types.js";
+
+const BADGE_TYPE_KEYS = new Set([
+  "decorator",
+  "function",
+  "class",
+  "interface",
+  "type_alias",
+  "ng_module",
+  "directive",
+  "pipe",
+  "block",
+]);
+
+const PRESERVE_MODULE_SUFFIX = new Set(["PlatformModule", "WebAppModule"]);
 
 export const ICONS = {
   overview: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>`,
@@ -54,19 +69,21 @@ export function esc(s: unknown): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export function trimModule(name: string): string {
-  return name === "PlatformModule" || name === "WebAppModule"
-    ? name
-    : name.replace(/Module$/, "") || name;
+  if (PRESERVE_MODULE_SUFFIX.has(name) || !name.endsWith("Module")) return name;
+  const stem = name.slice(0, -"Module".length);
+  return stem || name;
 }
 
 export function apiLabel(typeKey: string, letter: string, fullText: string | null = null): string {
+  const safeKey = BADGE_TYPE_KEYS.has(typeKey) ? typeKey : "block";
   return fullText
-    ? `<span class="docs-api-item-label type-${typeKey} full">${esc(fullText)}</span>`
-    : `<span class="docs-api-item-label type-${typeKey}" aria-hidden="true">${esc(letter)}</span>`;
+    ? `<span class="docs-api-item-label type-${safeKey} full">${esc(fullText)}</span>`
+    : `<span class="docs-api-item-label type-${safeKey}" aria-hidden="true">${esc(letter)}</span>`;
 }
 
 export function kernelBadgeMeta(kind: KernelExportKind): {
@@ -79,6 +96,56 @@ export function kernelBadgeMeta(kind: KernelExportKind): {
   if (kind === "class") return { tKey: "class", ch: "C", label: "class" };
   if (kind === "interface") return { tKey: "interface", ch: "I", label: "interface" };
   return { tKey: "type_alias", ch: "T", label: "type-alias" };
+}
+
+/**
+ * Remove Shiki `// [!code highlight]` / `// [!code hl]` annotation comments for clipboard copy
+ * using TypeScript's real parsed comment ranges so string/template literals are never mutated.
+ */
+function stripShikiNotationComments(code: string): string {
+  const sf = ts.createSourceFile("__copy.ts", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const commentByPos = new Map<number, ts.CommentRange>();
+  const addRanges = (ranges: readonly ts.CommentRange[] | undefined): void => {
+    if (!ranges) return;
+    for (const r of ranges) {
+      if (r.kind === ts.SyntaxKind.SingleLineCommentTrivia) commentByPos.set(r.pos, r);
+    }
+  };
+  const walk = (node: ts.Node): void => {
+    addRanges(ts.getLeadingCommentRanges(code, node.pos));
+    addRanges(ts.getTrailingCommentRanges(code, node.end));
+    for (const ch of node.getChildren(sf)) walk(ch);
+  };
+  walk(sf);
+
+  const removals: Array<[number, number]> = [];
+  for (const range of [...commentByPos.values()].sort((a, b) => a.pos - b.pos)) {
+    const text = code.slice(range.pos, range.end);
+    if (!/^\/\/[ \t]*\[!code[ \t]+(?:highlight|hl)(?::\d+)?\][ \t]*$/.test(text)) continue;
+
+    let start = range.pos;
+    const end = range.end;
+    while (start > 0 && (code[start - 1] === " " || code[start - 1] === "\t")) start--;
+    const atLineStart = start === 0 || code[start - 1] === "\n" || code[start - 1] === "\r";
+    if (atLineStart) {
+      let lineEnd = end;
+      if (code[lineEnd] === "\r" && code[lineEnd + 1] === "\n") lineEnd += 2;
+      else if (code[lineEnd] === "\n" || code[lineEnd] === "\r") lineEnd += 1;
+      removals.push([start, lineEnd]);
+    } else {
+      removals.push([start, end]);
+    }
+  }
+
+  if (removals.length === 0) return code;
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of removals) {
+    if (start > cursor) parts.push(code.slice(cursor, start));
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < code.length) parts.push(code.slice(cursor));
+  return parts.join("");
 }
 
 export interface ShellOptions {
@@ -154,11 +221,19 @@ export class RenderContext {
   }
 
   srcUrl(rel: string, line: number | null = null): string {
-    const safePath = rel
-      .split("/")
-      .map((seg) => encodeURIComponent(seg))
-      .join("/");
-    return `https://github.com/Prism-Shadow/penguin-harness/blob/${encodeURIComponent(this.gitSha)}/${safePath}${line ? `#L${line}` : ""}`;
+    const segments = rel.split("/").filter((s) => s.length > 0);
+    if (segments.some((s) => s === "." || s === "..")) {
+      throw new Error(`Invalid repository-relative source path: ${rel}`);
+    }
+    const encodedPath = segments.map((seg) => encodeURIComponent(seg)).join("/");
+    const url = new URL(
+      `/Prism-Shadow/penguin-harness/blob/${encodeURIComponent(this.gitSha)}/${encodedPath}`,
+      "https://github.com",
+    );
+    if (line !== null && Number.isInteger(line) && line > 0) {
+      url.hash = `L${line}`;
+    }
+    return url.href;
   }
 
   symbolHref(word: string, r: string | null, preferKernel = false): string | null {
@@ -184,21 +259,19 @@ export class RenderContext {
     return {
       resolveSymbol: (word, isDecorator) => {
         if (word === currentSymbol) return null;
-        if (
-          !isDecorator &&
-          !/^[A-Z]/.test(word) &&
-          !(preferKernel && this.kernelByName.has(word))
-        ) {
-          return null;
-        }
-        return this.symbolHref(word, r, preferKernel || isDecorator);
+        if (!isDecorator && word === "type" && !preferKernel) return null;
+        const href = this.symbolHref(word, r, preferKernel || isDecorator);
+        return href && isSafeUrl(href) ? href : null;
       },
-      resolveSlot: (slotKey) =>
-        this.slotByKey.has(slotKey) ? `${r}contributions/index.html#${slugOf(slotKey)}` : null,
+      resolveSlot: (slotKey) => {
+        if (!this.slotByKey.has(slotKey)) return null;
+        const href = `${r}contributions/index.html#${slugOf(slotKey)}`;
+        return isSafeUrl(href) ? href : null;
+      },
     };
   }
 
-  /** Highlight inline TypeScript/code via official Shiki + HAST symbol linking. */
+  /** Highlight inline TypeScript/code via official Shiki + AST-backed decorations. */
   hl(
     src: string,
     r: string | null = null,
@@ -207,7 +280,7 @@ export class RenderContext {
     lang = "ts",
   ): string {
     const resolver = this.linkResolver(r, preferKernel, currentSymbol);
-    const cacheKey = `${r ?? "-"}|${preferKernel ? 1 : 0}|${currentSymbol ?? ""}`;
+    const cacheKey = JSON.stringify([r, preferKernel, currentSymbol]);
     const inner = this.highlighter.highlightInline(src, lang, resolver, cacheKey);
     return `<span class="shiki">${inner}</span>`;
   }
@@ -222,10 +295,10 @@ export class RenderContext {
       currentSymbol = null,
     } = opts;
     const resolver = this.linkResolver(r, preferKernel, currentSymbol);
-    const cacheKey = `${r ?? "-"}|${preferKernel ? 1 : 0}|${currentSymbol ?? ""}`;
+    const cacheKey = JSON.stringify([r, preferKernel, currentSymbol]);
     const shikiPre = this.highlighter.highlightBlock(src, lang, resolver, cacheKey);
     const head = file
-      ? `<div class="docs-code-header"><a href="${this.srcUrl(file, line)}" target="_blank" rel="noopener">${esc(file)}${line ? `:${line}` : ""} ↗</a></div>`
+      ? `<div class="docs-code-header"><a href="${esc(this.srcUrl(file, line))}" target="_blank" rel="noopener">${esc(file)}${line ? `:${line}` : ""} ↗</a></div>`
       : "";
     return `<div class="docs-code">${head}${COPY_BTN}${shikiPre}</div>`;
   }
@@ -234,15 +307,20 @@ export class RenderContext {
     markdown: string,
     r = "",
     preferKernel = false,
-    opts: { allowLinks?: boolean; inlineOnly?: boolean } = {},
+    opts: { allowSymbolLinks?: boolean; inlineOnly?: boolean } = {},
   ): string {
     if (!markdown.trim()) return "";
-    const allowLinks = opts.allowLinks ?? true;
-    const resolver = allowLinks ? this.linkResolver(r, preferKernel, null) : null;
+    const allowSymbolLinks = opts.allowSymbolLinks ?? true;
+    const resolver = allowSymbolLinks ? this.linkResolver(r, preferKernel, null) : null;
     return renderMarkdownHtml(markdown, {
       inlineOnly: opts.inlineOnly,
-      resolveSymbolHref: allowLinks
-        ? (sym, preferHint) => this.symbolHref(sym, r, preferKernel || preferHint)
+      resolveSymbolHref: allowSymbolLinks
+        ? (sym, preferHint) => {
+            const direct = this.symbolHref(sym, r, preferKernel || preferHint);
+            if (direct) return direct;
+            const lastPart = sym.includes(".") ? sym.slice(sym.lastIndexOf(".") + 1) : null;
+            return lastPart ? this.symbolHref(lastPart, r, preferKernel || preferHint) : null;
+          }
         : undefined,
       renderCodeBlock: (code, lang): Element => ({
         type: "element",
@@ -275,12 +353,27 @@ export class RenderContext {
     return parts.join("\n");
   }
 
-  linkifyType(typeStr: string, r: string, preferKernel = false): string {
-    const base = typeStr.replace(/[<[\s|&?].*$/, "");
-    const href = this.symbolHref(base, r, preferKernel);
-    return href
-      ? `<a href="${esc(href)}"><code>${esc(typeStr)}</code></a>`
-      : `<code>${esc(typeStr)}</code>`;
+  /** Render a type reference chip using AST-extracted `typeRefs` (or Shiki inline linking for compound types). */
+  linkifyType(
+    typeStr: string,
+    r: string,
+    preferKernel = false,
+    typeRefs?: readonly string[],
+  ): string {
+    if (typeRefs && typeRefs.length === 1 && typeRefs[0]) {
+      const href = this.symbolHref(typeRefs[0], r, preferKernel);
+      if (href && isSafeUrl(href)) {
+        return `<a href="${esc(href)}"><code>${esc(typeStr)}</code></a>`;
+      }
+    }
+    const directHref = this.symbolHref(typeStr, r, preferKernel);
+    if (directHref && isSafeUrl(directHref)) {
+      return `<a href="${esc(directHref)}"><code>${esc(typeStr)}</code></a>`;
+    }
+    if (typeRefs && typeRefs.length > 1) {
+      return `<code>${this.hl(typeStr, r, preferKernel)}</code>`;
+    }
+    return `<code>${esc(typeStr)}</code>`;
   }
 
   lookupVerifiedSample(ownerTypeName: string | null, memberName: string): VerifiedSample | null {
@@ -307,15 +400,13 @@ export class RenderContext {
       const rooted = rewriteKernelRootInHast(sample.hast, `${r}kernel/`);
       const cleaned = stripSelfLinksInHast(rooted, currentSymbol);
       html = toHtml(cleaned);
-    } else if (sample.html) {
-      html = sample.html.replaceAll("__KERNEL_ROOT__", `${r}kernel/`);
     }
 
     if (!html) {
       return `${failBanner}${this.codeBlock(sample.code, { r, preferKernel: true, currentSymbol })}`;
     }
 
-    const cleanCopy = sample.code.replace(/\s*\/\/\s*\[!code\s+[^\]]+\]/g, "");
+    const cleanCopy = stripShikiNotationComments(sample.code);
     return `${failBanner}<div class="docs-code docs-twoslash" data-copy-code="${esc(cleanCopy)}">${COPY_BTN}${html}</div>`;
   }
 
@@ -325,15 +416,16 @@ export class RenderContext {
     preferKernel = false,
     ownerTypeName: string | null = null,
     currentSymbol: string | null = null,
+    anchorId?: string,
   ): string {
     const rawName = m.name || "member";
-    const id = slugOf(rawName);
+    const id = anchorId ?? slugOf(rawName);
     const sample = this.lookupVerifiedSample(ownerTypeName, rawName);
 
     const paramRows = m.params
       .map(
         (p) =>
-          `<div class="docs-param-group"><span class="docs-param-keyword">@param</span><span class="docs-param-name">${esc(p.name)}${p.optional ? "?" : ""}</span><code class="docs-param-type">${this.hl(p.type, r, preferKernel, currentSymbol)}</code></div>`,
+          `<div class="docs-param-group"><span class="docs-param-keyword">@param</span><span class="docs-param-name">${p.rest ? "..." : ""}${esc(p.name)}${p.optional ? "?" : ""}</span><code class="docs-param-type">${this.hl(p.type, r, preferKernel, currentSymbol)}</code></div>`,
       )
       .join("");
 
@@ -399,12 +491,12 @@ export class RenderContext {
     const parts: string[] = [];
     if (node.uses.length) {
       parts.push(
-        `<div class="docs-param-group"><span class="docs-param-keyword">@Use</span><span class="docs-param-name">requires</span>${node.uses.map((u) => this.linkifyType(u.type, r)).join(" ")}</div>`,
+        `<div class="docs-param-group"><span class="docs-param-keyword">@Use</span><span class="docs-param-name">requires</span>${node.uses.map((u) => this.linkifyType(u.type, r, false, u.typeRefs)).join(" ")}</div>`,
       );
     }
     if (node.provides.length) {
       parts.push(
-        `<div class="docs-param-group"><span class="docs-param-keyword">@Provide</span><span class="docs-param-name">provides</span>${node.provides.map((p) => this.linkifyType(p.type, r)).join(" ")}</div>`,
+        `<div class="docs-param-group"><span class="docs-param-keyword">@Provide</span><span class="docs-param-name">provides</span>${node.provides.map((p) => this.linkifyType(p.type, r, false, p.typeRefs)).join(" ")}</div>`,
       );
     }
     if (node.binds.length) {
@@ -430,17 +522,17 @@ export class RenderContext {
     }
     if (node.uses.length) {
       rows.push(
-        `<div class="docs-wiring-row"><span class="docs-param-keyword">@Use</span><span class="docs-wiring-role">requires (${node.uses.length})</span><div class="docs-wiring-chips">${node.uses.map((u) => `<code>${esc(u.field)}</code>: ${this.linkifyType(u.type, r)}${u.from ? ` <span class="muted">from ${this.linkifyType(u.from, r)}</span>` : ""}`).join(" · ")}</div></div>`,
+        `<div class="docs-wiring-row"><span class="docs-param-keyword">@Use</span><span class="docs-wiring-role">requires (${node.uses.length})</span><div class="docs-wiring-chips">${node.uses.map((u) => `<code>${esc(u.field)}</code>: ${this.linkifyType(u.type, r, false, u.typeRefs)}${u.from ? ` <span class="muted">from ${this.linkifyType(u.from, r)}</span>` : ""}`).join(" · ")}</div></div>`,
       );
     }
     if (node.provides.length) {
       rows.push(
-        `<div class="docs-wiring-row"><span class="docs-param-keyword">@Provide</span><span class="docs-wiring-role">provides (${node.provides.length})</span><div class="docs-wiring-chips">${node.provides.map((p) => `<code>${esc(p.field)}</code>: ${this.linkifyType(p.type, r)}`).join(" · ")}</div></div>`,
+        `<div class="docs-wiring-row"><span class="docs-param-keyword">@Provide</span><span class="docs-wiring-role">provides (${node.provides.length})</span><div class="docs-wiring-chips">${node.provides.map((p) => `<code>${esc(p.field)}</code>: ${this.linkifyType(p.type, r, false, p.typeRefs)}`).join(" · ")}</div></div>`,
       );
     }
     if (node.binds.length) {
       rows.push(
-        `<div class="docs-wiring-row"><span class="docs-param-keyword">@Bind</span><span class="docs-wiring-role">binds (${node.binds.length})</span><div class="docs-wiring-chips">${node.binds.map((b) => `<code>${esc(b.field)}</code> → <code>${esc(b.id)}</code>: ${this.linkifyType(b.type, r)}`).join(" · ")}</div></div>`,
+        `<div class="docs-wiring-row"><span class="docs-param-keyword">@Bind</span><span class="docs-wiring-role">binds (${node.binds.length})</span><div class="docs-wiring-chips">${node.binds.map((b) => `<code>${esc(b.field)}</code> → <code>${esc(b.id)}</code>: ${this.linkifyType(b.type, r, false, b.typeRefs)}`).join(" · ")}</div></div>`,
       );
     }
     if (!rows.length) return "";
@@ -461,10 +553,10 @@ export class RenderContext {
     for (const node of [...this.data.modules, ...this.data.components]) {
       const href = node.kind === "module" ? `${r}modules/${node.slug}/` : `${r}${node.href}`;
       const providesMatch =
-        node.provides.some((p) => p.type.replace(/[<[\s|&?].*$/, "") === ifaceName) ||
+        node.provides.some((p) => p.typeRefs.includes(ifaceName)) ||
         node.implements.includes(ifaceName);
       if (providesMatch) providedBy.push({ name: node.name, href });
-      if (node.uses.some((u) => u.type.replace(/[<[\s|&?].*$/, "") === ifaceName)) {
+      if (node.uses.some((u) => u.typeRefs.includes(ifaceName))) {
         consumedBy.push({ name: node.name, href });
       }
     }
@@ -537,7 +629,7 @@ export class RenderContext {
 <html lang="en" class="docs-light-mode" data-brand="frost" data-refs-root="${esc(r)}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<script>(function(){try{var d=document.documentElement,u=new URLSearchParams(location.search),t=u.get("theme")||localStorage.getItem("refs-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"),b=u.get("brand")||localStorage.getItem("refs-brand-v2")||"frost";d.classList.remove("docs-light-mode","docs-dark-mode");d.classList.add(t==="dark"?"docs-dark-mode":"docs-light-mode");d.dataset.theme=t;if(b==="adev")delete d.dataset.brand;else d.dataset.brand=b;if(localStorage.getItem("refs-sidebar-collapsed")==="1")d.classList.add("sidebar-collapsed");var w=localStorage.getItem("refs-sidebar-width");if(w&&/^\\d{3}px$/.test(w))d.style.setProperty("--secondary-nav-width",w);}catch(e){}})();</script>
+<script>(function(){try{var d=document.documentElement,u=new URLSearchParams(location.search),t=u.get("theme")||localStorage.getItem("refs-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"),b=u.get("brand")||localStorage.getItem("refs-brand-v2")||"frost";d.classList.remove("docs-light-mode","docs-dark-mode");d.classList.add(t==="dark"?"docs-dark-mode":"docs-light-mode");d.dataset.theme=t;if(b==="adev")delete d.dataset.brand;else d.dataset.brand=b;if(localStorage.getItem("refs-sidebar-collapsed")==="1")d.classList.add("sidebar-collapsed");var w=localStorage.getItem("refs-sidebar-width");if(w){var s=w.endsWith("px")?w.slice(0,-2):w,n=Number(s);if(s&&Number.isInteger(n)&&n>=180&&n<=520)d.style.setProperty("--secondary-nav-width",n+"px");}}catch(e){}})();</script>
 <title>${esc(title)} • PenguinHarness Docs</title>
 <link rel="icon" type="image/svg+xml" href="${r}assets/penguin-logo.svg">
 <link rel="stylesheet" href="${r}assets/style.css?v=${this.assetVer}">
@@ -631,12 +723,12 @@ export class RenderContext {
     </div>
     <footer class="adev-footer-container">
       <div class="adev-footer-columns">
-        <div><h2>Overview</h2><ul><li><a href="${r}index.html">Architecture Overview</a></li><li><a href="${r}kernel/index.html">@prismshadow/penguin-core/kernel</a></li><li><a href="https://penguin.ooo/" target="_blank" rel="noopener">Home Page ↗</a></li><li><a href="https://github.com/Prism-Shadow/penguin-harness/tree/${esc(this.gitSha)}" target="_blank" rel="noopener">Source (${esc(this.gitSha)}) ↗</a></li></ul></div>
+        <div><h2>Overview</h2><ul><li><a href="${r}index.html">Architecture Overview</a></li><li><a href="${r}kernel/index.html">@prismshadow/penguin-core/kernel</a></li><li><a href="https://penguin.ooo/" target="_blank" rel="noopener">Home Page ↗</a></li><li><a href="https://github.com/Prism-Shadow/penguin-harness/tree/${encodeURIComponent(this.gitSha)}" target="_blank" rel="noopener">Source (${esc(this.gitSha)}) ↗</a></li></ul></div>
         <div><h2>Modules</h2><ul><li><a href="${r}modules/${this.moduleByName.get("PlatformModule")?.slug ?? "platform"}/">PlatformModule</a></li><li><a href="${r}modules/${this.moduleByName.get("WebAppModule")?.slug ?? "web-app"}/">WebAppModule</a></li><li><a href="${r}modules/${this.moduleByName.get("CliCommandsModule")?.slug ?? "cli-commands"}/">CliCommandsModule</a></li><li><a href="${r}modules/index.html">All Modules (${this.data.modules.length})</a></li></ul></div>
         <div><h2>Kernel &amp; Interfaces</h2><ul><li><a href="${r}kernel/${this.kernelByName.get("Module")?.slug ?? "Module"}/">@Module</a></li><li><a href="${r}kernel/${this.kernelByName.get("Component")?.slug ?? "Component"}/">@Component</a></li><li><a href="${r}kernel/${this.kernelByName.get("Use")?.slug ?? "Use"}/">@Use &amp; @Provide</a></li><li><a href="${r}interfaces/index.html">All Interfaces (${this.data.ifaces.length})</a></li></ul></div>
         <div><h2>APIs &amp; Contribution Slots</h2><ul><li><a href="${r}apis/index.html#http">HTTP Route Groups (${this.data.httpContribs.length})</a></li><li><a href="${r}apis/index.html#cli">CLI Commands (${this.data.cliCommands.length})</a></li><li><a href="${r}contributions/index.html">Contribution Slots (${this.data.slots.length})</a></li></ul></div>
       </div>
-      <p class="docs-license">Generated directly from TypeScript AST · commit ${esc(this.gitSha)} (${esc(this.data.git.date.slice(0, 10))})</p>
+      <p class="docs-license">Generated directly from TypeScript AST · commit ${esc(this.gitSha)} (${esc(this.data.git.shortDate)})</p>
     </footer>
   </div>
 </div>

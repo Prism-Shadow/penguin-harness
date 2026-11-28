@@ -1,17 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { transformerNotationHighlight, transformerRemoveLineBreak } from "@shikijs/transformers";
 import { rendererRich, transformerTwoslash } from "@shikijs/twoslash";
-import type { ElementContent, Root, RootContent } from "hast";
+import type { Element, ElementContent, Root } from "hast";
 import { toHtml } from "hast-util-to-html";
 import { createHighlighter } from "shiki";
+import { parse as parseTokens } from "space-separated-tokens";
 import ts from "typescript";
+import { visit } from "unist-util-visit";
 import { extractAll } from "./extract.js";
-import { extractJsDoc, markdownToHast, slugOf } from "./jsdoc.js";
+import { extractJsDoc, markdownFirstBlockToHast, slugOf } from "./jsdoc.js";
 import type { VerifiedSample, VerifiedSamplesFile } from "./types.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +25,7 @@ const OUT_FILE = path.join(SAMPLES_DIR, "verified-samples.json");
 const ALLOW_FAIL = process.argv.includes("--report-failures");
 
 const MODULE_META_PROPS = new Set(["contributes", "context", "children", "exports"]);
+const KERNEL_INTERNAL_ORIGIN = "https://kernel-internal.penguin-refs.invalid";
 
 interface RegionInfo {
   code: string;
@@ -30,15 +34,58 @@ interface RegionInfo {
   file: string;
 }
 
-function dedent(str: string): string {
-  const lines = str.split(/\r\n|\r|\n/);
-  while (lines.length > 0 && !lines[0]?.trim()) lines.shift();
-  while (lines.length > 0 && !lines[lines.length - 1]?.trim()) lines.pop();
-  const nonEmpty = lines.filter((l) => l.trim().length > 0);
-  const indent = nonEmpty.length
-    ? Math.min(...nonEmpty.map((l) => l.match(/^\s*/)?.[0].length ?? 0))
+function toPosixRel(from: string, to: string): string {
+  return path.relative(from, to).split(path.sep).join("/");
+}
+
+/**
+ * AST-aware TypeScript dedent: strips common leading indentation ONLY on lines whose start
+ * does not lie inside a multiline template literal (preserving exact runtime string values).
+ */
+function dedentTs(str: string): string {
+  const sf = ts.createSourceFile(
+    "__dedent.ts",
+    str,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS,
+  );
+  const templateRanges: Array<[number, number]> = [];
+  const collectLiterals = (n: ts.Node): void => {
+    if (
+      ts.isStringLiteral(n) ||
+      ts.isNoSubstitutionTemplateLiteral(n) ||
+      ts.isTemplateHead(n) ||
+      ts.isTemplateMiddle(n) ||
+      ts.isTemplateTail(n)
+    ) {
+      templateRanges.push([n.getStart(sf), n.end]);
+    }
+    ts.forEachChild(n, collectLiterals);
+  };
+  collectLiterals(sf);
+
+  const lineStarts = [...sf.getLineStarts()];
+  const rawLines = lineStarts.map((start, i) => {
+    const nextStart = lineStarts[i + 1] ?? str.length;
+    return str.slice(start, nextStart).replace(/(?:\r\n|\r|\n|\u2028|\u2029)$/, "");
+  });
+  const lines = rawLines.map((text, i) => ({
+    text,
+    inTemplate: templateRanges.some(
+      ([s, e]) => (lineStarts[i] ?? 0) > s && (lineStarts[i] ?? 0) < e,
+    ),
+  }));
+
+  while (lines.length > 0 && !lines[0]?.text.trim()) lines.shift();
+  while (lines.length > 0 && !lines[lines.length - 1]?.text.trim()) lines.pop();
+
+  const eligible = lines.filter((l) => !l.inTemplate && l.text.trim().length > 0);
+  const indent = eligible.length
+    ? Math.min(...eligible.map((l) => l.text.match(/^[ \t]*/)?.[0].length ?? 0))
     : 0;
-  return lines.map((l) => l.slice(indent)).join("\n");
+
+  return lines.map((l) => (l.inTemplate ? l.text : l.text.slice(indent))).join("\n");
 }
 
 function extractRegions(filePath: string): {
@@ -50,24 +97,42 @@ function extractRegions(filePath: string): {
   const docs = new Map<string, string>();
   const regions = new Map<string, RegionInfo>();
 
-  // Extract `@docTarget <key>` descriptions via TypeScript's official JSDoc AST (no regex!)
+  // Extract ALL `@docTarget <key> <description>` tags via structured `comment-parser` fields
   for (const st of sf.statements) {
     const parsed = extractJsDoc(st, sf);
-    const targetTag = parsed.tags.find((t) => t.tag === "docTarget");
-    if (!targetTag) continue;
-    const raw = targetTag.markdown.trim();
-    const spaceIdx = raw.search(/\s/);
-    if (spaceIdx === -1) continue;
-    const key = raw.slice(0, spaceIdx).trim();
-    const desc = raw.slice(spaceIdx).trim();
-    if (key && desc) docs.set(key, desc);
+    for (const targetTag of parsed.tags) {
+      if (targetTag.tag !== "docTarget") continue;
+      const key = targetTag.name?.trim() ?? "";
+      const desc = targetTag.markdown.trim();
+      if (!key || !desc) {
+        throw new Error(`Invalid @docTarget tag (missing key or description) in ${filePath}`);
+      }
+      if (docs.has(key)) {
+        throw new Error(`Duplicate @docTarget ${key} in ${filePath}`);
+      }
+      docs.set(key, desc);
+    }
   }
 
-  // Line-by-line region parser: rejects duplicate openers, unclosed regions (including at EOF),
-  // nested openers, and extra/mismatched/premature #enddocregion markers across LF/CRLF/CR.
-  const openRe = /^[ \t]*\/\/[ \t]*#docregion[ \t]+([^\s]+)[ \t]*$/;
-  const closeRe = /^[ \t]*\/\/[ \t]*#enddocregion[ \t]+([^\s]+)[ \t]*$/;
-  const lineRe = /[^\r\n]*(?:\r\n|\r|\n|$)/g;
+  // Official TypeScript parser-backed comment ranges (`ts.getLeadingCommentRanges` / `ts.getTrailingCommentRanges`):
+  // recognizes ONLY real SingleLineCommentTrivia (immune to template literals with `${...}`, regexes, and block comments)
+  // and computes line numbers via `sf.getLineAndCharacterOfPosition()` (including U+2028/U+2029).
+  const commentByPos = new Map<number, ts.CommentRange>();
+  const addRanges = (ranges: readonly ts.CommentRange[] | undefined): void => {
+    if (!ranges) return;
+    for (const r of ranges) {
+      if (r.kind === ts.SyntaxKind.SingleLineCommentTrivia) commentByPos.set(r.pos, r);
+    }
+  };
+  const walkComments = (node: ts.Node): void => {
+    addRanges(ts.getLeadingCommentRanges(text, node.pos));
+    addRanges(ts.getTrailingCommentRanges(text, node.end));
+    for (const ch of node.getChildren(sf)) walkComments(ch);
+  };
+  walkComments(sf);
+  const singleLineComments = [...commentByPos.values()].sort((a, b) => a.pos - b.pos);
+
+  const lineStarts = sf.getLineStarts();
   const seenKeys = new Set<string>();
   let openRegion: {
     key: string;
@@ -75,16 +140,25 @@ function extractRegions(filePath: string): {
     bodyStart: number;
     startLine: number;
   } | null = null;
-  let lineNo = 0;
-  let lm: RegExpExecArray | null;
-  while ((lm = lineRe.exec(text)) !== null) {
-    const rawLine = lm[0];
-    if (rawLine.length === 0) break;
-    lineNo++;
-    const lineText = rawLine.replace(/(?:\r\n|\r|\n)$/, "");
-    const openMatch = openRe.exec(lineText);
-    if (openMatch?.[1]) {
-      const key = openMatch[1];
+
+  for (const range of singleLineComments) {
+    const tokStart = range.pos;
+    const commentText = text.slice(range.pos, range.end);
+
+    const lc = sf.getLineAndCharacterOfPosition(tokStart);
+    const lineNo = lc.line + 1;
+    const lineStart = lineStarts[lc.line] ?? 0;
+    const nextLineStart = lineStarts[lc.line + 1] ?? text.length;
+    // Directive must occupy its own comment-only line
+    if (text.slice(lineStart, tokStart).trim().length > 0) continue;
+
+    const directive = /^\/\/[ \t]*#(end)?docregion[ \t]+([^\s]+)[ \t]*$/.exec(commentText);
+    if (!directive) continue;
+
+    const isEnd = Boolean(directive[1]);
+    const key = directive[2] ?? "";
+
+    if (!isEnd) {
       if (openRegion) {
         throw new Error(
           `Nested #docregion ${key} inside unclosed #docregion ${openRegion.key} in ${filePath}:${lineNo}`,
@@ -96,44 +170,42 @@ function extractRegions(filePath: string): {
       seenKeys.add(key);
       openRegion = {
         key,
-        markerStart: lm.index,
-        bodyStart: lm.index + rawLine.length,
+        markerStart: lineStart,
+        bodyStart: nextLineStart,
         startLine: lineNo + 1,
       };
-      continue;
-    }
-
-    const closeMatch = closeRe.exec(lineText);
-    if (closeMatch?.[1]) {
-      const endKey = closeMatch[1];
+    } else {
       if (!openRegion) {
         throw new Error(
-          `Unexpected #enddocregion ${endKey} without matching opener in ${filePath}:${lineNo}`,
+          `Unexpected #enddocregion ${key} without matching opener in ${filePath}:${lineNo}`,
         );
       }
-      if (openRegion.key !== endKey) {
+      if (openRegion.key !== key) {
         throw new Error(
-          `Mismatched #enddocregion ${endKey} (expected ${openRegion.key}) in ${filePath}:${lineNo}`,
+          `Mismatched #enddocregion ${key} (expected ${openRegion.key}) in ${filePath}:${lineNo}`,
         );
       }
-      const bodyEnd = lm.index;
-      const displayCode = dedent(text.slice(openRegion.bodyStart, bodyEnd));
+      const bodyEnd = lineStart;
+      const displayCode = dedentTs(text.slice(openRegion.bodyStart, bodyEnd));
       const markerStart = openRegion.markerStart;
-      let prelude = "";
-      const findBlock = (node: ts.Node): void => {
+
+      // Collect preceding declarations across all enclosing Blocks (preserving outer helper scopes)
+      const preludeParts: string[] = [];
+      const collectEnclosingPreludes = (node: ts.Node): void => {
         if (ts.isBlock(node) && node.pos <= markerStart && node.end >= bodyEnd) {
-          prelude = node.statements
-            .filter((st) => st.end <= markerStart)
-            .map((st) => dedent(st.getText(sf)))
-            .join("\n");
+          for (const st of node.statements) {
+            if (st.end <= markerStart) {
+              preludeParts.push(dedentTs(st.getText(sf)));
+            }
+          }
         }
-        ts.forEachChild(node, findBlock);
+        ts.forEachChild(node, collectEnclosingPreludes);
       };
-      findBlock(sf);
+      collectEnclosingPreludes(sf);
 
       const twoslashSource = [
         'import { Bind, Component, Interface, Module, Provide, Use, type ClassCtx, type Contributed, type Json, type Opaque, type Slot } from "@prismshadow/penguin-core/kernel";',
-        prelude,
+        ...preludeParts,
         "// ---cut---",
         displayCode,
       ]
@@ -144,11 +216,12 @@ function extractRegions(filePath: string): {
         code: displayCode,
         twoslashSource,
         line: openRegion.startLine,
-        file: path.relative(PKG_ROOT, filePath).replace(/\\/g, "/"),
+        file: toPosixRel(PKG_ROOT, filePath),
       });
       openRegion = null;
     }
   }
+
   if (openRegion) {
     throw new Error(
       `Unclosed #docregion ${openRegion.key} (missing #enddocregion ${openRegion.key}) in ${filePath}`,
@@ -157,58 +230,82 @@ function extractRegions(filePath: string): {
   return { docs, regions };
 }
 
-function hasCls(node: RootContent | undefined, name: string): boolean {
+function hasCls(node: Root["children"][number] | undefined, name: string): boolean {
   if (!node || node.type !== "element") return false;
   const raw = node.properties?.class ?? node.properties?.className;
   if (Array.isArray(raw)) return raw.includes(name);
-  if (typeof raw === "string") return raw.split(/\s+/).includes(name);
+  if (typeof raw === "string") return parseTokens(raw).includes(name);
   return false;
 }
 
-function textOf(node: RootContent | undefined): string {
+function textOf(node: Root["children"][number] | undefined): string {
   if (!node) return "";
   if (node.type === "text") return node.value;
   if (node.type === "element") return node.children.map(textOf).join("");
   return "";
 }
 
-function transformerKernelLinks(kernelSlugByName: ReadonlyMap<string, string>) {
-  function walk(node: Root | RootContent): void {
-    if (node.type === "element" && node.tagName === "span" && hasCls(node, "twoslash-hover")) {
-      const popupNode = node.children.find((c) => hasCls(c, "twoslash-popup-container"));
-      const popupText = textOf(popupNode).trim();
-      for (let i = 0; i < node.children.length; i++) {
-        const ch = node.children[i];
-        if (!ch || ch === popupNode) continue;
-        const word = textOf(ch).trim();
-        let targetHref: string | null = null;
-        if (MODULE_META_PROPS.has(word) && popupText.includes("ModuleMeta.")) {
-          targetHref = `__KERNEL_ROOT__ModuleMeta/#${slugOf(word)}`;
-        } else if (
-          kernelSlugByName.has(word) &&
-          (/^[A-Z]/.test(word) || popupText.startsWith(`function ${word}`))
-        ) {
-          targetHref = `__KERNEL_ROOT__${kernelSlugByName.get(word)}/`;
-        }
-        if (targetHref) {
-          node.children[i] = {
-            type: "element",
-            tagName: "a",
-            properties: { class: "twoslash-ref-link", href: targetHref, "data-k-sym": word },
-            children: [ch],
-          };
-        }
+/** Convert temporary `KERNEL_INTERNAL_ORIGIN` URLs emitted by `markdownFirstBlockToHast` into structured `data-k-href` markers. */
+function convertInternalKernelAnchors(root: Root): void {
+  visit(root, "element", (el) => {
+    if (el.tagName !== "a" || !el.properties) return;
+    const href = typeof el.properties.href === "string" ? el.properties.href : "";
+    try {
+      const parsed = new URL(href);
+      if (parsed.origin === KERNEL_INTERNAL_ORIGIN) {
+        el.properties["data-k-href"] = `${parsed.pathname.replace(/^\/+/, "")}${parsed.hash}`;
+        el.properties.href = "#";
       }
-      return;
+    } catch {
+      // Relative or non-internal URL — leave untouched
     }
-    if ("children" in node && Array.isArray(node.children)) {
-      for (const child of node.children) walk(child);
-    }
-  }
+  });
+}
+
+function transformerKernelLinks(kernelSlugByName: ReadonlyMap<string, string>) {
   return {
     name: "penguin-kernel-links",
     root(hast: Root): void {
-      walk(hast);
+      visit(hast, "element", (node: Element) => {
+        if (node.tagName !== "span" || !hasCls(node, "twoslash-hover")) return;
+        const popupNode = node.children.find((c) => hasCls(c, "twoslash-popup-container"));
+        const popupText = textOf(popupNode).trim();
+        for (let i = 0; i < node.children.length; i++) {
+          const ch = node.children[i];
+          if (!ch || ch === popupNode) continue;
+          const word = textOf(ch).trim();
+          let relTarget: string | null = null;
+          if (MODULE_META_PROPS.has(word) && popupText.includes("ModuleMeta.")) {
+            relTarget = `ModuleMeta/#${slugOf(word)}`;
+          } else if (
+            kernelSlugByName.has(word) &&
+            (popupText.startsWith("(alias)") ||
+              popupText.startsWith("import ") ||
+              popupText.startsWith(`function ${word}`) ||
+              popupText.startsWith(`interface ${word}`) ||
+              popupText.startsWith(`type ${word}`) ||
+              popupText.startsWith(`class ${word}`))
+          ) {
+            // Do not falsely link a sample-local `class Module {}` unless it is an imported alias
+            if (!popupText.startsWith(`class ${word}`) || popupText.includes("(alias)")) {
+              relTarget = `${kernelSlugByName.get(word)}/`;
+            }
+          }
+          if (relTarget) {
+            node.children[i] = {
+              type: "element",
+              tagName: "a",
+              properties: {
+                className: ["twoslash-ref-link"],
+                href: "#",
+                "data-k-href": relTarget,
+                "data-k-sym": word,
+              },
+              children: [ch],
+            };
+          }
+        }
+      });
     },
   };
 }
@@ -327,14 +424,14 @@ export async function runDocSamples(): Promise<void> {
     renderer: rendererRich({
       errorRendering: "hover",
       renderMarkdown(md) {
-        const firstPara = md.split(/\r?\n\s*\r?\n/)[0] ?? "";
-        const hast = markdownToHast(firstPara, {
+        const hast = markdownFirstBlockToHast(md, {
           linkClass: "twoslash-ref-link",
           resolveSymbolHref: (sym) => {
             const slug = kernelSlugByName.get(sym);
-            return slug ? `__KERNEL_ROOT__${slug}/` : null;
+            return slug ? `${KERNEL_INTERNAL_ORIGIN}/${slug}/` : null;
           },
         });
+        convertInternalKernelAnchors(hast);
         return hast.children.filter((c): c is ElementContent => c.type !== "doctype");
       },
     }),
@@ -395,15 +492,25 @@ export async function runDocSamples(): Promise<void> {
         }
       }
 
+      const resultFile = path.join(
+        os.tmpdir(),
+        `penguin-sample-res-${process.pid}-${randomBytes(6).toString("hex")}.json`,
+      );
       try {
         const args = ["--import", loaderHookUrl, tf];
         const stdout = execFileSync(tsxBin, args, {
           encoding: "utf8",
           cwd: PKG_ROOT,
-          env: { ...process.env, PENGUIN_REFS_REPO: REPO },
+          env: {
+            ...process.env,
+            PENGUIN_REFS_REPO: REPO,
+            PENGUIN_SAMPLE_RESULT_FILE: resultFile,
+          },
         });
-        const lastLine = stdout.trim().split(/\r?\n/).pop() ?? "";
-        const parsed = JSON.parse(lastLine) as {
+        const rawJson = fs.existsSync(resultFile)
+          ? fs.readFileSync(resultFile, "utf8")
+          : (stdout.trim().split(/\r?\n/).pop() ?? "");
+        const parsed = JSON.parse(rawJson) as {
           ok: boolean;
           results: Array<{ key: string; title: string; assertions: number }>;
         };
@@ -445,10 +552,10 @@ export async function runDocSamples(): Promise<void> {
         const e = err as { stderr?: Buffer | string; message?: string };
         const msg = String(e.stderr || e.message || err)
           .trim()
-          .split(/\r?\n/)
+          .split(/\r\n|\r|\n/)
           .slice(0, 6)
           .join("\n");
-        console.error(`  FAIL ${path.relative(PKG_ROOT, tf)}:\n${msg}`);
+        console.error(`  FAIL ${toPosixRel(PKG_ROOT, tf)}:\n${msg}`);
         for (const [key, reg] of regions) {
           const hast = hastByKey.get(key);
           verified[key] = {
@@ -463,6 +570,8 @@ export async function runDocSamples(): Promise<void> {
             error: tsErrByKey.get(key) ?? msg,
           };
         }
+      } finally {
+        fs.rmSync(resultFile, { force: true });
       }
     }
   } finally {

@@ -1,4 +1,5 @@
-import { slugOf } from "../jsdoc.js";
+import ts from "typescript";
+import { cleanTypeWs, createAnchorAllocator, slugOf, truncateGraphemes } from "../jsdoc.js";
 import type { JsDocTagEntry, KernelExport, KernelExportKind } from "../types.js";
 import { apiLabel, COPY_BTN, esc, ICONS, kernelBadgeMeta, type RenderContext } from "./context.js";
 
@@ -131,12 +132,30 @@ function buildKernelGrouping(exports: readonly KernelExport[]): KernelGrouping {
   return { groupByName, byGroup };
 }
 
+/**
+ * Strip `export` / `declare` modifiers and comments via TypeScript's real scanner/printer
+ * so string literals and inline `//` comments are never corrupted in one-line signature previews.
+ */
 function compactSig(sig: string): string {
-  const first = sig
-    .replace(/^export\s+(?:declare\s+)?/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return first.length > 110 ? `${first.slice(0, 109)}…` : first;
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, sig);
+  let cutPos = 0;
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
+    if (
+      kind === ts.SyntaxKind.WhitespaceTrivia ||
+      kind === ts.SyntaxKind.NewLineTrivia ||
+      kind === ts.SyntaxKind.SingleLineCommentTrivia ||
+      kind === ts.SyntaxKind.MultiLineCommentTrivia
+    ) {
+      continue;
+    }
+    if (kind === ts.SyntaxKind.ExportKeyword || kind === ts.SyntaxKind.DeclareKeyword) {
+      cutPos = scanner.getTokenEnd();
+      continue;
+    }
+    break;
+  }
+  const compact = cleanTypeWs(sig.slice(cutPos));
+  return truncateGraphemes(compact, 110);
 }
 
 export function createKernelRenderer(ctx: RenderContext) {
@@ -177,8 +196,7 @@ export function createKernelRenderer(ctx: RenderContext) {
       items
         .map((e) => {
           const bm = kernelBadgeMeta(e.kind);
-          const firstDoc = e.doc.summary;
-          const summary = firstDoc.length > 140 ? `${firstDoc.slice(0, 140)}…` : firstDoc;
+          const summary = truncateGraphemes(e.doc.summary, 140);
           const sigPreview = compactSig(e.sig);
           return `<a class="kernel-api-row" href="${esc(`${e.slug}/`)}" data-item-type="${esc(e.kind)}" data-item-name="${esc(`${e.name} ${e.sourceFile} ${summary} ${sigPreview}`.toLowerCase())}">
       <div class="kernel-api-row-left">
@@ -220,7 +238,7 @@ export function createKernelRenderer(ctx: RenderContext) {
   <span class="docs-reference-category">packages/core/src/kernel/index.ts · ${publicCount} core · ${lowLevelCount} low-level · commit ${esc(ctx.gitSha)}</span>
   <div class="docs-reference-title">
     <div><h1>@prismshadow/penguin-core/kernel</h1></div>
-    <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl("packages/core/src/kernel/index.ts")}" title="View packages/core/src/kernel/index.ts" aria-label="View source">${ICONS.code}</a>
+    <a class="docs-github-links" target="_blank" rel="noopener" href="${esc(ctx.srcUrl("packages/core/src/kernel/index.ts"))}" title="View packages/core/src/kernel/index.ts" aria-label="View source">${ICONS.code}</a>
   </div>
   <div class="kernel-import-bar">
     <span class="kernel-import-label">IMPORT</span>
@@ -267,16 +285,16 @@ ${catalogSections}`;
     const group = groupByName.get(k.name) ?? AUTHORING_GROUP;
     const refsOut = ctx.kernelReferences.get(k.name) ?? [];
     const refsIn = ctx.kernelReferencedBy.get(k.name) ?? [];
+    const allocAnchor = createAnchorAllocator();
 
-    // Consume structured TS JSDoc AST tags (zero @param regex!)
+    // Match exact root parameter names only; qualified `@param options.timeout` stays separate in `remainingTags`
     const paramDocMap = new Map<string, string>();
     let returnDoc = "";
     const remainingTags: JsDocTagEntry[] = [];
     for (const t of k.doc.tags) {
-      if (t.tag === "param" && t.name) {
-        const rootParam = t.name.split(".")[0] ?? t.name;
-        if (k.params.some((p) => p.name === rootParam)) {
-          paramDocMap.set(rootParam, t.markdown);
+      if (t.tag === "param" && t.name && !t.name.includes(".")) {
+        if (k.params.some((p) => p.name === t.name) && !paramDocMap.has(t.name)) {
+          paramDocMap.set(t.name, t.markdown);
           continue;
         }
       } else if ((t.tag === "returns" || t.tag === "return") && k.returnType) {
@@ -294,6 +312,10 @@ ${catalogSections}`;
     }
 
     const expandedOptions = k.expandedOptions;
+    const optionEntries = (expandedOptions?.members ?? []).map((mb) => ({
+      member: mb,
+      id: allocAnchor(mb.name),
+    }));
     const optionsHtml = expandedOptions
       ? `<h2 id="options" class="docs-reference-section-heading"><a class="docs-anchor" href="#options">Options</a> <span class="kernel-file-meta">${[
           `<a href="../${esc(expandedOptions.typeSlug)}/"><code>${esc(expandedOptions.typeName)}</code></a>`,
@@ -301,7 +323,7 @@ ${catalogSections}`;
             ? [`default <code>${esc(expandedOptions.defaultVal)}</code>`]
             : []),
         ].join(" · ")}</span></h2>
-<div class="docs-reference-members">${expandedOptions.members.map((mb) => ctx.memberSection(mb, r, true, expandedOptions.typeName, k.name)).join("")}</div>`
+<div class="docs-reference-members">${optionEntries.map(({ member, id }) => ctx.memberSection(member, r, true, expandedOptions.typeName, k.name, id)).join("")}</div>`
       : "";
 
     const skipParams =
@@ -323,9 +345,10 @@ ${k.params
   .map((p) => {
     const pDesc = paramDocMap.get(p.name) ?? "";
     const hasBody = Boolean(p.defaultVal || pDesc);
-    return `<div class="docs-reference-member-card" id="param-${slugOf(p.name)}">
+    const paramAnchor = allocAnchor(`param-${p.name}`);
+    return `<div class="docs-reference-member-card" id="${esc(paramAnchor)}">
   <header class="docs-reference-card-header">
-    <h3><code>${esc(p.name)}${p.optional ? "?" : ""}</code></h3>
+    <h3><code>${p.rest ? "..." : ""}${esc(p.name)}${p.optional ? "?" : ""}</code></h3>
     <div class="docs-card-sig"><code>${ctx.hl(p.type, r, true, k.name)}</code></div>
   </header>${
     hasBody
@@ -357,9 +380,13 @@ ${
 </div>`
         : `<h2 id="returns" class="docs-reference-section-heading"><a class="docs-anchor" href="#returns">Return Type</a></h2><p><code>${ctx.hl(k.returnType, r, true, k.name)}</code></p>${returnDoc ? ctx.renderMarkdown(returnDoc, r, true) : ""}`;
 
-    const membersHtml = k.members.length
-      ? `<h2 id="members" class="docs-reference-section-heading"><a class="docs-anchor" href="#members">Members (${k.members.length})</a></h2>
-<div class="docs-reference-members">${k.members.map((mb) => ctx.memberSection(mb, r, true, k.name, k.name)).join("")}</div>`
+    const memberEntries = k.members.map((mb) => ({
+      member: mb,
+      id: allocAnchor(mb.name),
+    }));
+    const membersHtml = memberEntries.length
+      ? `<h2 id="members" class="docs-reference-section-heading"><a class="docs-anchor" href="#members">Members (${memberEntries.length})</a></h2>
+<div class="docs-reference-members">${memberEntries.map(({ member, id }) => ctx.memberSection(member, r, true, k.name, k.name, id)).join("")}</div>`
       : "";
 
     const variantsHtml = k.variants.length
@@ -401,10 +428,10 @@ ${k.variants
       `<li class="docs-faceted-list-item"><a href="#api">Declaration</a></li>`,
       ...(expandedOptions
         ? [
-            `<li class="docs-faceted-list-item"><a href="#options">Options (${expandedOptions.members.length})</a></li>`,
-            ...expandedOptions.members.map(
-              (mb) =>
-                `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${slugOf(mb.name)}">${esc(mb.name)}</a></li>`,
+            `<li class="docs-faceted-list-item"><a href="#options">Options (${optionEntries.length})</a></li>`,
+            ...optionEntries.map(
+              ({ member, id }) =>
+                `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${esc(id)}">${esc(member.name)}</a></li>`,
             ),
           ]
         : []),
@@ -413,14 +440,14 @@ ${k.variants
             `<li class="docs-faceted-list-item"><a href="#${k.params.length ? "parameters" : "returns"}">${paramsHeading}</a></li>`,
           ]
         : []),
-      ...(k.members.length
+      ...(memberEntries.length
         ? [
-            `<li class="docs-faceted-list-item"><a href="#members">Members (${k.members.length})</a></li>`,
-            ...k.members
+            `<li class="docs-faceted-list-item"><a href="#members">Members (${memberEntries.length})</a></li>`,
+            ...memberEntries
               .slice(0, 20)
               .map(
-                (mb) =>
-                  `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${slugOf(mb.name)}">${esc(mb.name)}</a></li>`,
+                ({ member, id }) =>
+                  `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${esc(id)}">${esc(member.name)}</a></li>`,
               ),
           ]
         : []),
@@ -446,7 +473,7 @@ ${k.variants
       ${k.isTypeOnly ? '<span class="kernel-type-pill">type-only</span>' : ""}
       ${group.tier === "low-level" ? '<span class="kernel-type-pill">low-level</span>' : ""}
     </div>
-    <a class="docs-github-links kernel-source-btn" target="_blank" rel="noopener" href="${ctx.srcUrl(k.file, k.line)}" title="View source at ${esc(k.file)}:${k.line}" aria-label="View source on GitHub">${ICONS.code}<span>Source ↗</span></a>
+    <a class="docs-github-links kernel-source-btn" target="_blank" rel="noopener" href="${esc(ctx.srcUrl(k.file, k.line))}" title="View source at ${esc(k.file)}:${k.line}" aria-label="View source on GitHub">${ICONS.code}<span>Source ↗</span></a>
   </div>
   <div class="kernel-import-bar">
     <span class="kernel-import-label">IMPORT</span>

@@ -1,5 +1,8 @@
-import { groupBy, slugOf } from "../jsdoc.js";
+import path from "node:path";
+import ts from "typescript";
+import { createAnchorAllocator, groupBy, slugOf } from "../jsdoc.js";
 import type {
+  AreaKind,
   CliCommandRecord,
   ComponentRecord,
   HttpContribRecord,
@@ -17,6 +20,37 @@ import {
   type RenderContext,
 } from "./context.js";
 
+const TS_PRINTER = ts.createPrinter({ removeComments: true });
+const SYNTH_SF = ts.createSourceFile(
+  "__snippet.ts",
+  "",
+  ts.ScriptTarget.Latest,
+  false,
+  ts.ScriptKind.TS,
+);
+
+const AREA_TO_IFACE_FILTER: Record<AreaKind, string> = {
+  library: "library",
+  server: "server",
+  web: "web",
+  cli: "plugin",
+  core: "server",
+  plugin: "plugin",
+  package: "plugin",
+};
+
+/** Exact Hono `mergePath` route-join semantics (`("/", "*")` -> `"/*"`, `("api", "/")` -> `"/api"`, `("/api/", "/")` -> `"/api/"`). */
+function mergeHonoPath(prefix: string | undefined, epPath: string): string {
+  const normEp = epPath.startsWith("/") ? epPath : `/${epPath}`;
+  if (!prefix || prefix === "/") return normEp;
+  const normPrefix = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  const endsWithSlash = normPrefix.endsWith("/");
+  const cleanPrefix = endsWithSlash ? normPrefix.slice(0, -1) : normPrefix;
+  if (epPath === "/") return endsWithSlash ? `${cleanPrefix}/` : cleanPrefix;
+  if (epPath === "*") return `${cleanPrefix}/*`;
+  return `${cleanPrefix}${normEp}`;
+}
+
 function renderContributesSection(
   ctx: RenderContext,
   node: NodeBase,
@@ -26,8 +60,17 @@ function renderContributesSection(
   const slotKeys = Object.keys(node.contributes);
   if (slotKeys.length === 0) return "";
   return `<h2 id="contributes" class="docs-reference-section-heading"><a class="docs-anchor" href="#contributes">Contributes</a></h2>
-${ctx.codeBlock(JSON.stringify(node.contributes, null, 2), { r })}
+${ctx.codeBlock(JSON.stringify(node.contributes, null, 2), { lang: "json", r })}
 <p>Target slots: ${slotKeys.map((sk) => `<a href="${r}contributions/index.html#${slugOf(sk)}"><code>${esc(sk)}</code></a>`).join(" · ")}${extraLink}</p>`;
+}
+
+function printFallbackBindDecorator(id: string): string {
+  const dec = ts.factory.createDecorator(
+    ts.factory.createCallExpression(ts.factory.createIdentifier("Bind"), undefined, [
+      ts.factory.createStringLiteral(id),
+    ]),
+  );
+  return TS_PRINTER.printNode(ts.EmitHint.Unspecified, dec, SYNTH_SF);
 }
 
 export function createPagesRenderer(ctx: RenderContext) {
@@ -61,7 +104,7 @@ export function createPagesRenderer(ctx: RenderContext) {
   <div class="docs-header-content">
     <div class="penguin-hero-kicker"><span class="penguin-hero-kicker-dot"></span>PenguinHarness · API Reference (${esc(ctx.gitSha)})</div>
     <h1>API &amp; Architecture Reference</h1>
-    <p>Generated directly from TypeScript AST on <code>origin/main</code> (<code>${esc(ctx.gitSha)}</code>, ${esc(ctx.data.git.date.slice(0, 10))}).</p>
+    <p>Generated directly from TypeScript AST on <code>origin/main</code> (<code>${esc(ctx.gitSha)}</code>, ${esc(ctx.data.git.shortDate)}).</p>
     <div class="penguin-hero-stats">
       <a class="penguin-stat-chip" href="kernel/index.html"><strong>${kernelExports.length}</strong> Kernel APIs</a>
       <a class="penguin-stat-chip" href="modules/index.html"><strong>${modules.length}</strong> Modules</a>
@@ -209,8 +252,13 @@ ${standaloneSec}`;
 
   function modulePage(m: ModuleRecord): string {
     const r = "../../";
-    const childrenHtml = m.resolvedChildren
-      .map((ch) => {
+    const allocAnchor = createAnchorAllocator();
+    const childEntries = m.resolvedChildren.map((ch) => ({
+      child: ch,
+      id: allocAnchor(ch.name),
+    }));
+    const childrenHtml = childEntries
+      .map(({ child: ch, id }) => {
         const target = ch.target;
         const isMod = ch.kind === "module" && target?.kind === "module";
         const href = isMod
@@ -226,9 +274,9 @@ ${standaloneSec}`;
           isMod && target.exports.length
             ? `<div class="docs-param-group"><span class="docs-param-keyword">exports</span><span class="docs-param-name">interfaces</span>${target.exports.map((e) => ctx.linkifyType(e, r)).join(" ")}</div>`
             : "";
-        return `<div class="docs-reference-member-card" id="${slugOf(ch.name)}">
+        return `<div class="docs-reference-member-card" id="${esc(id)}">
   <header class="docs-reference-card-header">
-    <h3><a class="docs-anchor" href="#${slugOf(ch.name)}">${esc(ch.name)}</a></h3>
+    <h3><a class="docs-anchor" href="#${esc(id)}">${esc(ch.name)}</a></h3>
     <div class="docs-card-sig"><code>${ctx.hl(`${badge} ${ch.name}`, r)}</code></div>
   </header>
   <div class="docs-reference-card-body">
@@ -261,12 +309,12 @@ ${standaloneSec}`;
       ...(contribHtml
         ? [`<li class="docs-faceted-list-item"><a href="#contributes">Contributes</a></li>`]
         : []),
-      `<li class="docs-faceted-list-item"><a href="#children">Children (${m.resolvedChildren.length})</a></li>`,
-      ...m.resolvedChildren
+      `<li class="docs-faceted-list-item"><a href="#children">Children (${childEntries.length})</a></li>`,
+      ...childEntries
         .slice(0, 35)
         .map(
-          (c) =>
-            `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${slugOf(c.name)}">${esc(c.name)}</a></li>`,
+          ({ child: c, id }) =>
+            `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${esc(id)}">${esc(c.name)}</a></li>`,
         ),
       `<li class="docs-faceted-list-item"><a href="#exports">Exports (${m.exports.length})</a></li>`,
     ].join("");
@@ -279,7 +327,7 @@ ${standaloneSec}`;
       <h1>${esc(m.name)}</h1>
       ${apiLabel(m.isRoot ? "block" : "ng_module", "M", m.isRoot ? "root module" : "module")}
     </div>
-    <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(m.file, m.line)}" title="View source at ${esc(m.file)}:${m.line}" aria-label="View source">${ICONS.code}</a>
+    <a class="docs-github-links" target="_blank" rel="noopener" href="${esc(ctx.srcUrl(m.file, m.line))}" title="View source at ${esc(m.file)}:${m.line}" aria-label="View source">${ICONS.code}</a>
   </div>
   <section class="docs-reference-description">${m.doc.markdown || m.doc.tags.length ? ctx.renderParsedDoc(m.doc, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}</section>
 </header>
@@ -290,7 +338,7 @@ ${standaloneSec}`;
 ${wiringHtml}
 ${m.context ? `<h2 id="context" class="docs-reference-section-heading"><a class="docs-anchor" href="#context">Parked Context</a></h2>\n${ctx.codeBlock(`context: ${m.context}`, { r })}` : ""}
 ${contribHtml}
-<h2 id="children" class="docs-reference-section-heading"><a class="docs-anchor" href="#children">Children (${m.resolvedChildren.length})</a></h2>
+<h2 id="children" class="docs-reference-section-heading"><a class="docs-anchor" href="#children">Children (${childEntries.length})</a></h2>
 <div class="docs-reference-members">${childrenHtml || '<p class="muted">No child modules or components declared in <code>@Module</code>.</p>'}</div>
 <h2 id="exports" class="docs-reference-section-heading"><a class="docs-anchor" href="#exports">Exports (${m.exports.length})</a></h2>
 <p>${m.exports.length ? m.exports.map((e) => ctx.linkifyType(e, r)).join(" · ") : '<span class="muted">None (module-private).</span>'}</p>`;
@@ -311,6 +359,7 @@ ${contribHtml}
     const sideActive = parent ? parent.slug : `standalone:${comp.slug}`;
     const wiringHtml = ctx.nodeWiringBlocks(comp, r);
     const httpRef = ctx.httpByCls.get(comp.name);
+    const allocAnchor = createAnchorAllocator();
     const contribHtml = renderContributesSection(
       ctx,
       comp,
@@ -319,9 +368,10 @@ ${contribHtml}
         ? ` · <a href="${r}apis/http/${httpRef.slug}/">View HTTP endpoints (${httpRef.endpoints.length}) →</a>`
         : "",
     );
-    const methodsHtml = comp.methods.length
-      ? `<h2 id="methods" class="docs-reference-section-heading"><a class="docs-anchor" href="#methods">Methods (${comp.methods.length})</a></h2>
-<div class="docs-reference-members">${comp.methods.map((mb) => ctx.memberSection(mb, r)).join("")}</div>`
+    const methodEntries = comp.methods.map((mb) => ({ member: mb, id: allocAnchor(mb.name) }));
+    const methodsHtml = methodEntries.length
+      ? `<h2 id="methods" class="docs-reference-section-heading"><a class="docs-anchor" href="#methods">Methods (${methodEntries.length})</a></h2>
+<div class="docs-reference-members">${methodEntries.map(({ member, id }) => ctx.memberSection(member, r, false, null, null, id)).join("")}</div>`
       : "";
 
     const toc = [
@@ -337,9 +387,9 @@ ${contribHtml}
       ...(contribHtml
         ? [`<li class="docs-faceted-list-item"><a href="#contributes">Contributes</a></li>`]
         : []),
-      ...(comp.methods.length
+      ...(methodEntries.length
         ? [
-            `<li class="docs-faceted-list-item"><a href="#methods">Methods (${comp.methods.length})</a></li>`,
+            `<li class="docs-faceted-list-item"><a href="#methods">Methods (${methodEntries.length})</a></li>`,
           ]
         : []),
     ].join("");
@@ -355,7 +405,7 @@ ${contribHtml}
       <h1>${esc(comp.name)}</h1>
       ${apiLabel("class", "C", "component")}
     </div>
-    <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(comp.file, comp.line)}" title="View source at ${esc(comp.file)}:${comp.line}" aria-label="View source">${ICONS.code}</a>
+    <a class="docs-github-links" target="_blank" rel="noopener" href="${esc(ctx.srcUrl(comp.file, comp.line))}" title="View source at ${esc(comp.file)}:${comp.line}" aria-label="View source">${ICONS.code}</a>
   </div>
   <section class="docs-reference-description">${comp.doc.markdown || comp.doc.tags.length ? ctx.renderParsedDoc(comp.doc, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}</section>
 </header>
@@ -438,16 +488,9 @@ ${methodsHtml}`;
     const ifaceSecs = order
       .map((pkg) => {
         const list = groups.get(pkg) ?? [];
-        const fType = pkg.includes("penguin-library-")
-          ? "library"
-          : pkg === "@prismshadow/penguin-server"
-            ? "server"
-            : pkg === "@prismshadow/penguin-web"
-              ? "web"
-              : "plugin";
         return `<section class="adev-api-items-section" data-section-group>
   <header class="adev-api-items-section-header"><h3 id="pkg-${slugOf(pkg)}"><a class="adev-api-anchor" href="#pkg-${slugOf(pkg)}">${esc(pkg)}</a></h3></header>
-  <ul class="adev-api-items-section-grid">${list.map((it) => gridItem(it.name, `${it.slug}/`, it.pkg, fType, "interface", "I")).join("")}</ul>
+  <ul class="adev-api-items-section-grid">${list.map((it) => gridItem(it.name, `${it.slug}/`, it.pkg, AREA_TO_IFACE_FILTER[it.area], "interface", "I")).join("")}</ul>
 </section>`;
       })
       .join("\n");
@@ -484,16 +527,21 @@ ${ifaceSecs}`;
   function ifacePage(it: IfaceRecord): string {
     const r = "../../";
     const wiringHtml = ctx.ifaceWiringSection(it.name, r);
+    const allocAnchor = createAnchorAllocator();
+    const memberEntries = it.members.map((mb) => {
+      const label = mb.name || "member";
+      return { member: mb, label, id: allocAnchor(label) };
+    });
     const toc = [
       `<li class="docs-faceted-list-item"><a href="#api">API</a></li>`,
       ...(wiringHtml
         ? [`<li class="docs-faceted-list-item"><a href="#wiring">Contract Topology</a></li>`]
         : []),
-      `<li class="docs-faceted-list-item"><a href="#members">Members (${it.members.length})</a></li>`,
-      ...it.members.map((mb) => {
-        const label = mb.name || mb.sig.split(/[(\s:<]/)[0] || "member";
-        return `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${slugOf(label)}">${esc(label)}</a></li>`;
-      }),
+      `<li class="docs-faceted-list-item"><a href="#members">Members (${memberEntries.length})</a></li>`,
+      ...memberEntries.map(
+        ({ label, id }) =>
+          `<li class="docs-faceted-list-item docs-toc-item-h3"><a href="#${esc(id)}">${esc(label)}</a></li>`,
+      ),
     ].join("");
 
     const body = `
@@ -504,7 +552,7 @@ ${ifaceSecs}`;
       <h1>${esc(it.name)}</h1>
       ${apiLabel("interface", "I", "interface")}
     </div>
-    <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(it.file, it.line)}" title="View source at ${esc(it.file)}:${it.line}" aria-label="View source">${ICONS.code}</a>
+    <a class="docs-github-links" target="_blank" rel="noopener" href="${esc(ctx.srcUrl(it.file, it.line))}" title="View source at ${esc(it.file)}:${it.line}" aria-label="View source">${ICONS.code}</a>
   </div>
   <section class="docs-reference-description">
     ${it.doc.markdown || it.doc.tags.length ? ctx.renderParsedDoc(it.doc, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}
@@ -515,9 +563,9 @@ ${ifaceSecs}`;
   ${ctx.codeBlock(it.rawDecl, { file: it.file, line: it.line, r })}
 </div>
 ${wiringHtml}
-<h2 id="members" class="docs-reference-section-heading"><a class="docs-anchor" href="#members">Members (${it.members.length})</a></h2>
+<h2 id="members" class="docs-reference-section-heading"><a class="docs-anchor" href="#members">Members (${memberEntries.length})</a></h2>
 <div class="docs-reference-members">
-${it.members.length ? it.members.map((mb) => ctx.memberSection(mb, r)).join("") : '<p class="muted">No declared members.</p>'}
+${memberEntries.length ? memberEntries.map(({ member, id }) => ctx.memberSection(member, r, false, null, null, id)).join("") : '<p class="muted">No declared members.</p>'}
 </div>`;
 
     return ctx.shell({
@@ -592,13 +640,6 @@ ${ctx.filterToolbar(
 
   function httpPage(g: HttpContribRecord): string {
     const r = "../../../";
-    const formatEndpointPath = (prefix: string | undefined, epPath: string): string => {
-      if (!prefix || prefix === "/") return epPath;
-      const base = prefix.replace(/\/+$/, "");
-      if (epPath === "/") return base;
-      if (epPath === "*") return `${base}/*`;
-      return `${base}${epPath.startsWith("/") ? epPath : `/${epPath}`}`;
-    };
     const showAuthBadge =
       g.entries.length > 1 || new Set(g.endpoints.map((e) => e.auth).filter(Boolean)).size > 1;
     const eps = g.endpoints.length
@@ -607,7 +648,7 @@ ${ctx.filterToolbar(
 ${g.endpoints
   .map((e, idx) => {
     const file = e.file ?? g.file;
-    const displayPath = formatEndpointPath(e.mountPrefix, e.path);
+    const displayPath = mergeHonoPath(e.mountPrefix, e.path);
     const idPill =
       e.entryId && g.entries.length > 1
         ? ` <span class="kernel-type-pill">${esc(e.entryId)}</span>`
@@ -617,7 +658,7 @@ ${g.endpoints
     return `<div class="docs-reference-member-card" id="ep-${idx}">
   <header class="docs-reference-card-header">
     <div class="docs-card-title-group"><span class="method m-${e.method.toLowerCase()}">${esc(e.method)}</span><h3><code>${esc(displayPath)}</code></h3>${idPill}${authPill}</div>
-    <div class="docs-card-sig">${e.entryId && g.entries.length === 1 ? `<code>${esc(e.entryId)}</code> · ` : ""}<a href="${ctx.srcUrl(file, e.line)}" target="_blank" rel="noopener"><code>${esc(file.split("/").pop() ?? file)}:${e.line}</code></a></div>
+    <div class="docs-card-sig">${e.entryId && g.entries.length === 1 ? `<code>${esc(e.entryId)}</code> · ` : ""}<a href="${esc(ctx.srcUrl(file, e.line))}" target="_blank" rel="noopener"><code>${esc(path.posix.basename(file))}:${e.line}</code></a></div>
   </header>
 </div>`;
   })
@@ -630,12 +671,16 @@ ${g.endpoints
     <li class="docs-faceted-list-item"><a href="#binds">@Bind Implementation</a></li>
     ${g.endpoints.length ? `<li class="docs-faceted-list-item"><a href="#endpoints">Endpoints (${g.endpoints.length})</a></li>` : ""}`;
 
-    const contribCode = `contributes: {\n  "HttpModule.routes": [\n${g.entries
-      .map(
-        (e) =>
-          `    { id: "${e.id}", prefix: "${e.prefix}", auth: "${e.auth}", order: ${e.order}${e.origin ? `, origin: "${e.origin}"` : ""} },`,
-      )
-      .join("\n")}\n  ],\n}`;
+    const contribObj = {
+      "HttpModule.routes": g.entries.map((e) => ({
+        id: e.id,
+        prefix: e.prefix,
+        auth: e.auth,
+        order: e.order,
+        ...(e.origin ? { origin: e.origin } : {}),
+      })),
+    };
+    const contribCode = `contributes: ${JSON.stringify(contribObj, null, 2)}`;
 
     const body = `
 <header class="docs-reference-header">
@@ -645,7 +690,7 @@ ${g.endpoints
       <h1>${esc(g.cls)}</h1>
       ${apiLabel("pipe", "H", "http-routes")}
     </div>
-    <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(g.file, g.line)}" title="View source" aria-label="View source">${ICONS.code}</a>
+    <a class="docs-github-links" target="_blank" rel="noopener" href="${esc(ctx.srcUrl(g.file, g.line))}" title="View source" aria-label="View source">${ICONS.code}</a>
   </div>
   ${g.doc.markdown || g.doc.tags.length ? `<section class="docs-reference-description">${ctx.renderParsedDoc(g.doc, r)}</section>` : ""}
 </header>
@@ -654,7 +699,7 @@ ${g.endpoints
   ${ctx.codeBlock(contribCode, { file: g.file, line: g.line, r })}
 </div>
 <h2 id="binds" class="docs-reference-section-heading"><a class="docs-anchor" href="#binds">Code Half (@Bind)</a></h2>
-<p>${g.binds.length ? g.binds.map((b) => `<code>${esc(b.raw)}</code>`).join(" · ") : g.entries.map((e) => `<code>@Bind("${esc(e.id)}")</code>`).join(" · ")}</p>
+<p>${g.binds.length ? g.binds.map((b) => `<code>${esc(b.raw)}</code>`).join(" · ") : g.entries.map((e) => `<code>${esc(printFallbackBindDecorator(e.id))}</code>`).join(" · ")}</p>
 ${eps}`;
 
     return ctx.shell({
@@ -669,15 +714,10 @@ ${eps}`;
 
   function cliPage(c: CliCommandRecord): string {
     const r = "../../../";
-    const cmdPrefix = c.name.replace(/\./g, " ");
-    const formatSubcmd = (sub: string): string => {
-      const clean = sub.trim();
-      if (clean === cmdPrefix || clean.startsWith(`${cmdPrefix} `)) return `penguin ${clean}`;
-      return `penguin ${cmdPrefix} ${clean}`;
-    };
+    const cmdPrefix = c.name.split(".").join(" ");
     const subHtml = c.subcommands.length
       ? `<h2 id="subcommands" class="docs-reference-section-heading"><a class="docs-anchor" href="#subcommands">Subcommands (${c.subcommands.length})</a></h2>
-${ctx.codeBlock(c.subcommands.map(formatSubcmd).join("\n"), { r })}`
+${ctx.codeBlock(c.subcommands.map((sub) => `penguin ${sub}`).join("\n"), { lang: "bash", r })}`
       : "";
     const optHtml = c.options.length
       ? `<h2 id="options" class="docs-reference-section-heading"><a class="docs-anchor" href="#options">Options (${c.options.length})</a></h2>
@@ -715,7 +755,7 @@ ${c.options
       <h1>penguin ${esc(c.name)}</h1>
       ${apiLabel("function", "F", "cli-command")}
     </div>
-    <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(c.file, c.line)}" title="View source" aria-label="View source">${ICONS.code}</a>
+    <a class="docs-github-links" target="_blank" rel="noopener" href="${esc(ctx.srcUrl(c.file, c.line))}" title="View source" aria-label="View source">${ICONS.code}</a>
   </div>
   ${c.brief ? `<section class="docs-reference-description"><p>${esc(c.brief)}${c.briefZh && c.briefZh !== c.brief ? `<br><span class="muted">${esc(c.briefZh)}</span>` : ""}</p></section>` : ""}
 </header>
@@ -769,7 +809,7 @@ ${list
     (s) => `<div class="docs-reference-member-card" id="${slugOf(s.key)}">
   <header class="docs-reference-card-header">
     <h3><a class="docs-anchor" href="#${slugOf(s.key)}">${esc(s.key)}</a></h3>
-    <div class="docs-card-sig">${s.hostHref ? `<a href="${r}${s.hostHref}"><code>${esc(s.host)}</code></a>` : `<code>${esc(s.host)}</code>`} · <a href="${ctx.srcUrl(s.file, s.line)}" target="_blank" rel="noopener"><code>${esc(s.file.split("/").pop() ?? s.file)}:${s.line}</code></a></div>
+    <div class="docs-card-sig">${s.hostHref ? `<a href="${r}${s.hostHref}"><code>${esc(s.host)}</code></a>` : `<code>${esc(s.host)}</code>`} · <a href="${esc(ctx.srcUrl(s.file, s.line))}" target="_blank" rel="noopener"><code>${esc(path.posix.basename(s.file))}:${s.line}</code></a></div>
   </header>
   <div class="docs-reference-card-body">
     <div class="docs-reference-card-item">

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -7,7 +7,7 @@ import ts from "typescript";
 import { computeSamplesSourceHash } from "./doc-samples.js";
 import { extractAll } from "./extract.js";
 import { CodeHighlighter } from "./highlight.js";
-import { slugOf } from "./jsdoc.js";
+import { slugOf, truncateGraphemes } from "./jsdoc.js";
 import { kernelBadgeMeta, RenderContext } from "./render/context.js";
 import { createKernelRenderer } from "./render/kernel.js";
 import { createPagesRenderer } from "./render/pages.js";
@@ -19,6 +19,9 @@ const REPO = process.env.PENGUIN_REFS_REPO || path.resolve(PKG_ROOT, "../../..")
 const OUT = process.env.PENGUIN_REFS_OUT || path.join(PKG_ROOT, "dist");
 const ALLOW_UNVERIFIED = process.argv.includes("--allow-unverified-samples");
 const OWNED_MARKER = ".penguin-refs-generated";
+const OWNED_GENERATOR_ID = "@prismshadow/penguin-references";
+const ROOT_INDEX_HTML =
+  '<!doctype html><meta charset="utf-8"><title>PenguinHarness References</title><meta http-equiv="refresh" content="0; url=references/"><p><a href="references/">References</a></p>';
 
 interface SearchHit {
   t: string;
@@ -28,14 +31,42 @@ interface SearchHit {
   u: string;
 }
 
-function isPathInsideOrEqual(parentDir: string, candidate: string): boolean {
+/** Strict path-segment containment check (allows `/out/..cache`, rejects `/out/../escape`). */
+export function isPathInsideOrEqual(parentDir: string, candidate: string): boolean {
   const rel = path.relative(path.resolve(parentDir), path.resolve(candidate));
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+function lstatOrNull(p: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(p);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+function isSymlink(p: string): boolean {
+  const st = lstatOrNull(p);
+  return st !== null && st.isSymbolicLink();
 }
 
 function canonicalExisting(p: string): string {
   const abs = path.resolve(p);
-  if (fs.existsSync(abs)) return fs.realpathSync(abs);
+  const st = lstatOrNull(abs);
+  if (st !== null) {
+    if (st.isSymbolicLink()) {
+      try {
+        return fs.realpathSync.native(abs);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new Error(`Refusing dangling symlink path: ${abs}`, { cause: err });
+        }
+        throw err;
+      }
+    }
+    return fs.realpathSync.native(abs);
+  }
   const parent = path.dirname(abs);
   if (parent === abs) return abs;
   return path.join(canonicalExisting(parent), path.basename(abs));
@@ -43,40 +74,43 @@ function canonicalExisting(p: string): string {
 
 function assertNoSymlinkSegments(rootDir: string, targetPath: string): void {
   const rel = path.relative(rootDir, targetPath);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     throw new Error(`Refusing to access outside output root (${rootDir}): ${targetPath}`);
   }
   let cur = rootDir;
   for (const seg of rel.split(path.sep).filter(Boolean)) {
     cur = path.join(cur, seg);
-    if (fs.existsSync(cur) || isSymlink(cur)) {
-      if (isSymlink(cur)) {
-        throw new Error(`Refusing to traverse or overwrite symlink inside output root: ${cur}`);
-      }
+    if (isSymlink(cur)) {
+      throw new Error(`Refusing to traverse or overwrite symlink inside output root: ${cur}`);
     }
   }
 }
 
-function isSymlink(p: string): boolean {
-  try {
-    return fs.lstatSync(p).isSymbolicLink();
-  } catch {
-    return false;
-  }
-}
-
-const OWNED_MARKER_PREFIX = "generatedBy=@prismshadow/penguin-references\n";
-const ROOT_INDEX_HTML =
-  '<!doctype html><meta charset="utf-8"><title>PenguinHarness References</title><meta http-equiv="refresh" content="0; url=references/"><p><a href="references/">References</a></p>';
-
 function hasValidOwnershipMarker(refsOutDir: string): boolean {
   const markerPath = path.join(refsOutDir, OWNED_MARKER);
+  const stat = lstatOrNull(markerPath);
+  if (!stat || !stat.isFile() || stat.isSymbolicLink()) return false;
+  const raw = fs.readFileSync(markerPath, "utf8");
   try {
-    const stat = fs.lstatSync(markerPath);
-    if (!stat.isFile() || stat.isSymbolicLink()) return false;
-    return fs.readFileSync(markerPath, "utf8").startsWith(OWNED_MARKER_PREFIX);
+    const parsed = JSON.parse(raw) as {
+      generatedBy?: unknown;
+      version?: unknown;
+      gitSha?: unknown;
+    };
+    return (
+      parsed.generatedBy === OWNED_GENERATOR_ID &&
+      parsed.version === 1 &&
+      typeof parsed.gitSha === "string" &&
+      parsed.gitSha.length > 0
+    );
   } catch {
-    return false;
+    // Allow seamless upgrade from legacy 2-line marker emitted by prior build
+    const lines = raw.trimEnd().split("\n");
+    return (
+      lines.length === 2 &&
+      lines[0] === `generatedBy=${OWNED_GENERATOR_ID}` &&
+      Boolean(lines[1]?.startsWith("gitSha=") && lines[1].length > "gitSha=".length)
+    );
   }
 }
 
@@ -95,14 +129,14 @@ function assertSafeCleanDir(canonicalOut: string, refsOutDir: string, repoDir: s
     );
   }
 
-  if (isSymlink(refsOutDir)) {
+  const targetStat = lstatOrNull(refsOutDir);
+  if (targetStat?.isSymbolicLink()) {
     throw new Error(`Refusing destructive cleanup of symlinked output directory: ${refsOutDir}`);
   }
 
   const markerValid = hasValidOwnershipMarker(refsOutDir);
-  if (fs.existsSync(refsOutDir)) {
-    const stat = fs.lstatSync(refsOutDir);
-    if (!stat.isDirectory()) {
+  if (targetStat) {
+    if (!targetStat.isDirectory()) {
       throw new Error(`Refusing cleanup of non-directory path: ${refsOutDir}`);
     }
     const entries = fs.readdirSync(refsOutDir);
@@ -115,8 +149,8 @@ function assertSafeCleanDir(canonicalOut: string, refsOutDir: string, repoDir: s
 
   // Preflight root index.html ownership before any cleanup
   const rootIndexPath = path.join(canonicalOut, "index.html");
-  if (fs.existsSync(rootIndexPath) || isSymlink(rootIndexPath)) {
-    const idxStat = fs.lstatSync(rootIndexPath);
+  const idxStat = lstatOrNull(rootIndexPath);
+  if (idxStat) {
     if (!idxStat.isFile() || idxStat.isSymbolicLink()) {
       throw new Error(
         `Refusing to overwrite non-regular or symlinked root index: ${rootIndexPath}`,
@@ -141,7 +175,7 @@ function writeFileAtomically(
   assertNoSymlinkSegments(canonicalOut, fullPath);
   const dir = path.dirname(fullPath);
   fs.mkdirSync(dir, { recursive: true });
-  const canonicalDir = fs.realpathSync(dir);
+  const canonicalDir = fs.realpathSync.native(dir);
   if (!isPathInsideOrEqual(canonicalOut, canonicalDir)) {
     throw new Error(`Canonical parent escaped output root (${canonicalOut}): ${canonicalDir}`);
   }
@@ -149,11 +183,8 @@ function writeFileAtomically(
   if (isSymlink(canonicalTarget)) {
     throw new Error(`Refusing to overwrite symlink destination: ${canonicalTarget}`);
   }
-  const tmpPath = path.join(
-    canonicalDir,
-    `.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  );
-  fs.writeFileSync(tmpPath, content);
+  const tmpPath = path.join(canonicalDir, `.tmp-${process.pid}-${randomBytes(6).toString("hex")}`);
+  fs.writeFileSync(tmpPath, content, { flag: "wx" });
   try {
     fs.renameSync(tmpPath, canonicalTarget);
   } catch (err) {
@@ -252,7 +283,7 @@ function buildSearchIndex(data: ExtractedData): SearchHit[] {
     })),
     ...data.cliCommands.map((c) => ({
       t: `penguin ${c.name}`,
-      sub: `CLI · ${c.brief.slice(0, 48)}`,
+      sub: `CLI · ${truncateGraphemes(c.brief, 48, "")}`,
       k: "function",
       c: "F",
       u: `apis/cli/${c.slug}/`,
@@ -278,7 +309,10 @@ function buildClientBundle(searchIndex: readonly SearchHit[]): string {
       removeComments: true,
     },
   });
-  const safeIndex = JSON.stringify(searchIndex).replace(/</g, "\\u003c");
+  const safeIndex = JSON.stringify(searchIndex)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
   return `window.penguinSearchIndex=${safeIndex};\n${transpiled.outputText}`;
 }
 
@@ -304,7 +338,7 @@ export async function buildSite(
       throw new Error(`Refusing to build into symlinked output root: ${resolvedOut}`);
     }
     fs.mkdirSync(resolvedOut, { recursive: true });
-    const canonicalOut = fs.realpathSync(resolvedOut);
+    const canonicalOut = fs.realpathSync.native(resolvedOut);
     const refsOutDir = path.join(canonicalOut, "references");
     assertSafeCleanDir(canonicalOut, refsOutDir, resolvedRepo);
 
@@ -332,7 +366,7 @@ export async function buildSite(
     writeFileAtomically(
       canonicalOut,
       path.join(refsOutDir, OWNED_MARKER),
-      `generatedBy=@prismshadow/penguin-references\ngitSha=${ctx.gitSha}\n`,
+      `${JSON.stringify({ generatedBy: OWNED_GENERATOR_ID, version: 1, gitSha: ctx.gitSha }, null, 2)}\n`,
     );
 
     const logoPath = path.join(resolvedRepo, "packages/web/public/penguin-logo.svg");
@@ -349,21 +383,21 @@ export async function buildSite(
     let pageCount = 0;
     const emittedLowerPaths = new Set<string>();
     const write = (relPath: string, content: string): void => {
-      const normalized = relPath.replace(/\\/g, "/");
-      if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-        throw new Error(`Invalid relative output path: ${normalized}`);
+      if (path.isAbsolute(relPath)) {
+        throw new Error(`Invalid relative output path: ${relPath}`);
       }
-      const lower = normalized.toLowerCase();
+      const fullPath = path.resolve(canonicalOut, relPath);
+      if (!isPathInsideOrEqual(canonicalOut, fullPath) || fullPath === canonicalOut) {
+        throw new Error(`Refusing to write outside output root (${canonicalOut}): ${relPath}`);
+      }
+      const canonicalRel = path.relative(canonicalOut, fullPath);
+      const lower = canonicalRel.toLowerCase();
       if (emittedLowerPaths.has(lower)) {
-        throw new Error(`Case-insensitive static path collision: ${normalized}`);
+        throw new Error(`Case-insensitive static path collision: ${canonicalRel}`);
       }
       emittedLowerPaths.add(lower);
-      const fullPath = path.resolve(canonicalOut, normalized);
-      if (!isPathInsideOrEqual(canonicalOut, fullPath) || fullPath === canonicalOut) {
-        throw new Error(`Refusing to write outside output root (${canonicalOut}): ${normalized}`);
-      }
       writeFileAtomically(canonicalOut, fullPath, content);
-      if (normalized.endsWith(".html")) pageCount++;
+      if (path.extname(fullPath) === ".html") pageCount++;
     };
 
     write("index.html", ROOT_INDEX_HTML);
@@ -404,9 +438,7 @@ export async function buildSite(
     // Contribution Slots
     write("references/contributions/index.html", pages.contributionsPage());
 
-    console.log(
-      `Generated ${pageCount} HTML pages from ${ctx.gitSha} (${data.git.date.slice(0, 10)})`,
-    );
+    console.log(`Generated ${pageCount} HTML pages from ${ctx.gitSha} (${data.git.shortDate})`);
     console.log(
       `Kernel: ${data.kernel.exports.length} | Modules: ${data.modules.length} | Components: ${data.components.length} | Interfaces: ${data.ifaces.length} | HTTP: ${data.httpContribs.length} | CLI: ${data.cliCommands.length} | Slots: ${data.slots.length}`,
     );

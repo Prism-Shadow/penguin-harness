@@ -16,7 +16,20 @@
   const BRAND_KEY = "refs-brand-v2";
   const COLLAPSE_KEY = "refs-sidebar-collapsed";
   const WIDTH_KEY = "refs-sidebar-width";
+  const SIDEBAR_MIN_WIDTH = 180;
+  const SIDEBAR_MAX_WIDTH = 520;
   const BRANDS = new Set(["frost", "console", "adev"]);
+  const BADGE_KINDS = new Set([
+    "decorator",
+    "function",
+    "class",
+    "interface",
+    "type_alias",
+    "ng_module",
+    "directive",
+    "pipe",
+    "block",
+  ]);
 
   const safeGet = (key: string): string | null => {
     try {
@@ -39,6 +52,18 @@
       // Storage unavailable
     }
   };
+
+  function parseSidebarWidth(raw: string | null): number | null {
+    if (!raw) return null;
+    const stripped = raw.endsWith("px") ? raw.slice(0, -2) : raw;
+    if (!stripped) return null;
+    const n = Number(stripped);
+    return Number.isInteger(n) && n >= SIDEBAR_MIN_WIDTH && n <= SIDEBAR_MAX_WIDTH ? n : null;
+  }
+
+  function normSearch(s: string): string {
+    return s.normalize("NFC").toLowerCase();
+  }
 
   /* ---------- Theme & Brand ---------- */
 
@@ -119,9 +144,9 @@
   if (safeGet(COLLAPSE_KEY) === "1") html.classList.add("sidebar-collapsed");
   syncSidebarInert();
   mobileMq.addEventListener("change", syncSidebarInert);
-  const savedWidth = safeGet(WIDTH_KEY);
-  if (savedWidth && /^\d{3}px$/.test(savedWidth)) {
-    html.style.setProperty("--secondary-nav-width", savedWidth);
+  const savedPx = parseSidebarWidth(safeGet(WIDTH_KEY));
+  if (savedPx !== null) {
+    html.style.setProperty("--secondary-nav-width", `${savedPx}px`);
   }
 
   collapseBtn?.addEventListener("click", () => setSidebarCollapsed(true, true));
@@ -198,7 +223,10 @@
       const onMove = (ev: MouseEvent): void => {
         if (!dragging) return;
         const rect = secSidebar.getBoundingClientRect();
-        const w = Math.max(180, Math.min(520, Math.round(ev.clientX - rect.left)));
+        const w = Math.max(
+          SIDEBAR_MIN_WIDTH,
+          Math.min(SIDEBAR_MAX_WIDTH, Math.round(ev.clientX - rect.left)),
+        );
         html.style.setProperty("--secondary-nav-width", `${w}px`);
       };
       const onUp = (): void => {
@@ -206,8 +234,10 @@
         dragging = false;
         html.classList.remove("sidebar-resizing");
         resizer.classList.remove("dragging");
-        const finalW = getComputedStyle(html).getPropertyValue("--secondary-nav-width").trim();
-        if (finalW) safeSet(WIDTH_KEY, finalW);
+        const finalW = parseSidebarWidth(
+          getComputedStyle(html).getPropertyValue("--secondary-nav-width").trim(),
+        );
+        if (finalW !== null) safeSet(WIDTH_KEY, String(finalW));
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
       };
@@ -265,10 +295,10 @@
     let activeTier = "public";
 
     const applyFilter = (): void => {
-      const q = filterInput ? filterInput.value.trim().toLowerCase() : "";
+      const q = filterInput ? normSearch(filterInput.value.trim()) : "";
       for (const el of document.querySelectorAll<HTMLElement>("[data-item-name]")) {
         const okType = activeType === "all" || el.getAttribute("data-item-type") === activeType;
-        const name = el.getAttribute("data-item-name") ?? "";
+        const name = normSearch(el.getAttribute("data-item-name") ?? "");
         const okQ = !q || name.includes(q);
         el.style.display = okType && okQ ? "" : "none";
       }
@@ -314,28 +344,42 @@
     }
   }
 
-  /* ---------- Right TOC Active Tracking ---------- */
+  /* ---------- Right TOC Active Tracking (URL-decoded fragment matching) ---------- */
 
   const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>("#toc-list a"));
   if (tocLinks.length > 0 && "IntersectionObserver" in window) {
-    const heads = tocLinks
-      .map((a) => {
-        const href = a.getAttribute("href");
-        return href && href.startsWith("#") ? document.getElementById(href.slice(1)) : null;
-      })
-      .filter((el): el is HTMLElement => el !== null);
+    const linkByTarget = new Map<HTMLElement, HTMLAnchorElement>();
+    const heads: HTMLElement[] = [];
+    for (const a of tocLinks) {
+      const rawHash = a.hash.startsWith("#") ? a.hash.slice(1) : "";
+      if (!rawHash) continue;
+      let id = rawHash;
+      try {
+        id = decodeURIComponent(rawHash);
+      } catch {
+        // Keep raw fragment if malformed percent-encoding
+      }
+      const target = document.getElementById(id);
+      if (target) {
+        heads.push(target);
+        linkByTarget.set(target, a);
+      }
+    }
 
-    const setAct = (id: string): void => {
+    const setAct = (target: HTMLElement): void => {
+      const activeLink = linkByTarget.get(target);
       for (const a of tocLinks) {
-        a.classList.toggle("docs-faceted-list-item-active", a.getAttribute("href") === `#${id}`);
+        a.classList.toggle("docs-faceted-list-item-active", a === activeLink);
       }
     };
 
-    if (heads[0]) setAct(heads[0].id);
+    if (heads[0]) setAct(heads[0]);
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) setAct(entry.target.id);
+          if (entry.isIntersecting && entry.target instanceof HTMLElement) {
+            setAct(entry.target);
+          }
         }
       },
       { rootMargin: "-10% 0px -75% 0px" },
@@ -343,7 +387,7 @@
     for (const h of heads) io.observe(h);
   }
 
-  /* ---------- Quick Search Dialog (Safe DOM rendering, no innerHTML) ---------- */
+  /* ---------- Quick Search Dialog (Safe DOM + WHATWG URL resolution) ---------- */
 
   const dlgEl = document.getElementById("search-dialog");
   const dlg = dlgEl instanceof HTMLDialogElement ? dlgEl : null;
@@ -353,29 +397,38 @@
   const sTrigger = document.getElementById("search-trigger");
   const sClose = document.getElementById("search-close");
   const rootPrefix = html.dataset.refsRoot ?? "";
+  const refsBaseUrl = new URL(rootPrefix || "./", document.baseURI);
   const index: readonly SearchHit[] = Array.isArray(win.penguinSearchIndex)
     ? win.penguinSearchIndex
     : [];
 
   function renderHits(query: string): void {
     if (!sResults) return;
-    const needle = query.trim().toLowerCase();
+    const needle = normSearch(query.trim());
     const hits = index
       .filter(
-        (x) =>
-          !needle || x.t.toLowerCase().includes(needle) || x.sub.toLowerCase().includes(needle),
+        (x) => !needle || normSearch(x.t).includes(needle) || normSearch(x.sub).includes(needle),
       )
       .slice(0, 32);
 
     const frag = document.createDocumentFragment();
     for (const h of hits) {
+      let resolvedHref: string;
+      try {
+        const u = new URL(h.u, refsBaseUrl);
+        if (u.origin !== window.location.origin) continue;
+        resolvedHref = u.href;
+      } catch {
+        continue;
+      }
+
       const a = document.createElement("a");
       a.className = "adev-search-hit";
-      a.href = `${rootPrefix}${h.u}`;
+      a.href = resolvedHref;
 
       const badge = document.createElement("span");
-      const safeKind = /^[a-z0-9_-]+$/i.test(h.k) ? h.k : "block";
-      badge.className = `docs-api-item-label type-${safeKind}`;
+      const safeKind = BADGE_KINDS.has(h.k) ? h.k : "block";
+      badge.classList.add("docs-api-item-label", `type-${safeKind}`);
       badge.textContent = h.c;
 
       const title = document.createElement("span");
@@ -405,7 +458,11 @@
   });
   sInput?.addEventListener("input", () => renderHits(sInput.value));
 
+  const EDITABLE_SELECTOR =
+    'textarea, select, input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"])';
+
   window.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
       openSearch();
@@ -415,7 +472,7 @@
     const active = document.activeElement;
     const isTyping =
       active instanceof HTMLElement &&
-      (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+      (active.isContentEditable || active.matches(EDITABLE_SELECTOR));
     if (isTyping) return;
 
     if (e.key === "/") {
