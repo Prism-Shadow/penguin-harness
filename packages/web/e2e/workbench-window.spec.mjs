@@ -177,7 +177,10 @@ test("the workbench opened beside a conversation returns to its docked App Cente
   await openChat(page);
   // The conversation has no tab strip of its own.
   await expect(page.getByRole("tablist", { name: "聊天与工作台" })).toHaveCount(0);
-  await openDock(page, "right", "trace");
+  // A Trace panel tab on the right, put away: the bottom dock's start page opens it, and the
+  // whole dock moves over.
+  await openDock(page, "bottom", "trace");
+  await dockAt(page, "bottom").getByTestId("dock-move").click();
   await page.getByTestId("dock-toggle-right").click();
   await expect(dockAt(page, "right")).toHaveCount(0);
 
@@ -234,8 +237,8 @@ test("the workbench opened beside a conversation returns to its docked App Cente
     .locator('[data-tab-id=":catalog"]')
     .getByTestId("dock-tab-close")
     .click();
+  // The dock stays where the App Center was, on the conversation's own tab.
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
-  await page.getByTestId("dock-toggle-right").click();
   await expect(dockAt(page, "right").locator('[data-tab-id="trace"]')).toBeVisible();
 });
 

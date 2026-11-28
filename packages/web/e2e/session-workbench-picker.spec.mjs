@@ -214,6 +214,9 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   const composer = chat.locator('[data-slot="composer"] textarea').first();
   await composer.fill("Keep my draft while browsing");
   for (const kind of ["workspace", "memory", "agents", "trace"]) {
+    // A closed tab leaves its dock open on the start page; the dock's × puts it away, and the
+    // Shortcuts launcher comes back.
+    await page.locator('[data-testid="dock"][data-open="true"]').getByTestId("dock-close").click();
     await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
     await page.getByTestId("dock-launcher-open-" + kind).click();
     const tab = page.locator(

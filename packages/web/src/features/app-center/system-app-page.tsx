@@ -12,11 +12,11 @@
  *   app here (safe mode has none, or the viewer may not see it) says so, and the exit still leads
  *   to the App Center.
  */
-import { useMemo, useRef } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useMemo } from "react";
+import { useNavigate, useParams } from "react-router";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
-import { searchWithAt, windowAddress } from "../../lib/app-window-address";
-import { innerLocationOf } from "../../lib/frame-messages";
+import { windowAddress } from "../../lib/app-window-address";
+import { useFullPageFrameAddress } from "../../lib/frame-address";
 import { PageFrame } from "../../lib/page-frame";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
@@ -33,7 +33,6 @@ export function SystemAppPage() {
   const params = useParams();
   const projectId = params["projectId"] ?? "";
   const appKey = params["appKey"] ?? "";
-  const location = useLocation();
   const navigate = useNavigate();
   const { locale } = useLocale();
   const pending = useWebAppPagesPending();
@@ -41,12 +40,7 @@ export function SystemAppPage() {
   const title = app === undefined ? null : localizedText(locale, app.title, app.titleZh);
   useDocumentTitle(title);
 
-  const asked = innerLocationOf(new URLSearchParams(location.search).get("at"));
-  /** Where the page is, as last heard: where it started, then what it said. */
-  const current = useRef(asked ?? "/");
-  if (asked !== null) current.current = asked;
-  const here = useRef(location);
-  here.current = location;
+  const { at, onLocation, onNavigate, place } = useFullPageFrameAddress();
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -56,11 +50,11 @@ export function SystemAppPage() {
         keywords: ["exit", "leave", "full page", "app", "window"],
         run: () => {
           rememberProject(projectId);
-          void navigate(windowAddress(systemAppKey(appKey), current.current));
+          void navigate(windowAddress(systemAppKey(appKey), place()));
         },
       },
     ],
-    [navigate, projectId, appKey],
+    [navigate, projectId, appKey, place],
   );
   usePaletteActions(exit);
   const paletteShortcut = useShortcutLabel("palette.toggle");
@@ -74,18 +68,9 @@ export function SystemAppPage() {
           src={app.frame}
           title={title}
           projectId={projectId}
-          at={asked}
-          onLocation={(at) => {
-            current.current = at;
-            const now = here.current;
-            const search = searchWithAt(now.search, at);
-            if (search !== now.search)
-              void navigate(
-                { pathname: now.pathname, search },
-                { replace: true, state: now.state },
-              );
-          }}
-          onNavigate={(to) => void navigate(to)}
+          at={at}
+          onLocation={onLocation}
+          onNavigate={onNavigate}
         />
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center text-sm text-fg-muted">

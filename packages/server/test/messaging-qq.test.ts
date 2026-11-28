@@ -50,7 +50,10 @@ import {
   MESSAGING_UNSUPPORTED_NOTICE,
 } from "@prismshadow/penguin-library-messaging/bridge";
 import type { MessagingClient } from "@prismshadow/penguin-library-messaging/connector";
-import { MessagingUnsupportedError } from "@prismshadow/penguin-library-messaging/media";
+import {
+  MessagingMediaTooLargeError,
+  MessagingUnsupportedError,
+} from "@prismshadow/penguin-library-messaging/media";
 import type {
   QQBotClient,
   QQCredentials,
@@ -59,6 +62,7 @@ import type {
   QQInboundEvent,
   QQSendArgs,
   QQTransport,
+  QQUploadFileArgs,
 } from "@prismshadow/penguin-library-messaging/qq-api";
 import {
   QQApiError,
@@ -100,6 +104,7 @@ const TAIL_MS = 120;
 
 class FakeQQClient implements QQBotClient {
   readonly sends: QQSendArgs[] = [];
+  readonly uploads: QQUploadFileArgs[] = [];
   credentialChecks = 0;
   constructor(
     readonly creds: QQCredentials,
@@ -119,6 +124,13 @@ class FakeQQClient implements QQBotClient {
     }
     if (this.t.failSend !== null) throw new Error(this.t.failSend);
     this.sends.push(args);
+  }
+
+  async uploadFile(args: QQUploadFileArgs): Promise<string> {
+    const refusal = this.t.refuseUpload(args);
+    if (refusal !== null) throw refusal;
+    this.uploads.push(args);
+    return `file_info_${this.uploads.length}`;
   }
 }
 
@@ -146,6 +158,19 @@ class FakeQQTransport implements QQTransport {
   failSend: string | null = null;
   /** Non-null makes only the `msg_type: 2` sends throw THIS, leaving the plain ones working. */
   failMarkdownSend: Error | null = null;
+  /** Decides whether an upload is refused: a platform error to throw, or null to accept it. */
+  refuseUpload: (args: QQUploadFileArgs) => Error | null = () => null;
+  /** What each attachment URL serves, and every download asked for (URL is the test's own fake one). */
+  readonly served = new Map<string, Buffer>();
+  readonly downloads: Array<{ url: string; maxBytes: number; what: string }> = [];
+
+  async fetchAttachment(url: string, maxBytes: number, what: string): Promise<Buffer> {
+    this.downloads.push({ url, maxBytes, what });
+    const bytes = this.served.get(url);
+    if (bytes === undefined) throw new Error(`${what} could not be downloaded: HTTP 404`);
+    if (bytes.length > maxBytes) throw new MessagingMediaTooLargeError(what, maxBytes);
+    return bytes;
+  }
 
   createClient(creds: QQCredentials): FakeQQClient {
     const client = new FakeQQClient(creds, this);
@@ -316,6 +341,43 @@ describe("normalizeDispatch", () => {
         },
       })?.content,
     ).toBe("");
+  });
+
+  it("reads attachments, giving a scheme-less URL https and dropping one it cannot fetch", () => {
+    const evt = normalizeDispatch({
+      op: 0,
+      t: "C2C_MESSAGE_CREATE",
+      d: {
+        id: "m3",
+        content: "",
+        author: { user_openid: USER_OPENID },
+        attachments: [
+          { url: "//cdn.example/a.png", content_type: "image/png", filename: "a.png", size: 12 },
+          { url: "https://cdn.example/v", content_type: "voice", asr_refer_text: " hi there " },
+          { url: "ftp://cdn.example/x", content_type: "file" },
+          { content_type: "file", filename: "no-url.txt" },
+        ],
+      },
+    });
+    expect(evt?.attachments).toEqual([
+      { url: "https://cdn.example/a.png", contentType: "image/png", filename: "a.png", size: 12 },
+      { url: "https://cdn.example/v", contentType: "voice", asrText: "hi there" },
+    ]);
+  });
+
+  it("reads the quoted text of a quote message, and ignores msg_elements on any other type", () => {
+    const d = {
+      id: "m4",
+      content: "thanks",
+      author: { user_openid: USER_OPENID },
+      msg_elements: [{ msg_idx: "REFIDX_a", message_type: 103, content: "read daily" }],
+    };
+    expect(
+      normalizeDispatch({ op: 0, t: "C2C_MESSAGE_CREATE", d: { ...d, message_type: 103 } })?.quoted,
+    ).toBe("read daily");
+    expect(
+      normalizeDispatch({ op: 0, t: "C2C_MESSAGE_CREATE", d: { ...d, message_type: 0 } })?.quoted,
+    ).toBeUndefined();
   });
 
   it("drops everything else the intent carries, including the un-mentioned group firehose", () => {
@@ -733,9 +795,91 @@ describe("qq binding routes and the passive reply budget", () => {
     ]);
   });
 
+  // —— Inbound attachments ——————————————————————————————————————————————————
+
+  /** What a run received, read as the loose union a composer submission is. */
+  const receivedParts = (i = 0) =>
+    runs[i]! as unknown as Array<{ type: string; text?: string; image_url?: string }>;
+
+  it("an inbound picture becomes an image_url part, fetched under the shared inline-image cap", async () => {
+    await bindEnabled(SID);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    fake.served.set("https://cdn.example/pic.png", png);
+    await fake.lastGateway().fire({
+      ...c2cText("", "msg_pic"),
+      attachments: [
+        { url: "https://cdn.example/pic.png", contentType: "image/png", filename: "pic.png" },
+      ],
+    });
+    await waitFor(() => runs.length === 1);
+    // No caption: the picture is the whole message, and no text is invented around it.
+    expect(receivedParts()).toEqual([
+      expect.objectContaining({
+        type: "image_url",
+        image_url: `data:image/png;base64,${png.toString("base64")}`,
+      }),
+    ]);
+    expect(fake.downloads).toHaveLength(1);
+    expect(fake.downloads[0]).toMatchObject({
+      url: "https://cdn.example/pic.png",
+      what: "The image",
+    });
+  });
+
+  it("an inbound file lands in the scratchpad under the sender's own name and rides as a path line", async () => {
+    await bindEnabled(SID);
+    fake.served.set("https://cdn.example/f", Buffer.from("quarterly numbers"));
+    await fake.lastGateway().fire({
+      ...c2cText("summarize this", "msg_doc"),
+      attachments: [{ url: "https://cdn.example/f", contentType: "file", filename: "q3.csv" }],
+    });
+    await waitFor(() => runs.length === 1);
+    const text = receivedParts()[0]!.text!;
+    expect(text.startsWith("summarize this\n\n[attached file: ")).toBe(true);
+    const written = /\[attached file: (.+)\]/.exec(text)![1]!;
+    expect(path.basename(written)).toBe("q3.csv");
+    expect(await fs.readFile(written, "utf8")).toBe("quarterly numbers");
+  });
+
+  it("a voice message arrives as the platform's own transcript, and one without a transcript is refused", async () => {
+    await bindEnabled(SID);
+    await fake.lastGateway().fire({
+      ...c2cText("", "msg_voice"),
+      attachments: [
+        {
+          url: "https://cdn.example/v.silk",
+          contentType: "voice",
+          asrText: "what is on my calendar",
+        },
+      ],
+    });
+    await waitFor(() => runs.length === 1);
+    expect(receivedParts().map((p) => p.text)).toEqual(["what is on my calendar"]);
+    // The recording is never downloaded: nothing downstream could read it.
+    expect(fake.downloads).toEqual([]);
+    await fake.lastGateway().fire({
+      ...c2cText("", "msg_mute"),
+      attachments: [{ url: "https://cdn.example/w.silk", contentType: "voice" }],
+    });
+    await waitFor(() => fake.allSends().some((s) => s.content === MESSAGING_UNSUPPORTED_NOTICE));
+    expect(runs).toHaveLength(1);
+  });
+
+  it("a quoted message's text rides above the reply as a blockquote", async () => {
+    await bindEnabled(SID);
+    await fake.lastGateway().fire({
+      ...c2cText("make it shorter", "msg_quote"),
+      quoted: "Read thirty minutes a day.\nIt compounds.",
+    });
+    await waitFor(() => runs.length === 1);
+    expect(receivedParts()[0]!.text).toBe(
+      "> Read thirty minutes a day.\n> It compounds.\n\nmake it shorter",
+    );
+  });
+
   // —— Outbound files ——————————————————————————————————————————————————————
 
-  it("a file the reply mentions is filed as an expected error record and spends no reply slot", async () => {
+  it("a file the reply mentions is uploaded and sent as a rich-media passive reply", async () => {
     const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
     const row = sessionRow(SID2, { projectId });
     row.workspace = ws;
@@ -745,63 +889,116 @@ describe("qq binding routes and the passive reply budget", () => {
     // Written just before the run, so it counts as the run's own output.
     await fs.writeFile(path.join(ws, "xx.md"), "notes");
     await fake.lastGateway().fire(c2cText("write the notes", "msg_file"));
-    await waitFor(() =>
-      t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_file_send_failed"),
-    );
-    await new Promise((r) => setTimeout(r, TAIL_MS * 3));
-    // The reply alone, in the first slot. QQ counts every message against the passive-reply
-    // budget, and nothing about the refused file is sent into the chat.
-    expect(fake.allSends().map((s) => [s.content, s.msgSeq])).toEqual([
-      ["The notes are in xx.md.", 1],
+    await waitFor(() => fake.allSends().length === 2);
+    // The reply in slot 1, the file in slot 2 — the upload itself spent nothing.
+    expect(fake.allSends().map((s) => [s.content, s.fileInfo, s.msgId, s.msgSeq])).toEqual([
+      ["The notes are in xx.md.", undefined, "msg_file", 1],
+      ["", "file_info_1", "msg_file", 2],
     ]);
-    // The refusal is filed under the Project instead, naming the file, the channel and QQ's
-    // own reason — expected, because the platform will refuse the next file identically and
-    // nobody has anything to fix.
-    expect(
-      t.deps.errorsRepo
-        .recent(projectId)
-        .map(({ code, kind, message }) => ({ code, kind, message })),
-    ).toEqual([
-      {
-        code: "messaging_file_send_failed",
-        kind: "expected",
-        message:
-          '"xx.md" was not sent to the qq chat: QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide',
-      },
-    ]);
+    const upload = fake.clients.flatMap((c) => c.uploads)[0]!;
+    expect({ ...upload, data: upload.data.toString() }).toEqual({
+      kind: "c2c",
+      openid: USER_OPENID,
+      // Not an image, not mp4 or silk: a downloadable file card.
+      fileType: 4,
+      fileName: "xx.md",
+      data: "notes",
+    });
+    expect(t.deps.errorsRepo.recent(projectId)).toEqual([]);
   });
 
-  it("three files in one reply are ONE expected record naming all three, and QQ hears only the reply", async () => {
+  it("a picture is registered as file_type 1, in a group as well as a single chat", async () => {
     const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
     const row = sessionRow(SID2, { projectId });
     row.workspace = ws;
     t.deps.sessionsRepo.insert(row);
-    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["Wrote a.md, b.md and c.md."]));
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["Chart saved as chart.png."]));
     await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
-    for (const name of ["a.md", "b.md", "c.md"]) await fs.writeFile(path.join(ws, name), name);
-    await fake.lastGateway().fire(c2cText("write three notes", "msg_files"));
+    await fs.writeFile(path.join(ws, "chart.png"), "png-bytes");
+    await fake.lastGateway().fire({
+      kind: "group",
+      openid: GROUP_OPENID,
+      messageId: "grp_img",
+      content: "draw it",
+      senderOpenid: "member_1",
+    });
+    await waitFor(() => fake.allSends().length === 2);
+    const upload = fake.clients.flatMap((c) => c.uploads)[0]!;
+    expect([upload.kind, upload.openid, upload.fileType, upload.fileName]).toEqual([
+      "group",
+      GROUP_OPENID,
+      1,
+      "chart.png",
+    ]);
+    expect(fake.allSends()[1]).toMatchObject({ kind: "group", fileInfo: "file_info_1", msgSeq: 2 });
+  });
+
+  it("a picture format the platform will not show falls back to a file card instead of failing", async () => {
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    const row = sessionRow(SID2, { projectId });
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["Saved anim.gif."]));
+    fake.refuseUpload = (args) =>
+      args.fileType === 1
+        ? new QQApiError("Upload failed: 不支持的文件格式 (code 850019)", 850019)
+        : null;
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    await fs.writeFile(path.join(ws, "anim.gif"), "gif-bytes");
+    await fake.lastGateway().fire(c2cText("animate", "msg_gif"));
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.clients.flatMap((c) => c.uploads).map((u) => u.fileType)).toEqual([4]);
+    expect(fake.allSends()[1]).toMatchObject({ fileInfo: "file_info_1" });
+    expect(t.deps.errorsRepo.recent(projectId)).toEqual([]);
+  });
+
+  it("a platform refusal leaves a note in the chat AND an error record, never a silent drop", async () => {
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    const row = sessionRow(SID2, { projectId });
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["Report is report.zip."]));
+    fake.refuseUpload = () =>
+      new QQApiError("Upload failed: 上传文件超过大小限制 (code 850031)", 850031);
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    await fs.writeFile(path.join(ws, "report.zip"), "zip");
+    await fake.lastGateway().fire(c2cText("zip it", "msg_big"));
+    await waitFor(() => fake.allSends().length === 2);
+    // The note rides the tail's final slot, since nothing else is waiting for it.
+    expect(fake.allSends()[1]!.content).toBe(
+      "[File not sent 文件未发送: report.zip — Upload failed: 上传文件超过大小限制 (code 850031)]",
+    );
     await waitFor(() =>
       t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_file_send_failed"),
     );
-    await new Promise((r) => setTimeout(r, TAIL_MS * 3));
-    expect(fake.allSends().map((s) => [s.content, s.msgSeq])).toEqual([
-      ["Wrote a.md, b.md and c.md.", 1],
-    ]);
-    // QQ refuses every file with the same sentence, so the three share one reason line under a
-    // head naming them all — one record, rather than three racing the recorder's window.
-    expect(
-      t.deps.errorsRepo
-        .recent(projectId)
-        .map(({ code, kind, message }) => ({ code, kind, message })),
-    ).toEqual([
-      {
-        code: "messaging_file_send_failed",
-        kind: "expected",
-        message:
-          '3 files were not sent to the qq chat: "a.md", "b.md", "c.md"\n' +
-          "QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide",
-      },
-    ]);
+  });
+
+  it("a file with no free reply slot is noted and filed as expected, and the text keeps its slot", async () => {
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    const row = sessionRow(SID2, { projectId });
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    // Five completed messages: three immediate, the rest withheld for the final slot — so the
+    // tail is not empty when the file's turn comes, and the file must not take that slot.
+    t.deps.manager.adopt(
+      row,
+      multiMessageFakeSession(SID2, ["one", "two", "three", "four", "five xx.md"]),
+    );
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    await fs.writeFile(path.join(ws, "xx.md"), "notes");
+    await fake.lastGateway().fire(c2cText("go", "msg_full"));
+    await waitFor(() =>
+      t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_file_send_failed"),
+    );
+    await waitFor(() => fake.allSends().length === 4);
+    expect(fake.clients.flatMap((c) => c.uploads)).toEqual([]);
+    expect(fake.allSends().every((s) => s.fileInfo === undefined)).toBe(true);
+    // The last slot carries the withheld text and the note together.
+    const last = fake.allSends()[3]!;
+    expect(last.msgSeq).toBe(4);
+    expect(last.content).toContain("five xx.md");
+    expect(last.content).toContain("[File not sent 文件未发送: xx.md —");
+    expect(t.deps.errorsRepo.recent(projectId).map(({ kind }) => kind)).toEqual(["expected"]);
   });
 
   // —— Nothing to reply to ——————————————————————————————————————————————————
@@ -838,50 +1035,17 @@ describe("qq binding routes and the passive reply budget", () => {
   });
 });
 
-/**
- * The seam's media half, as THIS branch sees it. `MessagingClient` grows `sendImage` /
- * `sendFile` in the media change, which is a sibling of this stack rather than something
- * below it, so the two methods are reached through their own structural type here instead
- * of through the seam. When the two land together, this local type is what disappears.
- */
-interface MediaHalf {
-  sendImage(chatId: string, file: { fileName: string; data: Buffer }): Promise<void>;
-  sendFile(chatId: string, file: { fileName: string; data: Buffer }): Promise<void>;
-}
-
 describe("the QQ client's media half", () => {
-  it("refuses an outbound file with a reason rather than silently succeeding", async () => {
-    // Nothing about this needs a server: the seam's media methods are refusals, and the
-    // reason has to reach whoever reads the error record the bridge writes.
-    const connector = new QQConnector(new FakeQQTransport());
+  const file = { fileName: "chart.png", data: Buffer.from("x") };
+
+  it("refuses a file before the bot has ever been messaged in that chat, without uploading", async () => {
+    const transport = new FakeQQTransport();
+    const connector = new QQConnector(transport);
     const client = await connector.createClient({ appId: APP_ID, appSecret: APP_SECRET });
-    const media = client as unknown as MediaHalf;
-    const file = { fileName: "chart.png", data: Buffer.from("x") };
-    await expect(media.sendImage(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toThrow(
-      /QQ cannot receive files/,
+    await expect(client.sendImage(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toThrow(
+      /only accepts replies/,
     );
-    await expect(media.sendFile(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toThrow(
-      /publicly reachable URL/,
-    );
-    // Typed, not bare: the bridge files a refusal the platform will repeat identically as an
-    // expected error rather than a defect (see error-kind.ts), and the type is what says so.
-    await expect(media.sendImage(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toBeInstanceOf(
-      MessagingUnsupportedError,
-    );
-    // The same sentence for every file, naming none: the bridge's record names the files
-    // itself, and a reason that reads alike for each is what lets one reply's refusals share
-    // one line.
-    const refusal = async (fileName: string): Promise<string> => {
-      try {
-        await media.sendFile(qqChatIdOf("c2c", USER_OPENID), { fileName, data: Buffer.from("x") });
-      } catch (err) {
-        return (err as Error).message;
-      }
-      throw new Error(`the upload of ${fileName} was not refused`);
-    };
-    const first = await refusal("a.md");
-    expect(await refusal("b.md")).toBe(first);
-    expect(first).not.toContain("a.md");
+    expect(transport.clients.flatMap((c) => c.uploads)).toEqual([]);
   });
 
   it("refuses a text send before the bot has ever been messaged in that chat", async () => {

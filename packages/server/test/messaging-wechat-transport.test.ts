@@ -13,18 +13,23 @@
  *   comes back); a quiet window is an empty answer, while a transport fault and the caller's
  *   own abort are not.
  * - Inbound normalization drops this bot's own messages, reads a voice transcription as text,
- *   quotes what a reply answers, normalizes images, files and videos, names an unnamed file
- *   plainly and skips media with no URL.
+ *   quotes what a reply answers, normalizes images, files and videos (a ready-made URL ahead of
+ *   the download parameter), names an unnamed file plainly and skips media with neither.
  * - Outbound sends carry one item per request and the conversation token when known; an
  *   image or file is uploaded as ciphertext under a fresh key the handle declares, with the
- *   plaintext length, a caption goes out as its own message, and a missing upload URL fails
- *   readably.
+ *   plaintext length, and the item carries that key as base64 of its hex digits (the form the
+ *   WeChat app opens, which this side's own reader takes back too); a caption goes out as its
+ *   own message. The ciphertext goes to the
+ *   ready-made upload URL when one comes back, else to the CDN base under the upload parameter
+ *   and the file key; an answer with neither fails naming the fields it did carry, and nothing
+ *   is posted anywhere.
  * - Every failure carries its verdict: a refusal behind an accepted credential, the session
  *   timeout (which still fails the probe), a request that never arrived and a 408, 429 or 5xx
  *   recover; a refused credential, a wrong host and an unreadable answer do not.
  * - Downloads decrypt under either key encoding, pass unencrypted bytes through, refuse a
  *   transfer past the cap as a size problem, keep the signed URL out of the failure, and
- *   report an undecryptable payload as such.
+ *   report an undecryptable payload as such. An image, file or video that arrives with only
+ *   its download parameter is fetched from the CDN base under it.
  *
  * Nothing here opens a socket: the global fetch is the suite's fetch fake, restored after
  * every case — a stub rather than a module mock, because this suite shares one module
@@ -37,6 +42,7 @@ import { MessagingMediaTooLargeError } from "@prismshadow/penguin-library-messag
 import type { WeChatCredentials } from "@prismshadow/penguin-library-messaging/wechat-api";
 import {
   WECHAT_API_BASE,
+  WECHAT_CDN_BASE,
   WECHAT_STALE_TOKEN_CODE,
   WECHAT_VIDEO_FILE_NAME,
   WeChatApiError,
@@ -330,8 +336,9 @@ describe("inbound normalization", () => {
         },
         {
           type: 4,
+          // Both a ready-made URL and the parameter: the URL is taken as the platform gave it.
           file_item: {
-            media: { full_url: "https://cdn/f", aes_key: "a2V5" },
+            media: { full_url: "https://cdn/f", encrypt_query_param: "dl-f", aes_key: "a2V5" },
             file_name: "report.pdf",
           },
         },
@@ -359,7 +366,7 @@ describe("inbound normalization", () => {
     expect(evt?.files[0]!.fileName).toBe("file");
   });
 
-  it("skips a media item with no URL rather than minting a handle that cannot be fetched", async () => {
+  it("skips a media item with neither a URL nor a download parameter, rather than minting a handle that cannot be fetched", async () => {
     const evt = normalizeWeChatMessage({
       message_id: 7,
       from_user_id: USER,
@@ -371,6 +378,17 @@ describe("inbound normalization", () => {
 });
 
 describe("outbound sends", () => {
+  /**
+   * Opens uploaded ciphertext with an outbound item's `aes_key`, read the way Tencent's senders
+   * write it: base64 of the key's 32 lowercase hex characters, and those characters as the key.
+   */
+  function openWithSentKey(aesKey: string, ciphertext: Uint8Array): Buffer {
+    const hex = Buffer.from(aesKey, "base64").toString("ascii");
+    expect(hex).toMatch(/^[0-9a-f]{32}$/);
+    const decipher = createDecipheriv("aes-128-ecb", Buffer.from(hex, "hex"), null);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  }
+
   it("sends one item per request and echoes the conversation token", async () => {
     const calls = stubWeChat();
     await client().sendText({ userId: USER, text: "hi", contextToken: "ctx-7" });
@@ -432,7 +450,13 @@ describe("outbound sends", () => {
     const item = JSON.parse(calls[2]!.body).msg.item_list[0];
     expect(item.type).toBe(2);
     expect(item.image_item.media.encrypt_query_param).toBe("dl-param-1");
-    expect(Buffer.from(item.image_item.media.aes_key as string, "base64").equals(key)).toBe(true);
+    // The reported failure: a key sent as base64 of its 16 raw bytes is delivered, and the WeChat
+    // app then shows the picture as unavailable. The hex form is the one that opens the bytes
+    // the CDN received.
+    const sentKey = item.image_item.media.aes_key as string;
+    expect(openWithSentKey(sentKey, calls[1]!.bytes).equals(plaintext)).toBe(true);
+    // This side's own reader takes the same form back.
+    expect(parseWeChatAesKey(sentKey).equals(key)).toBe(true);
   });
 
   it("sends a file under the FILE media type, with its name and its PLAINTEXT length", async () => {
@@ -455,6 +479,9 @@ describe("outbound sends", () => {
     const item = JSON.parse(calls[2]!.body).msg.item_list[0];
     expect(item.type).toBe(4);
     expect(item.file_item.file_name).toBe("report.pdf");
+    // A file's key goes out in the same hex form as a picture's, and opens what was uploaded.
+    const opened = openWithSentKey(item.file_item.media.aes_key as string, calls[1]!.bytes);
+    expect(opened.equals(bytes)).toBe(true);
     // The receiving client shows this number, and the ciphertext is a padding block
     // longer than what the reader actually gets.
     expect(item.file_item.len).toBe(String(bytes.length));
@@ -482,15 +509,80 @@ describe("outbound sends", () => {
     expect(JSON.parse(calls[3]!.body).msg.item_list[0].type).toBe(2);
   });
 
-  it("fails readably when the platform returns no upload URL, rather than guessing a CDN host", async () => {
-    stubWeChat((call) => (call.url.endsWith("/getuploadurl") ? jsonResponse({ ret: 0 }) : null));
-    await expect(
-      client().sendFile({
+  it("posts to the ready-made upload URL as returned, whether or not a parameter comes with it", async () => {
+    for (const answer of [
+      { upload_full_url: "https://cdn.example/upload?sig=full" },
+      { upload_full_url: "https://cdn.example/upload?sig=full", upload_param: "param-unused" },
+    ]) {
+      const calls = stubWeChat((call) => {
+        if (call.url.endsWith("/getuploadurl")) return jsonResponse(answer);
+        if (call.url.startsWith("https://cdn.example/upload")) {
+          return new Response(null, { status: 200, headers: { "x-encrypted-param": "dl-5" } });
+        }
+        return null;
+      });
+      await client().sendFile({
         userId: USER,
         text: "",
         file: { fileName: "a.bin", data: Buffer.from("x") },
-      }),
-    ).rejects.toThrow(/upload URL was not returned/);
+      });
+      expect(calls[1]!.method).toBe("POST");
+      expect(calls[1]!.url).toBe("https://cdn.example/upload?sig=full");
+    }
+  });
+
+  it("posts to the CDN base under the upload parameter when no ready-made URL comes back", async () => {
+    // The reported failure: the platform answered with `upload_param` alone, and the send was
+    // refused before any byte moved. Tencent's own client places the parameter on its CDN base.
+    const uploadParam = "enc/param+with=reserved&chars";
+    const calls = stubWeChat((call) => {
+      if (call.url.endsWith("/getuploadurl")) {
+        return jsonResponse({ ret: 0, upload_param: uploadParam });
+      }
+      if (call.url.startsWith(`${WECHAT_CDN_BASE}/upload`)) {
+        return new Response(null, { status: 200, headers: { "x-encrypted-param": "dl-4" } });
+      }
+      return null;
+    });
+    await client().sendImage({
+      userId: USER,
+      text: "",
+      file: { fileName: "image-test.png", data: Buffer.from("pixels") },
+    });
+    const filekey = JSON.parse(calls[0]!.body).filekey as string;
+    const target = new URL(calls[1]!.url);
+    expect(calls[1]!.method).toBe("POST");
+    expect(`${target.origin}${target.pathname}`).toBe(`${WECHAT_CDN_BASE}/upload`);
+    // Both values arrive intact: an unencoded `+`, `&` or `=` would split or alter the
+    // parameter the CDN verifies the write against.
+    expect(target.searchParams.get("encrypted_query_param")).toBe(uploadParam);
+    expect(target.searchParams.get("filekey")).toBe(filekey);
+    // The picture then goes out referencing the handle that CDN answered with.
+    const item = JSON.parse(calls[2]!.body).msg.item_list[0];
+    expect(item.image_item.media.encrypt_query_param).toBe("dl-4");
+  });
+
+  it("fails naming the fields the answer carried when it has neither, and posts nothing", async () => {
+    const calls = stubWeChat((call) =>
+      call.url.endsWith("/getuploadurl")
+        ? jsonResponse({ ret: 0, thumb_upload_param: "thumb-SECRET-PARAM" })
+        : null,
+    );
+    const err = await client()
+      .sendFile({
+        userId: USER,
+        text: "",
+        file: { fileName: "a.bin", data: Buffer.from("x") },
+      })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WeChatApiError);
+    expect((err as Error).message).toMatch(/upload URL was not returned/);
+    // What came back instead is named by its keys, so a report says what the platform sent...
+    expect((err as Error).message).toContain("thumb_upload_param");
+    // ...and never by its values: an upload parameter is itself the authorization for a write.
+    expect((err as Error).message).not.toContain("thumb-SECRET-PARAM");
+    // No guessed upload, and no message referencing an upload that never happened.
+    expect(calls).toHaveLength(1);
   });
 });
 
@@ -619,6 +711,69 @@ describe("inbound media transfers", () => {
       .catch((e: unknown) => e);
     expect((err as Error).message).toContain("The image");
     expect((err as Error).message).not.toContain("SECRET-PARAM");
+  });
+
+  it("fetches an image, a file and a video that carry only their download parameter from the CDN base", async () => {
+    // The inbound half of the same gap: an item with `encrypt_query_param` and no `full_url`
+    // was dropped as having nowhere to fetch it from.
+    const param = (kind: string) => `dl/${kind}+param=1&more`;
+    const hexKey = Buffer.from(KEY.toString("hex"), "utf8").toString("base64");
+    const calls = stubWeChat((call) => {
+      if (call.url.endsWith("/getupdates")) {
+        return jsonResponse({
+          msgs: [
+            {
+              message_id: 8,
+              from_user_id: USER,
+              message_type: 1,
+              item_list: [
+                {
+                  type: 2,
+                  image_item: {
+                    media: { encrypt_query_param: param("image") },
+                    aeskey: KEY.toString("hex"),
+                  },
+                },
+                {
+                  type: 4,
+                  file_item: {
+                    media: { encrypt_query_param: param("file"), aes_key: hexKey },
+                    file_name: "notes.txt",
+                  },
+                },
+                {
+                  type: 5,
+                  video_item: { media: { encrypt_query_param: param("video"), aes_key: hexKey } },
+                },
+              ],
+            },
+          ],
+          get_updates_buf: "cursor-2",
+        });
+      }
+      if (call.url.startsWith(`${WECHAT_CDN_BASE}/download`)) {
+        return new Response(encrypted(), { status: 200 });
+      }
+      return null;
+    });
+    const bot = client();
+    const { messages } = await bot.getUpdates({ cursor: "cursor-1", signal: live() });
+    const refs = [...messages[0]!.images, ...messages[0]!.files.map((file) => file.media)];
+    expect(refs).toHaveLength(3);
+    for (const ref of refs) {
+      expect((await bot.fetchMedia(ref, 1_000_000, "The media")).equals(PLAIN)).toBe(true);
+    }
+    const downloads = calls.slice(1).map((call) => new URL(call.url));
+    expect(downloads.map((url) => `${url.origin}${url.pathname}`)).toEqual([
+      `${WECHAT_CDN_BASE}/download`,
+      `${WECHAT_CDN_BASE}/download`,
+      `${WECHAT_CDN_BASE}/download`,
+    ]);
+    expect(downloads.map((url) => url.searchParams.get("encrypted_query_param"))).toEqual([
+      param("image"),
+      param("file"),
+      param("video"),
+    ]);
   });
 
   it("reports a payload that will not decrypt as arrived-but-unreadable", async () => {

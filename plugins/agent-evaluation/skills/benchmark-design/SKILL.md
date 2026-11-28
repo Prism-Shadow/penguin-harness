@@ -1,7 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.
-version: 2026.11.21.1
+version: 2026.11.27.1
 ---
 
 # Benchmark Design
@@ -74,6 +74,8 @@ Each Case contains:
 - `rubric/`, which is private and defines observable scoring items, points, and Gold answers.
 
 Both directories require a `README.md` and may contain supporting files. Do not put Gold answers for evaluated instances, hidden mappings, or private scoring conditions in `statement/`.
+
+For an individual Harbor Case, put the task link, shared run instructions and complete `harbor run` command under `## How this case is run` in `statement/README.md`. Follow [the package format](reference/package.md) and include all required launch flags, including the Compose overlay when the task calls for a shared network.
 
 Create `benchmark_config.toml` with `id` (the directory name), `title`, `description`, `version` (today's date version from the Environment's date, quoted: `version = "YYYY.MM.DD.1"`), `runs = 1`, `status = "draft"`, and an `[origin]` table with `kind = "agent"`, written last: in TOML every key below a table header belongs to that table. Whenever you change a Case or the status, bump `version`: the next `N` when it already carries today's date, otherwise today's `.1` (also when the file has no `version` yet). Benchmark design always uses one Run per Case; do not ask for or accept another Run count. `status = "draft"` tells the Web App that the Benchmark is still being built — it shows the Benchmark masked, and nobody can use or open it until the status is `published`. A draft ends in one of two states: `published` once a Formal Baseline scoring below 85 is recorded, or `failed` when calibration produces no valid Pilot result to freeze or when the lowest-scoring valid revision still scores 85 or above at the iteration limit. Initialize `scoreboard.yaml` with `evaluations: []`.
 

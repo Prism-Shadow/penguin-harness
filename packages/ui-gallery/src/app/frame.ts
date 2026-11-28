@@ -18,7 +18,10 @@
  * set neither: `wallpaper` (with `wallpaperSettings`) seeds a custom background the same way, and
  * `notices=1` raises the notices a conversation can carry, and `as=member` signs the demo account
  * in as a Project member who is no admin. `window=<platform>` frames the app as
- * the desktop shell's main window (the desktop-window surface sets it).
+ * the desktop shell's main window (the desktop-window surface sets it). `remote=1` seeds a
+ * conversation on the demo's connected machine and hands the frame `window.galleryMachine(link)`,
+ * which moves that machine's link through the states a conversation on it shows
+ * (mock/remote-machine.ts).
  *
  * A page outside the gallery frames the same document with `embeddedFrameSrc`: it names only the
  * theme, the mode and the language, and adds `embed=1`, which makes the app the guest of that
@@ -122,6 +125,8 @@ export interface FrameTarget {
    * (and, off macOS, its window buttons) as it does in the desktop app. The buttons do nothing.
    */
   window?: WindowPlatform;
+  /** Seed a conversation on the connected machine, its link movable from the frame (mock/remote-machine.ts). */
+  remote?: boolean;
 }
 
 /** The frame's URL: the document, then the target and the preferences as query params. */
@@ -136,6 +141,7 @@ export function appFrameSrc(base: string, prefs: FramePrefs, target: FrameTarget
   if (target.notices) params.set("notices", "1");
   if (target.member) params.set("as", "member");
   if (target.window) params.set("window", target.window);
+  if (target.remote) params.set("remote", "1");
   return `${base}${APP_FRAME_PATH}?${params.toString()}`;
 }
 
@@ -192,6 +198,7 @@ export function parseFrameParams(search: string): FrameParams {
     ...(params.get("notices") === "1" ? { notices: true } : {}),
     ...(params.get("as") === "member" ? { member: true } : {}),
     ...(platform !== undefined ? { window: platform } : {}),
+    ...(params.get("remote") === "1" ? { remote: true } : {}),
   };
 }
 

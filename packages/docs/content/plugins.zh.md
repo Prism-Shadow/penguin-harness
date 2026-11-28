@@ -49,6 +49,8 @@ description: PenguinHarness 的插件是什么、插件包遵循的格式与校�
   - 宿主只接受来自自己窗口中那个 iframe 的消息；页面也应只接受来自 `window.parent` 的消息。
 - **上下文**：iframe 的根元素带 `lang`（`zh-CN` 或 `en`）与 `data-project-id`，界面语言或当前 Project 改变时随即更新；它们与宿主写进每个工作台页面的主题并列。iframe 自己不绘制底色。
 
+Agent 工作台的页面沿用同样的地址、消息与上下文，在它的窗口（`/apps?app=<agentId>/<workbenchId>&at=…`）与整页（`/app/<projectId>/<agentId>/<workbenchId>[/<标签键>]?at=…`）中都是如此，见 [Workbench 插件](/skills#workbench-插件)。
+
 不带 `app` 的贡献 iframe 页面在它的 `path` 上以整页打开，iframe 的规则相同。安全模式不绘制任何服务端贡献，这样的应用因此不出现。
 
 ## 校验格式

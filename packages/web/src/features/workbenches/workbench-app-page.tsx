@@ -15,6 +15,10 @@
  * lands on its window. The route sits outside the app shell (no ProjectProvider), so the exit
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
+ *
+ * The page keeps its own place in this route's `?at=` as a window keeps it in its address
+ * (lib/frame-address.ts): it starts there, its moves replace it, and its `penguin:navigate` goes
+ * where it says. The exit to the window lands at the place the page is now.
  */
 import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
@@ -24,7 +28,8 @@ import { S } from "../../lib/strings";
 import { useInstallManifest } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
 import { APP_CENTER_PATH, isAppCenterPath, locatedAppKey } from "../../lib/app-center-path";
-import { windowOfPath, windowSearch } from "../../lib/app-window-address";
+import { pathWithAt, windowOfPath, windowSearch } from "../../lib/app-window-address";
+import { useFullPageFrameAddress } from "../../lib/frame-address";
 import { returnToHostEntry } from "../../lib/host-history";
 import { launchApp } from "../../lib/running-apps";
 import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
@@ -62,6 +67,7 @@ export function WorkbenchAppPage() {
     ownEvents: true,
     enabled: !safe,
   });
+  const { at, onLocation, onNavigate, place } = useFullPageFrameAddress();
   const paletteShortcut = useShortcutLabel("palette.toggle");
   // The page is the app: the browser tab carries the tab's own name (the manifest's name is
   // the same title), not the main app's.
@@ -112,12 +118,13 @@ export function WorkbenchAppPage() {
               shortcut: tab ? { ...shortcut, tab: tab.key } : shortcut,
             });
           }
-          if (typeof returnTo === "string") returnToHostEntry(navigate, returnTo);
-          else void navigate(APP_CENTER_PATH + windowSearch(key), { replace: true });
+          if (typeof returnTo === "string")
+            returnToHostEntry(navigate, pathWithAt(returnTo, place()));
+          else void navigate(APP_CENTER_PATH + windowSearch(key, place()), { replace: true });
         },
       },
     ],
-    [projectId, agentId, machineId, navigate, returnTo, toWindow, key, workbench, tab],
+    [projectId, agentId, machineId, navigate, returnTo, toWindow, key, workbench, tab, place],
   );
 
   usePaletteActions(exit);
@@ -141,7 +148,14 @@ export function WorkbenchAppPage() {
       )}
       <div className="relative min-h-0 flex-1">
         {tab ? (
-          <WorkbenchFrame projectId={projectId} agentId={agentId} tab={tab} />
+          <WorkbenchFrame
+            projectId={projectId}
+            agentId={agentId}
+            tab={tab}
+            at={at}
+            onLocation={onLocation}
+            onNavigate={onNavigate}
+          />
         ) : (
           <WorkbenchPageStatus
             projectId={projectId}

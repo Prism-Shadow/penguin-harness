@@ -1,5 +1,7 @@
-import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import type { MessagingClock } from "./ports.js";
+import type { ScanFlow, ScanFlowPoll } from "./scan-flow.js";
 /**
  * WeChat scan-to-connect: binding the official claw bot by scanning a QR code in WeChat.
  *
@@ -287,11 +289,12 @@ interface WeChatScanTask {
   verifyCode?: string;
 }
 
-/** What a poll tells the caller: where the scan stands, and the credentials once it landed. */
-export interface WeChatScanPoll {
+/**
+ * What a poll tells the caller: where the scan stands, and once it landed the binding to store —
+ * the bot id as the account, and the four values the scan returned as the config.
+ */
+export interface WeChatScanPoll extends ScanFlowPoll {
   status: WeChatScanStatus;
-  /** Present only on `completed` — for the caller to store. */
-  bot?: WeChatScanResult;
 }
 
 export interface WeChatScanServiceOpts {
@@ -305,8 +308,12 @@ export interface WeChatScanServiceOpts {
  * minutes a person spends scanning, and persisting a handle that collects a bot token would
  * buy nothing except a second place for it to leak from. A server restart mid-scan loses the
  * task and the user starts another, which is a strictly better failure than a handle at rest.
+ *
+ * WeChat's {@link ScanFlow}: the scan routes (scan-routes.ts) drive it, contributed by
+ * {@link WechatScanFlow}. It is the flow that takes a pairing code, so it is the one with a
+ * `verify` route.
  */
-export class WeChatScanService {
+export class WeChatScanService implements ScanFlow {
   private readonly tasks = new Map<string, WeChatScanTask>();
   private readonly now: () => number;
   /** The self-re-arming sweep, alive only while a task is remembered (see `armSweep`). */
@@ -415,7 +422,11 @@ export class WeChatScanService {
     if (result.bot === undefined) {
       throw new Error("WeChat reported the scan confirmed but returned no credentials");
     }
-    return { status: "completed", bot: result.bot };
+    const { botId, botToken, baseUrl, userId } = result.bot;
+    return {
+      status: "completed",
+      credential: { accountId: botId, config: { botId, botToken, baseUrl, userId } },
+    };
   }
 
   /** Drops a task the user walked away from (the editor's cancel, and its unmount). */
@@ -480,5 +491,34 @@ export class WeChatScanTransportProvider {
   @Provide() wechatScanTransport!: WeChatScanTransportHandle;
   setup() {
     this.wechatScanTransport = { transport: createWeChatScanTransport() };
+  }
+}
+
+/**
+ * WeChat's scan flow, contributed to messaging.scanFlows the way its connector is contributed
+ * to messaging.connectors. A completed poll is answered with the scanned bot's `botId`.
+ *
+ * What it holds is the handle that collects a bot token rather than a key that decrypts a
+ * secret, and it is equally not worth persisting (see WeChatScanService).
+ */
+@Component({
+  contributes: {
+    "MessagingModule.scanFlows": [
+      {
+        id: "messaging-wechat.scan-flow",
+        channel: "wechat",
+        accountIdField: "botId",
+      },
+    ],
+  },
+})
+export class WechatScanFlow {
+  @Use() private readonly wechatScanTransport!: WeChatScanTransportHandle;
+  @Use() private readonly clock!: MessagingClock;
+  @Bind("messaging-wechat.scan-flow") flow!: ScanFlow;
+  setup() {
+    this.flow = new WeChatScanService(this.wechatScanTransport.transport, {
+      now: () => this.clock.now().getTime(),
+    });
   }
 }

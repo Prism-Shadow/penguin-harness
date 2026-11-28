@@ -7,9 +7,10 @@
  * that view's route, and Forward brings the window back. A window reached any other way (a link,
  * a reload) leaves by replacing its entry with the grid's.
  *
- * An app drawn by a contributed page (a system app's iframe) keeps its own location in the
- * address too, as `&at=<path and query inside the app>`: what a reload, a link or Forward brings
- * it back to. The app's root ("/") is written as no `at` at all.
+ * An app drawn in an iframe (a system app's contributed page, an Agent workbench's page) keeps its
+ * own location in the address too, as `&at=<path and query inside the app>`: what a reload, a
+ * link or Forward brings it back to (lib/frame-address.ts). Its full page carries the same `at`.
+ * The app's root ("/") is written as no `at` at all.
  */
 import type { Location, NavigateFunction } from "react-router";
 import { APP_CENTER_PATH } from "./app-center-path";
@@ -70,6 +71,18 @@ export function searchWithAt(search: string, at: string | null): string {
   else params.set(WINDOW_AT_PARAM, written);
   const next = params.toString();
   return next === "" ? "" : `?${next}`;
+}
+
+/**
+ * An in-app path (a route and its query) with its `at` set to `at`: a window's address, or an
+ * app's full page (`/app/…[?machine=…]`), which carries the place the same way. A path that
+ * neither has nor gains an `at` comes back as it was.
+ */
+export function pathWithAt(path: string, at: string | null): string {
+  const query = path.indexOf("?");
+  const search = query === -1 ? "" : path.slice(query);
+  if (writtenAt(at) === null && !new URLSearchParams(search).has(WINDOW_AT_PARAM)) return path;
+  return (query === -1 ? path : path.slice(0, query)) + searchWithAt(search, at);
 }
 
 /** The app whose window an in-app path (`/apps?app=…`) puts in front, else none. */

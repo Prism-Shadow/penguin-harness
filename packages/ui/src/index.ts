@@ -296,11 +296,13 @@ export * from "./components/navigation/breadcrumbs/breadcrumbs";
 export * from "./components/content/prose/frontmatter";
 
 // W7-C — the dock: its tab strip and the strip inside a panel, its frame and header buttons, the
-// picker of an empty dock, the toolbar's dock toggles, and the floating launcher's ball and fan.
+// start page of an empty dock and the launch tiles it shares with the App Center, the toolbar's
+// dock toggles, and the floating launcher's ball and fan.
 export * from "./components/navigation/dock-tabs/dock-tabs";
 export * from "./components/navigation/panel-tabs/panel-tabs";
 export * from "./components/shell/dock-frame/dock-frame";
 export * from "./components/shell/dock-picker/dock-picker";
+export * from "./components/shell/launch-grid/launch-grid";
 export * from "./components/shell/panels-toolbar/panels-toolbar";
 export * from "./components/shell/launcher/launcher";
 // The floating ball built on the launcher's ball: drags to an edge and tucks away there.

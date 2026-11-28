@@ -18,9 +18,9 @@
  *   panel (a stored tab of its kind reads as unregistered), no Settings page, no link row, no
  *   layer — while the app's own (the terminal panel, the account page), which declare no server
  *   module, are unaffected; a server running other plugins' modules opens nothing for it.
- * - Once the server lists the module, all of it appears at once: the dock panel (leading the
- *   picker), the layer, the link row running the plugin's own action, and the Settings page in
- *   the rail at its order. When the server stops listing it, it goes again.
+ * - Once the server lists the module, all of it appears at once: the dock panel, the layer, the
+ *   link row running the plugin's own action, and the Settings page in the rail at its order.
+ *   When the server stops listing it, it goes again.
  * - What only keeps the plugin's own state in step — the conversation on screen, a full-screen
  *   step, a conversation's new id — reaches it whether or not its server module runs.
  * - Every other drawn slot waits too: the shell's pages leave the table, page renderers, Session
@@ -277,8 +277,7 @@ describe("a plugin's web half in the booted tree", () => {
 
   it("draws all of it once the server lists the module, and takes it away when it stops", () => {
     setRunningServerModules(["FixtureServerModule"]);
-    const panel = dockPanelDefinition("fixture.board");
-    expect(panel?.lead).toBe(true);
+    expect(dockPanelDefinition("fixture.board")).toBeDefined();
     expect(dockPanels().map((d) => d.id)).toContain("fixture.board");
     expect(fixtureLayer()).toBe("<p>fixture layer</p>");
     const rows = linkActionRows(HREF);

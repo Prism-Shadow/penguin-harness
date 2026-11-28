@@ -18,6 +18,13 @@ import { IDS } from "./ids";
 import { seedFreshProject, seedPresetWorkbenches } from "./fresh-project";
 import { raiseNotices } from "./notices";
 import {
+  applyLink,
+  linkDown,
+  remoteSessionRow,
+  remoteTranscript,
+  type DemoLink,
+} from "./remote-machine";
+import {
   rsiEvaluatorTranscript,
   rsiPrompt,
   rsiTestTranscript,
@@ -67,6 +74,8 @@ export const REPLY_LEAD_MS = 700;
 export const REPLY_HOLD_MS = 2600;
 /** The wait between a round's last delta and the fragment's close. */
 export const REPLY_CLOSE_MS = 160;
+/** How long the attempt a Retry starts runs before the machine is back. */
+export const RECONNECT_MS = 1_200;
 
 /** A channel: subscribers, and the running id the server stamps on every event. */
 class Channel {
@@ -134,6 +143,9 @@ export class DemoStore {
   private created = 0;
   private readonly installedAtStart: DemoFixtures["installed"];
   private readonly remoteSessions = new Map<string, DemoStore>();
+  /** The remote conversation's machine link, while a frame moves it (remote-machine.ts). */
+  private link: DemoLink = "connected";
+  private linkTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly init: StoreInit,
@@ -154,6 +166,14 @@ export class DemoStore {
         installed: structuredClone(this.installedAtStart),
         sessions: [],
       };
+      if (init.remote && machine.id === IDS.remote.machineId) {
+        this.f.sessions = [remoteSessionRow(lang, now, DEFAULT_MODEL)];
+        this.live.set(IDS.remote.session, {
+          transcript: remoteTranscript(lang, now, DEFAULT_MODEL),
+          channel: new Channel(),
+          timers: [],
+        });
+      }
       return;
     }
     this.f = buildFixtures(lang, now, embedded);
@@ -219,8 +239,12 @@ export class DemoStore {
 
   // ---- Sessions --------------------------------------------------------------------------
 
-  /** A machine shares the Project catalog but owns its conversations and event channels. */
-  sessionsOn(machineId: string | null): DemoStore {
+  /**
+   * A machine shares the Project catalog but owns its conversations and event channels. A machine
+   * this server holds no connection to answers nothing, except the hub's cached copy of its
+   * conversations (`cached`).
+   */
+  sessionsOn(machineId: string | null, cached = false): DemoStore {
     if (machineId === null) return this;
     const machine = this.f.machines.machines.find(
       (candidate) =>
@@ -229,17 +253,18 @@ export class DemoStore {
         candidate.alias === machineId,
     );
     if (machine?.local) return this;
-    if (!machine?.machineId || !machine.api) {
+    if (!machine?.machineId || !machine.api || (!cached && machine.connection === null)) {
       throw new ApiError(503, "not_connected", "The machine is not connected.");
     }
     const owner = machine.machineId;
     let store = this.remoteSessions.get(owner);
     if (!store) {
-      store = new DemoStore({ lang: this.lang, signedIn: this.signedIn }, Date.now(), {
-        id: owner,
-        catalog: this.f,
-        installed: this.installedAtStart,
-      });
+      const { remote } = this.init;
+      store = new DemoStore(
+        { lang: this.lang, signedIn: this.signedIn, ...(remote ? { remote } : {}) },
+        Date.now(),
+        { id: owner, catalog: this.f, installed: this.installedAtStart },
+      );
       this.remoteSessions.set(owner, store);
     }
     return store;
@@ -648,7 +673,35 @@ export class DemoStore {
     return true;
   }
 
+  // ---- The remote conversation's machine ------------------------------------------------
+
+  /** Moves the machine's link to `link` and says the machines list changed, as the server does. */
+  setMachineLink(link: DemoLink, fresh = false): void {
+    if (this.linkTimer !== null) clearTimeout(this.linkTimer);
+    this.linkTimer = null;
+    this.link = link;
+    applyLink(this.f.machines, link, Date.now(), fresh);
+    this.userChannel.event({ type: "machines_changed" });
+  }
+
+  /**
+   * A Retry (or Retry now) on the machine while a frame holds it down: an attempt runs, and this
+   * one brings the machine back. Nothing changes for a machine the frame never took down.
+   */
+  reconnectMachine(id: string): void {
+    if (id !== IDS.remote.machine || !linkDown(this.link) || this.link === "signInRefused") return;
+    this.setMachineLink("trying", true);
+    this.linkTimer = setTimeout(() => this.setMachineLink("connected"), RECONNECT_MS);
+  }
+
+  /** Stop retrying: the streak ends where it stood, and waits on a Retry. */
+  stopReconnectingMachine(id: string): void {
+    if (id !== IDS.remote.machine || (this.link !== "trying" && this.link !== "waiting")) return;
+    this.setMachineLink("cancelled");
+  }
+
   dispose(): void {
+    if (this.linkTimer !== null) clearTimeout(this.linkTimer);
     for (const remote of this.remoteSessions.values()) remote.dispose();
     this.evolutionPlayback.dispose();
     for (const id of this.live.keys()) this.stopScript(id);
@@ -673,6 +726,8 @@ interface StoreInit {
   embedded?: boolean;
   evolutionDemo?: boolean;
   freshProject?: boolean;
+  /** Seed a conversation on the connected machine, whose link the frame can move (remote-machine.ts). */
+  remote?: boolean;
 }
 
 /** The store the frame's language and sign-in state ask for; created once per document. */

@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router";
-import { leaveWindow, windowAt, windowInFront } from "./app-window-address";
+import { leaveWindow, pathWithAt, windowAt, windowInFront } from "./app-window-address";
 import { parseSessionWorkbenchPage } from "./session-workbenches";
 import { closeApp, useRunningAppRecords } from "./running-apps";
 import { useSystemApps, systemAppFullPage } from "./system-apps";
@@ -39,13 +39,13 @@ import { PageWorkspaceContext as Context, type SessionLocation } from "./page-wo
 
 interface DockOperations {
   clearDockPages(): void;
-  detachDockPage(key: string): void;
+  closeDockPage(key: string): void;
   dockActiveKey(position: "right"): string | null;
   openPanel(key: string, position: "right"): void;
 }
 
 export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: DockOperations }) {
-  const { clearDockPages, detachDockPage, dockActiveKey, openPanel } = dock;
+  const { clearDockPages, closeDockPage, dockActiveKey, openPanel } = dock;
   const userId = useAuth().user?.userId ?? null;
   const projectId = useProject().currentProject?.projectId ?? null;
   const location = useLocation();
@@ -505,7 +505,9 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       : removed;
     const pair = sessionAppPair(before);
     if (page.kind !== "session") {
-      detachDockPage(dockPageKey(id));
+      // Closed, minimized or gone, the page leaves the dock it was shown in open, as a closed
+      // panel tab does: on the next tab, or on the start page when it was the last.
+      closeDockPage(dockPageKey(id));
       if (!keepOpen) byApp.current.delete(id);
       for (const [sid, attached] of bySession.current)
         if (attached.id === id) bySession.current.delete(sid);
@@ -559,14 +561,12 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     const record = apps.find((entry) => "app:" + entry.key === page.id);
     if (!record) return;
     const { shortcut, projectId, selectedPath } = record;
+    // Either kind of app opens its full page where its window's page is.
+    const at = windowAt(new URL(page.path, window.location.origin));
     const target =
       shortcut.system?.frame !== undefined
-        ? systemAppFullPage(
-            projectId,
-            shortcut.workbenchId,
-            windowAt(new URL(page.path, window.location.origin)),
-          )
-        : (selectedPath ?? shortcut.path);
+        ? systemAppFullPage(projectId, shortcut.workbenchId, at)
+        : pathWithAt(selectedPath ?? shortcut.path, at);
     if (pair?.app.id === page.id) {
       // Keep both live panes; the address bar and a separately opened link still use
       // the workbench's standalone route.

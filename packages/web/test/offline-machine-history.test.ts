@@ -1,23 +1,28 @@
 // @vitest-environment jsdom
 /**
  * Opening a conversation on a machine the hub cannot reach: the conversation's reads
- * (features/chat/use-session-stream.ts, held while the machine is known to be down) and the
- * offline view in their place (features/chat/offline-session-history.tsx). The history and live
- * streams are the boundary this suite fakes (api/sse.ts); the machines account is the test's.
+ * (features/chat/use-session-stream.ts, held while the machine is known to be down), the offline
+ * view in their place (features/chat/offline-session-history.tsx), and the machine's state on a
+ * cover over the conversation's input box (features/chat/machine-cover.tsx), laid out as the chat
+ * page lays them. The history and live streams are the boundary this suite fakes (api/sse.ts);
+ * the machines account is the test's.
  *
  * - Given a machine the machines account reads as away, opening its conversation asks the machine
- *   nothing — no history read of it, no live subscription — and the offline line shows at once
- *   over what the hub holds; when the account pushes the machine back, the conversation opens,
- *   once.
+ *   nothing — no history read of it, no live subscription — and the machine's state shows at once
+ *   on the input box, and only there, over what is typed in it, with what the hub holds in the
+ *   transcript's place; when the account pushes the machine back, the conversation opens, once,
+ *   and the box is the same box with the same text, uncovered.
  * - Given a read that gave up on a machine the account reads as connected (its server out of
- *   reach: `machine_unreachable`), the offline line says the server is not responding, with a
- *   Retry; the machine's API socket coming up reads again once, a socket fact that did not change
- *   does not, and Retry reads again.
- * - Given a reachable machine, the conversation opens as before: its reads start at once, and a
- *   wait the hub reports while the machine drops mid-load stays on the loading row (no offline
- *   view, no cached read) until the read gives up.
+ *   reach: `machine_unreachable`), the cover says the server is not responding, with a Retry; the
+ *   machine's API socket coming up reads again once, a socket fact that did not change does not,
+ *   and Retry reads again.
+ * - Given a reachable machine, the conversation opens as before and its box is never covered:
+ *   its reads start at once, and a wait the hub reports while the machine drops mid-load stays on
+ *   the loading row (no offline view, no cached read) until the read gives up.
  */
 import { createElement as h } from "react";
+import { MemoryRouter } from "react-router";
+import { ComposerCard } from "@prismshadow/penguin-ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   HistoryStreamError,
@@ -25,8 +30,11 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import type { HistoryStreamHandlers, HistoryStreamQuery } from "../src/api/sse";
+import { MachineCover } from "../src/features/chat/machine-cover";
 import {
-  OfflineSessionHistory,
+  OfflineHistoryNote,
+  offlineCover,
+  offlineItems,
   useMachineHold,
   useOfflineSessionHistory,
 } from "../src/features/chat/offline-session-history";
@@ -62,6 +70,7 @@ vi.mock("../src/state/machines", async (original) => ({
       machines: account.machines,
       imageVersion: null,
       job: null,
+      jobs: [],
     } as unknown as MachinesResponse,
     settled: true,
     error: null,
@@ -73,6 +82,7 @@ vi.mock("../src/state/machines", async (original) => ({
 const SESSION = "remote";
 const MACHINE = "box";
 const words = S.chat.offlineHistory;
+const cover = S.chat.machineCover;
 
 /** The machine as the account lists it: connected and installed, unless `over` says otherwise. */
 const machine = (over: Partial<MachineInfo> = {}): MachineInfo =>
@@ -100,13 +110,36 @@ const gaveUp: HistoryStreamError = {
 };
 const noCopy: HistoryStreamError = { code: "history_cache_miss", message: "No saved window." };
 
-/** The conversation's place on the chat page, wired as the page wires it. */
+/**
+ * The conversation's place on the chat page, wired as the page wires it: the transcript (or the
+ * note standing in for it), then the input box, covered while the machine is out of reach.
+ */
 function Conversation() {
   const hold = useMachineHold("p", "u", SESSION, null);
   const stream = useSessionStream(SESSION, "idle", () => {}, "page", hold);
   const offline = useOfflineSessionHistory("p", "u", SESSION, stream, stream.model.items);
-  return offline ? h(OfflineSessionHistory, offline) : h("p", null, "live");
+  return h(
+    MemoryRouter,
+    null,
+    h(
+      "section",
+      { "data-testid": "transcript" },
+      offline && offlineItems(offline) === null
+        ? h(OfflineHistoryNote, { copy: offline.copy })
+        : h("p", null, "live"),
+    ),
+    h(ComposerCard, {
+      textarea: { defaultValue: "Look at the hooks cases" },
+      cover: offline
+        ? h(MachineCover, { projectId: "p", reading: offlineCover(offline), drafted: true })
+        : null,
+    }),
+  );
 }
+
+const transcript = () => document.querySelector('[data-testid="transcript"]')!.textContent;
+const covered = () => document.querySelector('[data-slot="cover"]')!.textContent;
+const box = () => document.querySelector("textarea")!;
 
 const reads = (kind: HistoryStreamQuery["kind"]) =>
   streams.history.filter((read) => read.query.kind === kind);
@@ -130,15 +163,21 @@ describe("a conversation on a machine the hub cannot reach", () => {
     expect(streams.history.map((read) => read.query.kind)).toEqual(["cached"]);
     expect(streams.live).toBe(0);
     await run(() => reads("cached")[0]!.handlers.onError(noCopy));
-    expect(ui.container.textContent).toContain(words.disconnected("studio"));
-    expect(ui.container.textContent).toContain(words.miss);
+    const typed = box();
+    expect(covered()).toContain(cover.stopped("studio"));
+    expect(covered()).toContain(cover.note(true, false));
+    expect(transcript()).toBe(words.miss);
+    expect(typed.value).toBe("Look at the hooks cases");
 
     account.machines = [machine({ connection: { pid: 2 } })];
     await ui.rerender(h(Conversation));
     await settle();
     expect(streams.live).toBe(1);
     expect(reads("tail")).toHaveLength(1);
-    expect(ui.container.textContent).toBe("live");
+    expect(transcript()).toBe("live");
+    expect(covered()).toBe("");
+    expect(box()).toBe(typed);
+    expect(typed.value).toBe("Look at the hooks cases");
   });
 
   it("falls back to the offline line with a Retry when a read gives up, and reads again when the socket comes up or on Retry", async () => {
@@ -152,8 +191,8 @@ describe("a conversation on a machine the hub cannot reach", () => {
 
     await run(() => reads("tail")[0]!.handlers.onError(gaveUp));
     await run(() => reads("cached")[0]!.handlers.onError(noCopy));
-    expect(ui.container.textContent).toContain(words.unreachable("studio"));
-    expect(ui.container.textContent).toContain(words.miss);
+    expect(covered()).toContain(cover.noService("studio"));
+    expect(transcript()).toBe(words.miss);
     // The account read again with nothing changed about the socket: no reason to ask.
     account.machines = [
       machine({ socket: { state: "failed", since: "2026-11-26T10:00:00.000Z" } }),
@@ -178,7 +217,7 @@ describe("a conversation on a machine the hub cannot reach", () => {
 
   it("opens a conversation on a reachable machine as before, and keeps a mid-load wait on the loading row", async () => {
     account.machines = [machine()];
-    const ui = await mount(h(Conversation));
+    await mount(h(Conversation));
     await settle();
     expect(streams.live).toBe(1);
     expect(streams.history.map((read) => read.query.kind)).toEqual(["tail"]);
@@ -194,7 +233,8 @@ describe("a conversation on a machine the hub cannot reach", () => {
         waiting: { reason: "unreachable", attempt: 2, maxAttempts: 5, nextAt: Date.now() + 2_000 },
       }),
     );
-    expect(ui.container.textContent).toBe("live");
+    expect(transcript()).toBe("live");
+    expect(covered()).toBe("");
     expect(reads("cached")).toHaveLength(0);
   });
 });

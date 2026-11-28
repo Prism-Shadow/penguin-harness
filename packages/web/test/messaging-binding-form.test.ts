@@ -17,7 +17,6 @@ import type {
   WeChatBindingInfo,
 } from "@prismshadow/penguin-server/api";
 import {
-  FEISHU_DEFAULT_DOMAIN,
   bindingsToForm,
   emptyMessagingForm,
   formDirty,
@@ -25,6 +24,7 @@ import {
   formToPut,
   formToTest,
 } from "../src/features/messaging/messaging-binding-form";
+import { FEISHU_DEFAULT_DOMAIN } from "../src/features/messaging/channels/feishu/form";
 
 const STORED_FEISHU: FeishuBindingInfo = {
   channel: "feishu",

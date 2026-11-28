@@ -11,7 +11,7 @@ The repository's README section *Running a task (for agents)*, which the stateme
 | Value | In the statement |
 | --- | --- |
 | `REPO` | The repository: the **Task** line's link up to `/tree/` |
-| `SHA` | The full 40-character lowercase commit in the Task link; the run-rules link and checkout sentence name the same commit |
+| `SHA` | The full 40-character lowercase data commit named in both the Task link and the checkout sentence |
 | `TASK_PATH`, `TASK` | `-p <TASK_PATH>` and `-i <TASK>` of the launch |
 | `HARBOR_VERSION` | `harbor==<HARBOR_VERSION>` of the launch |
 | `AGENT` | `-a <AGENT>` of the launch: the adapter import path. A shared adapter link identifies its separate checkout (§A.7); older Cases use the task repository's `agents/` |
@@ -20,7 +20,7 @@ The repository's README section *Running a task (for agents)*, which the stateme
 | The host line | `--allow-agent-host <model provider API host>`: present only for a task whose agent phase has no network (§B.3) |
 | The overlay line | `--extra-docker-compose <overlay>`: present only where the repository allows the shared network (§A.9) |
 
-Require an explicit full commit for task sources: branch links such as `main`, tags and abbreviated hashes are `benchmark_invalid`. The Task link, run-rules link and checkout sentence must agree. Record the task repository and commit with the evaluation. When the statement also links the shared adapter, record that link and its own full 40-character lowercase commit. Workers use the same revisions. All cells and later evaluations of the same package use that checkout. This requirement applies to running tasks; the display package may be fetched from `main`.
+Require the Task link and checkout instruction to name the same full 40-character lowercase commit. A branch, tag or abbreviated task commit is `benchmark_invalid`. Record the task repository and commit with the evaluation. The shared run instructions and adapter may link to `main`. Record the adapter commit selected in §A.7. All trials using the same adapter link in this experiment share that revision.
 
 The Case id without its `CASE-NNN-` prefix must equal `TASK`; otherwise the Case is `benchmark_invalid`. A statement with both the host line and the overlay line is `benchmark_invalid` as well: the repository never allows the shared network for a task without network.
 
@@ -49,7 +49,7 @@ The agent that fans out the cells performs steps 1–10 once, before its first `
 
    For another host, or when the archive fails, start again from a fresh empty `$TMP` with git: `git -C "$TMP" init -q && git -C "$TMP" fetch -q --depth 1 "<REPO>" "$SHA" && git -C "$TMP" checkout -q FETCH_HEAD`. Then, inside `$TMP`, `uvx --from harbor==<HARBOR_VERSION> harbor --version` downloads and caches the pinned Harbor (nothing is installed globally). There is no setup step: the repository commits every task directory. Run Harbor and its Python only from inside a checkout, never from the home directory, where a stray Python file can shadow the standard library.
 6. **Publish,** in one rename: `touch "$TMP/.penguin-ready"`, then `[ -e "$CHECKOUT" ] || mv "$TMP" "$CHECKOUT"`, then `[ ! -e "$TMP" ] || rm -r "$TMP"` (nothing is left there unless another process published first) and `rmdir "$CHECKOUT.lock"`. When a step fails before this, remove `$TMP` and the lock: no checkout is ever seen half-made. Delete with `rm -r`, never `rm -rf`: PenguinHarness's default command policy holds any command that contains a recursive force delete, the whole command with it, until a person allows it, and an unattended Session refuses it.
-7. **Run rules and adapter.** Read *Running a task (for agents)* in the data checkout's `README.md`. For a Case with a shared adapter, the statement links `https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/<adapter-commit>/agents`. Use that repository and its own full commit. Cache the adapter checkout at `$CHECKOUT_ROOT/adapters/$ADAPTER_SHA`, separately from full task checkouts. Create the parent directory and reuse the lock, ready marker and atomic publish in steps 3–6 for this destination. When preparing its empty temporary directory, fetch only the adapter files:
+7. **Run rules and adapter.** For a shared adapter link to `main`, the caller resolves `ADAPTER_SHA` once per experiment from the first column of `git ls-remote --exit-code https://github.com/Prism-Shadow/penguin-harness-benchmark.git refs/heads/main`. If the link specifies a full commit, use it directly. Pass the resolved commit to each worker in its prompt alongside the protocol request, including on retries. Cache the adapter checkout at `$CHECKOUT_ROOT/adapters/$ADAPTER_SHA`, separately from full task checkouts. Create the parent directory and reuse the lock, ready marker and atomic publish in steps 3–6 for this destination. When preparing its empty temporary directory, fetch only the adapter files:
 
    ```bash
    git clone --filter=blob:none --sparse --no-checkout https://github.com/Prism-Shadow/penguin-harness-benchmark.git "$TMP"
@@ -57,7 +57,7 @@ The agent that fans out the cells performs steps 1–10 once, before its first `
    git -C "$TMP" checkout --detach "$ADAPTER_SHA"
    ```
 
-   Set `ADAPTER_CHECKOUT` to the published adapter checkout. For a Case without a shared adapter link, set `ADAPTER_CHECKOUT="$CHECKOUT"`. Export `ADAPTER_DIR="$ADAPTER_CHECKOUT/agents"`. Run Harbor from the data checkout, using the adapter's Python modules, helpers and optional Compose overlay from `ADAPTER_DIR`.
+   Set `ADAPTER_CHECKOUT` to the published adapter checkout. For a Case without a shared adapter link, set `ADAPTER_CHECKOUT="$CHECKOUT"`. Export `ADAPTER_DIR="$ADAPTER_CHECKOUT/agents"`. Read the run rules linked by the statement. For a link to the shared guide on `main`, read *Running a task (for agents)* in `$ADAPTER_CHECKOUT/README.md` at the same revision as the adapter. Run Harbor from the task data checkout.
 8. **Images,** optional. Pre-pull the selected tasks' prebuilt images once with `docker pull <image>`, using `environment.docker_image` and `verifier.environment.docker_image` from their `task.toml` files under `$CHECKOUT/$TASK_PATH`. Skip fields that are absent; tasks without prebuilt images build their own.
 9. **The shared network,** only when the statement's launch has the overlay line. That Compose overlay puts a trial's main container on one existing bridge network, `penguin-bench`, instead of a network of its own, so these trials stop using up the host's Docker address pools. Create the network once per host as the run rules say, unless it exists:
 
@@ -100,7 +100,7 @@ Then halve the limit, down to one, and put the cell first among the unstarted ce
 
 ## B. One cell: one Harbor trial
 
-Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR` and `PROJECT_ID` exactly as `SKILL.md`'s Run step does, `BENCHMARK_DIR` as its Prepare step does, and `CHECKOUT` as §A does; set `PROJECTS_DIR="$(dirname "$PROJECT_DIR")"`, the folder that holds the Project (the repository's helper and adapter call it the host Penguin home and read `$PROJECTS_DIR/$PROJECT_ID/.project_config.toml`, which is this Project's own config — it is not the data root); when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Resolve the adapter and export its absolute `ADAPTER_DIR` in this worker as in §A.7. Read the linked run rules unless this Session already has. Then:
+Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR` and `PROJECT_ID` exactly as `SKILL.md`'s Run step does, `BENCHMARK_DIR` as its Prepare step does, and `CHECKOUT` as §A does; set `PROJECTS_DIR="$(dirname "$PROJECT_DIR")"`, the folder that holds the Project (the repository's helper and adapter call it the host Penguin home and read `$PROJECTS_DIR/$PROJECT_ID/.project_config.toml`, which is this Project's own config — it is not the data root); when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Use the caller’s adapter commit and export its absolute `ADAPTER_DIR` as in §A.7. Read the linked run rules unless this Session already has. Then:
 
 1. **The task.** Require `$CHECKOUT/$TASK_PATH/$TASK/task.toml`; otherwise return `benchmark_invalid`.
 2. **The thinking level.** The adapter takes `low`, `medium`, `high`, `xhigh` or `max`. A Test Agent configured with any other level cannot be evaluated here: return `evaluation_failed`.
