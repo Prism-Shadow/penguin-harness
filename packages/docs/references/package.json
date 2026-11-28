@@ -1,10 +1,22 @@
 {
-  "name": "penguin-references-demo",
+  "name": "@prismshadow/penguin-references",
   "private": true,
   "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json",
+    "verify-samples": "tsx src/doc-samples.ts",
+    "build:site": "tsx src/build.ts",
+    "build": "tsx src/doc-samples.ts && tsx src/build.ts"
+  },
   "dependencies": {
-    "shiki": "^3.4.0",
+    "@shikijs/transformers": "^3.4.0",
     "@shikijs/twoslash": "^3.4.0",
-    "@shikijs/transformers": "^3.4.0"
+    "shiki": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/hast": "^3.0.4",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.0"
   }
 }

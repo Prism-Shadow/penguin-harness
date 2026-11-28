@@ -3,11 +3,11 @@
  *
  * Every `// #docregion <Symbol.member>` block is kept short, pure user code
  * (zero test-harness variables inside `#docregion`), annotated with inline
- * comments and `// @focus` markers on the exact option lines being shown.
+ * comments and `// [!code highlight]` markers on the exact option lines being shown.
  *
- * `run-doc-samples.mjs` type-checks this file with `ts.createProgram` (strict),
- * extracts real semantic tokens + Go-to-Def + Peek Definitions via TypeChecker,
- * and executes every runtime assertion against `packages/core/src/kernel/index.ts`.
+ * `src/doc-samples.ts` renders each `#docregion` through Shiki + `@shikijs/twoslash`
+ * (strict type-checking + hover types + clickable kernel links) and executes every
+ * runtime assertion against `packages/core/src/kernel/index.ts`.
  */
 import assert from "node:assert/strict";
 import {
@@ -20,13 +20,14 @@ import {
   Use,
   bootModules,
   moduleDefOf,
+  moduleMetaOf,
   parseManifest,
   type ClassCtx,
   type Contributed,
   type Json,
   type Resources,
   type TableLike,
-} from "../../worktrees/refs-main/packages/core/src/kernel/index.js";
+} from "@prismshadow/penguin-core/kernel";
 
 const emptyResources = (): Resources => ({
   register: () => () => {},
@@ -34,6 +35,17 @@ const emptyResources = (): Resources => ({
 });
 
 const str = { data: "string" as const };
+
+function mf(name: string, extra: Record<string, unknown> = {}) {
+  return parseManifest({
+    name,
+    requires: {},
+    provides: {},
+    contributes: {},
+    children: [],
+    ...extra,
+  });
+}
 
 export interface SampleResult {
   key: string;
@@ -72,7 +84,8 @@ await verify(
     // #docregion ModuleMeta.contributes
     @Module({
       // Target "<HostModule>.<slot>"; each entry needs a unique `id`
-      contributes: { // [!code highlight]
+      contributes: {
+        // [!code highlight]
         "HttpModule.routes": [{ id: "admin.routes", prefix: "/api/admin" }], // [!code highlight]
       }, // [!code highlight]
     })
@@ -112,30 +125,17 @@ await verify(
       },
     };
 
+    const adminMeta = moduleMetaOf(AdminModule);
+    assert.deepEqual(adminMeta?.contributes, {
+      "HttpModule.routes": [{ id: "admin.routes", prefix: "/api/admin" }],
+    });
+
     const manifests = {
-      HttpModule: parseManifest({
-        name: "HttpModule",
-        requires: {},
-        provides: { slots: "HttpSlots" },
-        contributes: {},
-        children: [],
+      HttpModule: mf("HttpModule", { provides: { slots: "HttpSlots" } }),
+      AdminModule: mf("AdminModule", {
+        contributes: adminMeta?.contributes ?? {},
       }),
-      AdminModule: parseManifest({
-        name: "AdminModule",
-        requires: {},
-        provides: {},
-        contributes: {
-          "HttpModule.routes": [{ id: "admin.routes", prefix: "/api/admin" }],
-        },
-        children: [],
-      }),
-      AppModule: parseManifest({
-        name: "AppModule",
-        requires: {},
-        provides: {},
-        contributes: {},
-        children: ["HttpModule", "AdminModule"],
-      }),
+      AppModule: mf("AppModule", { children: ["HttpModule", "AdminModule"] }),
     };
 
     const tree = await bootModules(moduleDefOf(AppModule, { manifests }), {
@@ -144,10 +144,12 @@ await verify(
     });
     try {
       assert.equal(received.length, 1);
-      assert.equal(received[0].from, "AdminModule");
-      assert.equal((received[0].data as { prefix: string }).prefix, "/api/admin");
+      const first = received[0];
+      assert.ok(first);
+      assert.equal(first.from, "AdminModule");
+      assert.equal((first.data as { prefix: string }).prefix, "/api/admin");
       // Proves AdminModule.setup() ran and bound `routes` before HttpModule.setup()
-      assert.equal((received[0].code as RouteHandler).handle("/users"), "admin:/users");
+      assert.equal((first.code as RouteHandler).handle("/users"), "admin:/users");
     } finally {
       tree.dispose();
     }
@@ -190,22 +192,14 @@ await verify(
     @Module({ children: [CounterModule] })
     class AppModule {}
 
+    const counterMeta = moduleMetaOf(CounterModule);
+    assert.deepEqual(counterMeta?.context, { version: 2, schema: { count: "number" } });
+
     const manifests = {
-      CounterModule: parseManifest({
-        name: "CounterModule",
-        requires: {},
-        provides: {},
-        contributes: {},
-        context: { version: 2, schema: { count: "number" } },
-        children: [],
+      CounterModule: mf("CounterModule", {
+        context: counterMeta?.context,
       }),
-      AppModule: parseManifest({
-        name: "AppModule",
-        requires: {},
-        provides: {},
-        contributes: {},
-        children: ["CounterModule"],
-      }),
+      AppModule: mf("AppModule", { children: ["CounterModule"] }),
     };
 
     const inst1 = new CounterModule();
@@ -294,41 +288,22 @@ await verify(
     class PlatformModule {}
     // #enddocregion ModuleMeta.children
 
+    const runnerSig = {
+      name: "Runner",
+      methods: { statusOf: { params: [str], returns: str } },
+      slots: {},
+    };
     const ifaces: TableLike = {
-      "SessionsModule#Runner": {
-        name: "Runner",
-        methods: { statusOf: { params: [str], returns: str } },
-        slots: {},
-      },
-      "SchedulerModule#Runner": {
-        name: "Runner",
-        methods: { statusOf: { params: [str], returns: str } },
-        slots: {},
-      },
+      "SessionsModule#Runner": runnerSig,
+      "SchedulerModule#Runner": runnerSig,
     };
 
     const manifests = {
-      SessionsModule: parseManifest({
-        name: "SessionsModule",
-        requires: {},
-        provides: { runner: "Runner" },
-        contributes: {},
-        children: [],
-      }),
-      SchedulerModule: parseManifest({
-        name: "SchedulerModule",
+      SessionsModule: mf("SessionsModule", { provides: { runner: "Runner" } }),
+      SchedulerModule: mf("SchedulerModule", {
         requires: { runner: { iface: "Runner", from: "SessionsModule" } },
-        provides: {},
-        contributes: {},
-        children: [],
       }),
-      PlatformModule: parseManifest({
-        name: "PlatformModule",
-        requires: {},
-        provides: {},
-        contributes: {},
-        children: ["SchedulerModule", "SessionsModule"],
-      }),
+      PlatformModule: mf("PlatformModule", { children: ["SchedulerModule", "SessionsModule"] }),
     };
 
     const def = moduleDefOf(PlatformModule, { manifests });
@@ -404,53 +379,44 @@ await verify(
     @Module({ children: [IdentityModule, AuditModule] })
     class PlatformModule {}
 
+    const usersSig = {
+      name: "Users",
+      methods: { find: { params: [str], returns: str } },
+      slots: {},
+    };
+    const cacheSig = {
+      name: "Cache",
+      methods: { get: { params: [str], returns: str } },
+      slots: {},
+    };
     const ifaces: TableLike = {
-      "UsersRepo#Users": { name: "Users", methods: { find: { params: [str], returns: str } }, slots: {} },
-      "UsersRepo#UsersRepo": { name: "UsersRepo", methods: { find: { params: [str], returns: str } }, slots: {} },
-      "InternalCache#Cache": { name: "Cache", methods: { get: { params: [str], returns: str } }, slots: {} },
-      "InternalCache#InternalCache": { name: "InternalCache", methods: { get: { params: [str], returns: str } }, slots: {} },
-      "IdentityModule#Users": { name: "Users", methods: { find: { params: [str], returns: str } }, slots: {} },
-      "AuditModule#Users": { name: "Users", methods: { find: { params: [str], returns: str } }, slots: {} },
-      "LeakyModule#Cache": { name: "Cache", methods: { get: { params: [str], returns: str } }, slots: {} },
+      "UsersRepo#Users": usersSig,
+      "UsersRepo#UsersRepo": { ...usersSig, name: "UsersRepo" },
+      "InternalCache#Cache": cacheSig,
+      "InternalCache#InternalCache": { ...cacheSig, name: "InternalCache" },
+      "IdentityModule#Users": usersSig,
+      "AuditModule#Users": usersSig,
+      "LeakyModule#Cache": cacheSig,
     };
 
+    const idMeta = moduleMetaOf(IdentityModule);
+    assert.deepEqual(idMeta?.exports, [Users]);
+    assert.deepEqual(idMeta?.children, [UsersRepo, InternalCache]);
+
     const manifests = {
-      UsersRepo: parseManifest({
-        name: "UsersRepo",
-        requires: {},
-        provides: { UsersRepo: "UsersRepo", Users: "Users" },
-        contributes: {},
-        children: [],
-      }),
-      InternalCache: parseManifest({
-        name: "InternalCache",
-        requires: {},
+      UsersRepo: mf("UsersRepo", { provides: { UsersRepo: "UsersRepo", Users: "Users" } }),
+      InternalCache: mf("InternalCache", {
         provides: { InternalCache: "InternalCache", Cache: "Cache" },
-        contributes: {},
-        children: [],
       }),
-      IdentityModule: parseManifest({
-        name: "IdentityModule",
-        requires: {},
+      IdentityModule: mf("IdentityModule", {
         provides: { Users: "Users" },
-        exports: ["Users"],
-        contributes: {},
-        children: ["UsersRepo", "InternalCache"],
+        exports: (idMeta?.exports ?? []).map((e) => e.name),
+        children: (idMeta?.children ?? []).map((c) => c.name),
       }),
-      AuditModule: parseManifest({
-        name: "AuditModule",
+      AuditModule: mf("AuditModule", {
         requires: { users: { iface: "Users", from: "IdentityModule" } },
-        provides: {},
-        contributes: {},
-        children: [],
       }),
-      PlatformModule: parseManifest({
-        name: "PlatformModule",
-        requires: {},
-        provides: {},
-        contributes: {},
-        children: ["IdentityModule", "AuditModule"],
-      }),
+      PlatformModule: mf("PlatformModule", { children: ["IdentityModule", "AuditModule"] }),
     };
 
     const tree = await bootModules(moduleDefOf(PlatformModule, { manifests }), {
@@ -473,20 +439,8 @@ await verify(
         moduleDefOf(BrokenPlatform, {
           manifests: {
             ...manifests,
-            LeakyModule: parseManifest({
-              name: "LeakyModule",
-              requires: { cache: { iface: "Cache" } },
-              provides: {},
-              contributes: {},
-              children: [],
-            }),
-            BrokenPlatform: parseManifest({
-              name: "BrokenPlatform",
-              requires: {},
-              provides: {},
-              contributes: {},
-              children: ["IdentityModule", "LeakyModule"],
-            }),
+            LeakyModule: mf("LeakyModule", { requires: { cache: { iface: "Cache" } } }),
+            BrokenPlatform: mf("BrokenPlatform", { children: ["IdentityModule", "LeakyModule"] }),
           },
         }),
         { ifaces, resources: emptyResources() },
