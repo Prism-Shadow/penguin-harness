@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
 import {
   budgetTone,
+  financeBudgetTone,
   dailyBreaks,
   financeKpis,
   financeSeries,
@@ -150,6 +151,25 @@ describe("budgetTone", () => {
     expect(budgetTone(1)).toBe("danger");
     expect(budgetTone(undefined)).toBe("muted");
     expect(budgetTone(Number.NaN)).toBe("muted");
+  });
+
+  it("uses custom warning and pause thresholds", () => {
+    expect(budgetTone(0.3, 0.4, 0.5)).toBe("success");
+    expect(budgetTone(0.4, 0.4, 0.5)).toBe("attention");
+    expect(budgetTone(0.5, 0.4, 0.5)).toBe("danger");
+    expect(budgetTone(0.6, 0.4, 0.5)).toBe("danger");
+  });
+});
+
+describe("financeBudgetTone", () => {
+  it("prefers the server-computed budget state", () => {
+    expect(financeBudgetTone(0.6, { warned: true, paused: true })).toBe("danger");
+
+    expect(financeBudgetTone(0.45, { warned: true, paused: false })).toBe("attention");
+
+    expect(financeBudgetTone(1.2, { warned: false, paused: false })).toBe("success");
+
+    expect(financeBudgetTone(undefined, { warned: true, paused: true })).toBe("muted");
   });
 });
 

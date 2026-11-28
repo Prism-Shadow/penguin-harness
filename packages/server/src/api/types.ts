@@ -4258,6 +4258,10 @@ export interface OrgEmployeeItem {
 export interface OrgChartResponse {
   ceoAgentId: string;
   employees: OrgEmployeeItem[];
+  /** Organization-specific budget warning threshold. */
+  budgetWarnRatio: number;
+  /** Organization-specific budget pause threshold. */
+  budgetPauseRatio: number;
 }
 
 export interface OrgCalendarItem {
