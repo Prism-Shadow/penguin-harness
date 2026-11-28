@@ -3,16 +3,16 @@
  *
  * The harness records an Agent's workbench versions as commits in the bare repository beside its
  * Agent State (`<agentDir>/agent_state.git/`). Everything that is cheap in-process stays in the
- * harness and is never handed to an engine: reading HEAD and trees, comparing a folder with the
+ * harness and is never handed to an engine: reading HEAD and refs, comparing a folder with the
  * tree HEAD has, walking the history, creating the repository, deciding which file names git
  * refuses, and choosing who a version is by. An ENGINE does the two steps whose cost grows with
  * the files: writing one commit (its blobs, trees, the commit and the branch move) and reading
- * many blobs back. The built-in engine is pure JavaScript; a plugin may contribute another to the
- * server's `AgentStateHistoryModule.engines` slot, and the harness hands it a step only from the
- * folder size it says it is faster from (`fasterFrom`), keeping the rest built-in.
+ * objects back. There is no built-in engine: a deployment contributes one to the server's
+ * `AgentStateHistoryModule.engines` slot, and the first contributed engine that is ready does
+ * every step; with none, reading or recording history is an error.
  *
- * Both engines must write the same bytes: the same input gives the same commit id under either,
- * so a repository can change hands between them at any commit.
+ * Every engine must write the same bytes: the same input gives the same commit id under any of
+ * them, so a repository can change hands between them at any commit.
  */
 
 /** One file of a folder: its `/`-separated path inside the folder and its bytes. */
@@ -56,27 +56,13 @@ export interface AgentStateCommit {
 export interface AgentStateEngine {
   /** What log lines call it, e.g. `git 2.56.1 (dugite)`. */
   readonly name: string;
-  /**
-   * The smallest folder, in files, for which this engine does each step faster than the built-in
-   * one, as measured on this host's platform: a commit of a smaller folder, and a read of a
-   * smaller version, stay built-in. Absent, or a step absent: from one file.
-   */
-  readonly fasterFrom?: { commit?: number; read?: number };
   /** Writes the commit's objects, then moves the branch from `parent` to it; the commit id (full hex). */
   commit(commit: AgentStateCommit): Promise<string>;
-  /** The bodies of these blobs (full hex ids), in the order asked; an id not in the repository rejects. */
-  readBlobs(gitdir: string, oids: readonly string[]): Promise<Uint8Array[]>;
-}
-
-/**
- * Raised by an engine that could not run at all — its program missing, not executable, or killed
- * before it answered — as opposed to git running and refusing the write. Only this kind is
- * retried with the built-in engine, and the harness stops asking that engine for the rest of the
- * process; a refusal (the branch moved, a ref locked by another program) is the repository's
- * answer and is reported as it is.
- */
-export interface AgentStateEngineUnavailable extends Error {
-  readonly engineUnavailable: true;
+  /**
+   * The raw content of these objects (a blob's bytes, a tree's entries, a commit's headers —
+   * whatever each id names), null where an id is not in the repository, in the order asked.
+   */
+  readObjects(gitdir: string, oids: readonly string[]): Promise<Array<Uint8Array | null>>;
 }
 
 /** What the harness hands an engine source when it asks for the engine. */
@@ -91,11 +77,11 @@ export interface AgentStateEngineHost {
 }
 
 /**
- * The code half of an `AgentStateHistoryModule.engines` contribution: the engine, or null when it
- * cannot run on this host, or a promise of either for an engine that has to fetch or probe a
- * program first. The harness asks once per App, does not wait for the answer, and records with
- * the built-in engine until a non-null one arrives.
+ * The code half of an `AgentStateHistoryModule.engines` contribution: the engine, or a promise
+ * of it for an engine that has to fetch or probe a program first. The harness asks once per
+ * App and records with the first source that answered with an engine; a source that fails
+ * leaves the deployment without an engine, which the harness reports as it is.
  */
 export type AgentStateEngineSource = (
   host: AgentStateEngineHost,
-) => AgentStateEngine | null | Promise<AgentStateEngine | null>;
+) => AgentStateEngine | Promise<AgentStateEngine>;

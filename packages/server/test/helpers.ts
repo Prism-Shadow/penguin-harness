@@ -83,6 +83,8 @@ import type { WeChatTransport } from "@prismshadow/penguin-library-messaging/wec
 import { WeChatScanTransportProvider } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import type { WeChatScanTransport } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
+import { AgentStateHistoryModule } from "../src/workbenches/engines.js";
+import { gitEngineForTests } from "./helpers/agent-state-git-engine.js";
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
@@ -548,23 +550,30 @@ async function bootTestApp(
 ): Promise<TestApp> {
   const { plugins, assetsDir, ...overrides } = options;
   let boot: ServerBoot | undefined;
+  const replacements: Array<readonly [ModuleClass, object]> = [
+    ...replacementsFor(
+      {
+        log: () => {},
+        passwordHashCost: TEST_PASSWORD_HASH_COST,
+        // The bridge's per-line pace is a real wait in production; every test but the one
+        // about the pacing itself collapses it to nothing.
+        messagingLineDelayMs: 0,
+        ...overrides,
+      },
+      config.root,
+    ),
+  ];
+  // Without a plugin host a test supplies, the app has no Agent State engine of its own —
+  // stand the real one in (this host's `git` program, the plugin's engine over it), as a
+  // production host's plugin would. A host a test brings provides its own engines.
+  if (plugins === undefined) {
+    const engine = await gitEngineForTests();
+    if (engine !== null) {
+      replacements.push([AgentStateHistoryModule, { engines: { current: () => engine } }]);
+    }
+  }
   try {
-    boot = await bootAppDeps(
-      config,
-      replacementsFor(
-        {
-          log: () => {},
-          passwordHashCost: TEST_PASSWORD_HASH_COST,
-          // The bridge's per-line pace is a real wait in production; every test but the one
-          // about the pacing itself collapses it to nothing.
-          messagingLineDelayMs: 0,
-          ...overrides,
-        },
-        config.root,
-      ),
-      undefined,
-      plugins,
-    );
+    boot = await bootAppDeps(config, replacements, undefined, plugins);
     if (assetsDir !== undefined) {
       (flattenForTests(boot).hmr as { assetsDir(): string | null }).assetsDir = () => assetsDir;
     }

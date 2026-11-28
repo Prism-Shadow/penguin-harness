@@ -92,6 +92,7 @@ import {
   writeWorkbenchSource,
 } from "./archive.js";
 import { migrateWorkbenches } from "./migrate.js";
+import type { AgentStateEngines } from "./engines.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { contributedAppIcon, WorkbenchNotFound } from "./service.js";
@@ -290,6 +291,8 @@ export interface WorkbenchRouteDeps {
   /** The archive routes write and read the folders themselves, under this data root. */
   root: string;
   agentConfig: Pick<AgentConfig, "requireExists">;
+  /** Which engine records Agent State versions, once an older layout has moved into it. */
+  engines: Pick<AgentStateEngines, "current">;
 }
 
 /**
@@ -538,7 +541,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
    * first would take the place the conversion publishes into, and stop it.
    */
   const folders = async (projectId: string, agentId: string): Promise<string> => {
-    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId), () => deps.engines.current());
     return workbenchesDir(deps.root, projectId, agentId);
   };
 
@@ -834,6 +837,7 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
 export class WorkbenchRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly engines!: AgentStateEngines;
   @Use() private readonly paths!: Paths;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly prefs!: UiPrefsStore;
@@ -849,6 +853,7 @@ export class WorkbenchRoutes {
       workbenches: this.workbenches,
       root: this.paths.root,
       agentConfig: this.agentConfig,
+      engines: this.engines,
     });
     this.appCenterRoutes = appCenterRoutes({
       access: this.access,

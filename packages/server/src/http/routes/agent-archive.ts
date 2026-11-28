@@ -28,6 +28,7 @@ import {
 import { refuseSystemAgentChange } from "../../services/system-agent.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
+import type { AgentStateEngines } from "../../workbenches/engines.js";
 import { HttpError } from "../errors.js";
 import { badRequest, requireValidId } from "../validate.js";
 
@@ -39,6 +40,8 @@ export interface AgentArchiveRouteDeps extends AgentExportDeps {
   snapshots: Snapshots;
   traces: Pick<Traces, "importSessions">;
   workbenches: Pick<Workbenches, "whileReleased">;
+  /** Which engine records Agent State versions, once an older layout has moved into it. */
+  engines: Pick<AgentStateEngines, "current">;
   now: () => Date;
 }
 
@@ -52,7 +55,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     await deps.agentConfig.requireExists(projectId, agentId);
     await refuseSystemAgentChange(deps.agentConfig, projectId, agentId, "export");
     // Workbenches still in an older layout move into agent_state/ first, so the package has them.
-    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId), () => deps.engines.current());
     const zip = await exportAgent(deps, projectId, agentId, c.req.query() as AgentArchiveQuery);
     const day = formatLocalDate(deps.now()).replaceAll("-", "");
     return new Response(new Uint8Array(zip), {
@@ -105,7 +108,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
       // the backup taken before the swap holds them and the package's cannot take their ids; then
       // what the server holds open there lets go until the swap is over (Windows cannot rename a
       // watched directory).
-      await migrateWorkbenches(dir);
+      await migrateWorkbenches(dir, () => deps.engines.current());
       const imported = await deps.workbenches.whileReleased(projectId, agentId, async () => {
         const done = await deps.snapshots.importArchive(projectId, agentId, pkg, {
           preSnapshot: true,

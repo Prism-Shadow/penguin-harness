@@ -9,9 +9,9 @@
  * refs are ignored, and `safe.directory` admits the repository whoever owns its files. What it
  * writes is synced: objects and refs (`core.fsync`), the loose objects in one batch.
  *
- * A process that could not start, or died on a signal, rejects with `engineUnavailable` (core's
- * `AgentStateEngineUnavailable`): the harness then does the step with its built-in engine. A
- * process that ran and exited non-zero rejects with what git said on stderr.
+ * A process that could not start, or died on a signal, rejects with why; one that ran and
+ * exited non-zero rejects with what git said on stderr. Either way the write fails as it is:
+ * there is no other engine to fall back to.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
@@ -55,11 +55,6 @@ export function gitArgs(gitdir: string): string[] {
   ];
 }
 
-/** An error for a process that could not run at all. */
-export function unavailable(message: string): Error {
-  return Object.assign(new Error(message), { engineUnavailable: true as const });
-}
-
 /** Starts git; the caller writes stdin and reads stdout. */
 export function start(
   git: GitProgram,
@@ -90,13 +85,13 @@ export function finish(
     if (opts.keepStdout !== false) child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.on("error", (err: NodeJS.ErrnoException) =>
-      reject(unavailable(`git ${what}: ${err.code ?? err.message}`)),
+      reject(new Error(`git ${what}: ${err.code ?? err.message}`)),
     );
     child.stdin.on("error", (err: NodeJS.ErrnoException) => {
       if (err.code !== "EPIPE") reject(err);
     });
     child.on("close", (code, signal) => {
-      if (signal !== null) reject(unavailable(`git ${what}: killed by ${signal}`));
+      if (signal !== null) reject(new Error(`git ${what}: killed by ${signal}`));
       else if (code === 0) resolve(Buffer.concat(stdout));
       else {
         const said = Buffer.concat(stderr).toString().trim();

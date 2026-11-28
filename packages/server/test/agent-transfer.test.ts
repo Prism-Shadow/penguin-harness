@@ -52,7 +52,10 @@ import type {
   VaultResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { gitEngineForTests } from "./helpers/agent-state-git-engine.js";
 import type { TestApp } from "./helpers.js";
+
+const testEngine = await gitEngineForTests();
 
 describe("agent export/import", () => {
   let t: TestApp;
@@ -81,7 +84,8 @@ describe("agent export/import", () => {
   /** The default Agent's repository, holding one version of `demo` as a load records it. */
   async function recordedDemo(state: string) {
     const gitdir = agentStateRepoDir(path.dirname(state));
-    const repo = () => new AgentStateRepo({ gitdir, now: () => new Date(), log: () => {} });
+    const repo = () =>
+      new AgentStateRepo({ gitdir, engine: testEngine!, now: () => new Date(), log: () => {} });
     const files = { "package.json": '{"name":"demo"}', "index.ts": "export default {};" };
     await fs.mkdir(path.join(state, "workbenches", "demo"), { recursive: true });
     for (const [rel, text] of Object.entries(files)) {
@@ -137,39 +141,43 @@ describe("agent export/import", () => {
     expect(vault.entries.map((e) => e.key)).toEqual(["TOKEN"]);
   });
 
-  it("an import keeps the history, extracts no .git of any spelling, and releases the workbenches first", async () => {
-    const state = agentStateDir(t.root, projectId, "default_agent");
-    const history = await recordedDemo(state);
-    const marker = path.join(state, "marker.txt");
-    await fs.writeFile(marker, "previous State", "utf8");
-    // What the Agent's workbenches hold is let go while the previous State is still there.
-    const workbenches = t.deps.tree.api<Workbenches>("WorkbenchesModule", "Workbenches");
-    const release = workbenches.releaseAgent.bind(workbenches);
-    const seen: string[] = [];
-    vi.spyOn(workbenches, "releaseAgent").mockImplementation(async (p, a) => {
-      seen.push(await fs.readFile(marker, "utf8").catch(() => "swapped"));
-      return release(p, a);
-    });
+  it(
+    "an import keeps the history, extracts no .git of any spelling, and releases the workbenches first",
+    { skip: testEngine === null },
+    async () => {
+      const state = agentStateDir(t.root, projectId, "default_agent");
+      const history = await recordedDemo(state);
+      const marker = path.join(state, "marker.txt");
+      await fs.writeFile(marker, "previous State", "utf8");
+      // What the Agent's workbenches hold is let go while the previous State is still there.
+      const workbenches = t.deps.tree.api<Workbenches>("WorkbenchesModule", "Workbenches");
+      const release = workbenches.releaseAgent.bind(workbenches);
+      const seen: string[] = [];
+      vi.spyOn(workbenches, "releaseAgent").mockImplementation(async (p, a) => {
+        seen.push(await fs.readFile(marker, "utf8").catch(() => "swapped"));
+        return release(p, a);
+      });
 
-    const res = await overwrite(
-      rawPackage({
-        "agent_state/system_config.yaml": 'system_prompt: "hi"\nversion: 9\n',
-        "agent_state/skills/kept/SKILL.md": "# kept\n",
-        "agent_state/.git/config": "[core]\n\tfsmonitor = touch planted\n",
-        "C:agent_state/.git/hooks/post-checkout": "touch planted\n",
-        "agent_state/.GIT/HEAD": "ref: refs/heads/theirs\n",
-        "agent_state/skills/kept/GIT~1/config": "[core]\n",
-      }),
-    );
+      const res = await overwrite(
+        rawPackage({
+          "agent_state/system_config.yaml": 'system_prompt: "hi"\nversion: 9\n',
+          "agent_state/skills/kept/SKILL.md": "# kept\n",
+          "agent_state/.git/config": "[core]\n\tfsmonitor = touch planted\n",
+          "C:agent_state/.git/hooks/post-checkout": "touch planted\n",
+          "agent_state/.GIT/HEAD": "ref: refs/heads/theirs\n",
+          "agent_state/skills/kept/GIT~1/config": "[core]\n",
+        }),
+      );
 
-    expect(res.status, await res.text()).toBe(201);
-    expect(seen).toEqual(["previous State"]);
-    expect(await fs.readFile(path.join(state, "skills", "kept", "SKILL.md"), "utf8")).toBe(
-      "# kept\n",
-    );
-    expect((await pathsUnder(state)).filter((rel) => rel.split("/").some(isGitName))).toEqual([]);
-    expect(await history.listed()).toEqual([history.commit]);
-  });
+      expect(res.status, await res.text()).toBe(201);
+      expect(seen).toEqual(["previous State"]);
+      expect(await fs.readFile(path.join(state, "skills", "kept", "SKILL.md"), "utf8")).toBe(
+        "# kept\n",
+      );
+      expect((await pathsUnder(state)).filter((rel) => rel.split("/").some(isGitName))).toEqual([]);
+      expect(await history.listed()).toEqual([history.commit]);
+    },
+  );
 
   it("an export of an Agent whose workbenches were never migrated migrates them first", async () => {
     const dir = agentDir(t.root, projectId, "default_agent");

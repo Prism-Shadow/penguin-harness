@@ -6,6 +6,7 @@ import { memoryRoutes } from "../http/routes/memory.js";
 import { benchmarksRoutes } from "../http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "../http/routes/skills.js";
 import { agentArchiveRoutes } from "../http/routes/agent-archive.js";
+import type { AgentStateEngines } from "../workbenches/engines.js";
 import { agentTracesRoutes } from "../http/routes/agent-traces.js";
 import { agentApiRoutes } from "../http/routes/agent-api.js";
 import { agentAvatarRoutes } from "../http/routes/agent-avatar.js";
@@ -90,6 +91,7 @@ export class AgentRoutes {
   @Use() private readonly clock!: Clock;
   @Use() private readonly settings!: Settings;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly engines!: AgentStateEngines;
   @Use() private readonly agents!: AgentLifecycle;
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traceStore!: TraceIndexStore;
@@ -130,6 +132,7 @@ export class AgentRoutes {
       snapshots: this.snapshots,
       traces: this.traces,
       workbenches: this.workbenches,
+      engines: this.engines,
       traceIndex: this.traceIndex,
       traceStore: this.traceStore,
       sessions: this.sessions,

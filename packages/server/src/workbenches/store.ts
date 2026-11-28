@@ -293,12 +293,15 @@ const RESTORE_STAGING = `.restore${TMP_SUFFIX}`;
  * recorded by hand can hold anything) is refused before anything is written. Should putting back
  * fail too, the previous files are kept in the staging folder the error names.
  */
-export async function restoreSource(
+/**
+ * Atomically swaps `folder`'s source files with the files populated into `incoming` by `populate`.
+ * `state.json`, `node_modules/`, and dot entries stay untouched; on any rename failure all moved
+ * files are put back (or kept in `aside` and reported in an `AggregateError`).
+ */
+export async function restoreSourceFromDir(
   folder: WorkbenchFolder,
-  files: readonly SourceFile[],
+  populate: (incomingDir: string) => Promise<string[]>,
 ): Promise<void> {
-  const foreign = files.find((f) => !isSourcePath(f.rel));
-  if (foreign) throw new Error(`that version holds ${foreign.rel}, which is not workbench source`);
   await removeLeftovers(folder.dir, RESTORE_STAGING);
   const staging = await fs.mkdtemp(path.join(folder.dir, RESTORE_STAGING));
   const incoming = path.join(staging, "new");
@@ -312,34 +315,52 @@ export async function restoreSource(
     moved.push({ from, to });
   };
   try {
-    for (const [i, file] of files.entries()) {
-      await fs.writeFile(path.join(incoming, String(i)), file.body);
-    }
+    const incomingFiles = await populate(incoming);
+    const foreign = incomingFiles.find((rel) => !isSourcePath(rel));
+    if (foreign) throw new Error(`that version holds ${foreign}, which is not workbench source`);
     let set = 0;
     for (const rel of folder.files) {
       const current = path.join(folder.dir, rel);
       if (await fs.lstat(current).catch(() => null))
         await move(current, path.join(aside, String(set++)));
     }
-    for (const [i, file] of files.entries()) {
-      const blocker = await blockerOf(folder.dir, file.rel);
+    for (const rel of incomingFiles) {
+      const blocker = await blockerOf(folder.dir, rel);
       if (blocker !== null) await move(blocker, path.join(aside, String(set++)));
-      await move(path.join(incoming, String(i)), path.join(folder.dir, file.rel));
+      await move(path.join(incoming, rel), path.join(folder.dir, rel));
     }
   } catch (err) {
-    try {
-      for (const { from, to } of moved.reverse()) {
-        await fs.mkdir(path.dirname(from), { recursive: true });
-        await fs.rename(to, from);
+    if (moved.length > 0) {
+      try {
+        for (const { from, to } of moved.reverse()) {
+          await fs.mkdir(path.dirname(from), { recursive: true });
+          await fs.rename(to, from);
+        }
+      } catch (undo) {
+        throw new AggregateError(
+          [err, undo],
+          `The restore failed and the previous files could not all be put back; they are kept in ${aside}.`,
+        );
       }
-    } catch (undo) {
-      throw new AggregateError(
-        [err, undo],
-        `The restore failed and the previous files could not all be put back; they are kept in ${aside}.`,
-      );
     }
     await fs.rm(staging, { recursive: true, force: true });
     throw err;
   }
   await fs.rm(staging, { recursive: true, force: true });
+}
+
+export async function restoreSource(
+  folder: WorkbenchFolder,
+  files: readonly SourceFile[],
+): Promise<void> {
+  const foreign = files.find((f) => !isSourcePath(f.rel));
+  if (foreign) throw new Error(`that version holds ${foreign.rel}, which is not workbench source`);
+  await restoreSourceFromDir(folder, async (incoming) => {
+    for (const file of files) {
+      const dest = path.join(incoming, file.rel);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.writeFile(dest, file.body);
+    }
+    return files.map((f) => f.rel);
+  });
 }

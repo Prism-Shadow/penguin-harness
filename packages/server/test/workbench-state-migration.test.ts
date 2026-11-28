@@ -61,7 +61,10 @@ import { migrateWorkbenches } from "../src/workbenches/migrate.js";
 import { migrateWorkbenchesIntoState, SETTLE_MS } from "../src/workbenches/migrate-state.js";
 import { AgentStateRepo, agentStateRepoDir } from "../src/workbenches/repo.js";
 import { readFolder } from "../src/workbenches/store.js";
+import { gitEngineForTests } from "./helpers/agent-state-git-engine.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
+
+const testEngine = await gitEngineForTests();
 
 /** The versions the old history recorded, oldest first. */
 const RECORDED = [
@@ -146,6 +149,7 @@ const revisionOf = async (dir: string) => (await readFolder(dir, "demo"))!.revis
 const history = (agent: string, id = "demo") =>
   new AgentStateRepo({
     gitdir: agentStateRepoDir(agent),
+    engine: testEngine!,
     now: () => new Date(),
     log: () => {},
   }).history(`workbenches/${id}`);
@@ -158,7 +162,7 @@ async function expectLinked(agent: string): Promise<void> {
   );
 }
 
-describe("moving workbenches into Agent State", () => {
+describe("moving workbenches into Agent State", { skip: testEngine === null }, () => {
   let agent: string;
   beforeEach(async () => {
     agent = await fs.mkdtemp(path.join(os.tmpdir(), "workbench-state-migration-"));
@@ -169,7 +173,7 @@ describe("moving workbenches into Agent State", () => {
 
   it("puts an old-layout Agent's workbenches into agent_state and links the old place", async () => {
     const copies = await oldLayout(agent);
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     expect(await fs.readFile(moved(agent, "index.ts"), "utf8")).toBe(EDIT);
     expect(await fs.readFile(moved(agent, ".harness", "ifaces.json"), "utf8")).toBe("{}");
@@ -183,7 +187,7 @@ describe("moving workbenches into Agent State", () => {
 
   it("lists the recorded versions newest first with their times, and not the unloaded edit", async () => {
     const copies = await oldLayout(agent);
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     const versions = await history(agent);
     expect(versions.map((v) => v.revision)).toEqual([
       await revisionOf(backedUp(copies[1]!)),
@@ -200,7 +204,7 @@ describe("moving workbenches into Agent State", () => {
   it("leaves an Agent already on the new layout alone, journal included", async () => {
     await fs.mkdir(moved(agent), { recursive: true });
     await fs.writeFile(moved(agent, "package.json"), "{}");
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect(await fs.readdir(agent)).toEqual(["agent_state"]);
     expect(await fs.readdir(path.join(agent, "agent_state"))).toEqual(["workbenches"]);
   });
@@ -209,15 +213,15 @@ describe("moving workbenches into Agent State", () => {
     const todo = oldPlace(agent, "todo");
     await fs.mkdir(path.join(todo, "ui"), { recursive: true });
     await fs.writeFile(path.join(todo, "ui", "index.html"), "<h1>todo</h1>");
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect(await fs.readdir(todo)).toEqual(["ui"]);
     await fs.writeFile(path.join(todo, "package.json"), JSON.stringify({ name: "Todo" }));
     await fs.writeFile(path.join(todo, "index.ts"), "export default {};\n");
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect((await fs.readdir(todo)).sort()).toEqual(["index.ts", "package.json", "ui"]);
     expect((await fs.lstat(oldPlace(agent))).isDirectory()).toBe(true);
     await age(todo);
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect((await fs.readdir(inState(agent, "todo"))).sort()).toEqual([
       "index.ts",
       "package.json",
@@ -232,7 +236,7 @@ describe("moving workbenches into Agent State", () => {
     await fs.mkdir(oldPlace(agent, "not an id"));
     await fs.writeFile(oldPlace(agent, "not an id", "notes.txt"), "kept");
     await age(oldPlace(agent));
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     const kept = path.join(agent, JOURNAL, "backup", "workbenches");
     expect(await fs.readFile(path.join(kept, ".DS_Store"), "utf8")).toBe("finder");
     expect(await fs.readFile(path.join(kept, "not an id", "notes.txt"), "utf8")).toBe("kept");
@@ -244,11 +248,11 @@ describe("moving workbenches into Agent State", () => {
     const notes = oldPlace(agent, "notes");
     await fs.mkdir(notes, { recursive: true });
     await fs.writeFile(path.join(notes, "draft.md"), "draft");
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect(await fs.readFile(path.join(notes, "draft.md"), "utf8")).toBe("draft");
     expect((await fs.lstat(oldPlace(agent))).isDirectory()).toBe(true);
     await age(oldPlace(agent));
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     const kept = path.join(agent, JOURNAL, "backup", "workbenches", "notes", "draft.md");
     expect(await fs.readFile(kept, "utf8")).toBe("draft");
     await expectLinked(agent);
@@ -261,7 +265,10 @@ describe("moving workbenches into Agent State", () => {
     await fs.writeFile(inState(agent, "Demo", "package.json"), "mine");
     const lines: string[] = [];
     for (let run = 0; run < 2; run++) {
-      await migrateWorkbenchesIntoState(agent, { log: (line) => lines.push(line) });
+      await migrateWorkbenchesIntoState(agent, {
+        engine: testEngine!,
+        log: (line) => lines.push(line),
+      });
     }
     expect(await fs.readFile(inState(agent, "Demo", "package.json"), "utf8")).toBe("mine");
     expect(await fs.readFile(oldPlace(agent, "demo", "index.ts"), "utf8")).toBe(EDIT);
@@ -278,7 +285,7 @@ describe("moving workbenches into Agent State", () => {
     for (const text of ["first", "second"]) {
       await fs.writeFile(oldPlace(agent, ".DS_Store"), text);
       await age(oldPlace(agent));
-      await migrateWorkbenchesIntoState(agent);
+      await migrateWorkbenchesIntoState(agent, { engine: testEngine! });
     }
     expect(await fs.readFile(path.join(kept, ".DS_Store"), "utf8")).toBe("first");
     expect(await fs.readFile(path.join(kept, ".DS_Store.1"), "utf8")).toBe("second");
@@ -286,14 +293,14 @@ describe("moving workbenches into Agent State", () => {
 
   it("finishes a run stopped after committing and before moving, recording no version twice", async () => {
     const copies = await oldLayout(agent);
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     const recorded = await history(agent);
     // Back where a run stopped before its renames left them, with the versions committed.
     await fs.unlink(oldPlace(agent));
     await fs.rename(path.join(agent, "agent_state", "workbenches"), oldPlace(agent));
     await fs.mkdir(path.join(agent, "workbenches-history"));
     await fs.rename(path.dirname(backedUp(copies[0]!)), path.dirname(copies[0]!));
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect(await history(agent)).toEqual(recorded);
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     await expectLinked(agent);
@@ -301,7 +308,7 @@ describe("moving workbenches into Agent State", () => {
 
   it("lands what is written through the old place in Agent State, and keeps the link's target", async () => {
     await oldLayout(agent);
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     // As an Agent's file tools write from an installed Skill copy from before Agent State.
     await fs.mkdir(oldPlace(agent, "fresh", "ui"), { recursive: true });
     await fs.writeFile(oldPlace(agent, "fresh", "package.json"), JSON.stringify({ name: "F" }));
@@ -314,7 +321,7 @@ describe("moving workbenches into Agent State", () => {
     // An Agent State import can swap in a State without workbenches: the next access restores
     // the link's target.
     await fs.rm(path.join(agent, "agent_state", "workbenches"), { recursive: true });
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     await expectLinked(agent);
   });
 
@@ -327,7 +334,7 @@ describe("moving workbenches into Agent State", () => {
   ];
   it.each(removers)("never removes the workbenches through the link: %s", async (_, remove) => {
     await oldLayout(agent);
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     await expectLinked(agent);
     await remove(oldPlace(agent));
     await missing(oldPlace(agent));
@@ -337,7 +344,7 @@ describe("moving workbenches into Agent State", () => {
   it("imports no version of a recorded workbench whose folder is gone", async () => {
     const copies = await oldLayout(agent);
     await fs.rm(oldPlace(agent, "demo"), { recursive: true });
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     await missing(agentStateRepoDir(agent));
     expect(await fs.stat(copies[0]!)).toBeTruthy();
     await expectLinked(agent);
@@ -356,7 +363,7 @@ describe("moving workbenches into Agent State", () => {
     );
     await fs.writeFile(path.join(old, "state.json"), STATE);
     // Just written, but by the conversion, not an Agent: it moves on in the same run.
-    await migrateWorkbenches(agent);
+    await migrateWorkbenches(agent, testEngine!);
     expect(await fs.readFile(moved(agent, "index.ts"), "utf8")).toContain("WorkbenchPackage");
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     await missing(path.join(agent, "workflows"));
@@ -365,7 +372,10 @@ describe("moving workbenches into Agent State", () => {
 
   it("gives two callers at once one finished migration, each version recorded once", async () => {
     await oldLayout(agent);
-    await Promise.all([migrateWorkbenches(agent), migrateWorkbenches(agent)]);
+    await Promise.all([
+      migrateWorkbenches(agent, testEngine!),
+      migrateWorkbenches(agent, testEngine!),
+    ]);
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     expect(await history(agent)).toHaveLength(2);
   });
@@ -394,7 +404,10 @@ describe("moving workbenches into Agent State", () => {
       const index = path.join(agent, "workbenches-history", "demo", "versions.json");
       await fs.writeFile(index, rewrite(JSON.parse(await fs.readFile(index, "utf8")) as unknown[]));
       const lines: string[] = [];
-      await migrateWorkbenchesIntoState(agent, { log: (line) => lines.push(line) });
+      await migrateWorkbenchesIntoState(agent, {
+        engine: testEngine!,
+        log: (line) => lines.push(line),
+      });
       expect(await history(agent)).toHaveLength(listedAfter);
       expect(lines.filter((line) => line.includes("demo"))).toHaveLength(reported);
       expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
@@ -406,7 +419,10 @@ describe("moving workbenches into Agent State", () => {
     await fs.mkdir(agentStateRepoDir(agent), { recursive: true });
     await fs.writeFile(path.join(agentStateRepoDir(agent), "HEAD"), "not a ref\n");
     const lines: string[] = [];
-    await migrateWorkbenchesIntoState(agent, { log: (line) => lines.push(line) });
+    await migrateWorkbenchesIntoState(agent, {
+      engine: testEngine!,
+      log: (line) => lines.push(line),
+    });
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     expect(await fs.stat(backedUp(copies[0]!))).toBeTruthy();
     expect(lines.join("\n")).toContain("demo: old versions not imported");
@@ -415,7 +431,7 @@ describe("moving workbenches into Agent State", () => {
 
 describe(
   "the server migrates an Agent before it touches its workbenches",
-  { timeout: 30_000 },
+  { skip: testEngine === null, timeout: 30_000 },
   () => {
     const PROJECT = "owner-migrate";
     let t: TestApp;

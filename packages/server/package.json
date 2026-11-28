@@ -118,7 +118,6 @@
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.11",
-    "isomorphic-git": "^1.44.0",
     "mdast-util-gfm-footnote": "^2.1.0",
     "mdast-util-gfm-strikethrough": "^2.0.0",
     "mdast-util-gfm-table": "^2.0.0",
@@ -143,6 +142,7 @@
   },
   "devDependencies": {
     "@penguinharness/a2ui": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz",
+    "@penguinharness/agent-state-gitcl": "workspace:*",
     "@penguinharness/continual-learning": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.26/continual-learning-0.2.20.tgz",
     "@penguinharness/default-rsi-toolkit": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0/penguinharness-default-rsi-toolkit-0.2.19.tgz",
     "@penguinharness/skill-porting": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/skill-porting-0.2.19.tgz",
@@ -172,6 +172,7 @@
     "@types/which": "^3.0.4",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "4.1.12",
+    "isomorphic-git": "^1.44.0",
     "tsup": "^8.3.0",
     "tsx": "^4.20.0",
     "vitest": "^4.1.12"

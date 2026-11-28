@@ -1177,9 +1177,6 @@ importers:
       hono:
         specifier: ^4.13.11
         version: 4.13.13
-      isomorphic-git:
-        specifier: ^1.44.0
-        version: 1.44.10
       mdast-util-gfm-footnote:
         specifier: ^2.1.0
         version: 2.1.0(supports-color@10.2.2)
@@ -1244,6 +1241,9 @@ importers:
         specifier: ^2.5.0
         version: 2.9.0
     devDependencies:
+      '@penguinharness/agent-state-gitcl':
+        specifier: workspace:*
+        version: link:../../plugins/agent-state-gitcl
       '@penguinharness/a2ui':
         specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.25/a2ui-0.2.19.tgz
@@ -1334,6 +1334,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 4.1.12
         version: 4.1.12(vitest@4.1.12)
+      isomorphic-git:
+        specifier: ^1.44.0
+        version: 1.44.10
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -1780,9 +1783,42 @@ importers:
       dugite:
         specifier: 3.3.3
         version: 3.3.3(bare-buffer@3.7.3)
+      isomorphic-git:
+        specifier: ^1.44.0
+        version: 1.44.10
       tar:
         specifier: ^7.5.21
         version: 7.5.22
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/agent-state-gitcl:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/agent-state-gix:
+    devDependencies:
+      '@penguinharness/agent-state-git':
+        specifier: workspace:*
+        version: link:../agent-state-git
+      '@penguinharness/agent-state-gitcl':
+        specifier: workspace:*
+        version: link:../agent-state-gitcl
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -8631,7 +8667,6 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
-      isomorphic-git: 1.44.10
       mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
       mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
       mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
@@ -8694,7 +8729,6 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
-      isomorphic-git: 1.44.10
       mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
       mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
       mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
@@ -8757,7 +8791,6 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
-      isomorphic-git: 1.44.10
       mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
       mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
       mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)

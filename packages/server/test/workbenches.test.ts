@@ -96,9 +96,8 @@ import type {
 } from "../src/api/types.js";
 import nodeFs from "node:fs";
 import git from "isomorphic-git";
-import type { AgentStateEngine, AgentStateEngineSource } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine, GitEngineSource } from "@prismshadow/penguin-core/plugin";
 import { PluginHost } from "../src/plugin/host.js";
-import { builtinEngine } from "../src/workbenches/repo.js";
 import {
   apiClient,
   createTestApp,
@@ -108,6 +107,10 @@ import {
   waitFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { gitEngineForTests } from "./helpers/agent-state-git-engine.js";
+
+/** The engine every default test app records versions with (see helpers.ts). */
+const liveEngine = await gitEngineForTests();
 import { MOCK_MODEL_ID, requestText, startMockLLM } from "./live-session.js";
 
 const PROJECT = "owner-wf";
@@ -1383,73 +1386,96 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
 });
 
 describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
-  it("writes a load's version, reads the history and a restore, and the member's restore is under their name", async () => {
-    const calls: string[] = [];
-    const engine: AgentStateEngine = {
-      name: "recording",
-      fasterFrom: { commit: 40, read: 40 },
-      commit: (c) => {
-        calls.push("commit");
-        return builtinEngine.commit(c);
-      },
-      readBlobs: (at, oids) => {
-        calls.push("readBlobs");
-        return builtinEngine.readBlobs(at, oids);
-      },
-    };
-    let cacheDir = "";
-    const source: AgentStateEngineSource = (host) => {
-      cacheDir = host.cacheDir;
-      return engine;
-    };
-    const module: ModuleDef = {
-      manifest: parseManifest({
-        name: "RecordingEngine",
-        requires: {},
-        provides: {},
-        contributes: {
-          "AgentStateHistoryModule.engines": [{ id: "recording.engine", name: "recording" }],
+  it(
+    "writes a load's version, reads the history and a restore, and the member's restore is under their name",
+    { skip: liveEngine === null },
+    async () => {
+      const calls: string[] = [];
+      const engine: GitEngine = {
+        name: "recording",
+        open: async (gitdir) => {
+          const inner = await liveEngine!.open(gitdir);
+          return {
+            resolveHead: () => {
+              calls.push("resolveHead");
+              return inner.resolveHead();
+            },
+            listTree: (cid, pfx, opts) => {
+              calls.push("listTree");
+              return inner.listTree(cid, pfx, opts);
+            },
+            walkHistory: (opts) => {
+              calls.push("walkHistory");
+              return inner.walkHistory(opts);
+            },
+            extractTree: (opts) => {
+              calls.push("extractTree");
+              return inner.extractTree(opts);
+            },
+            commit: (c) => {
+              calls.push("commit");
+              return inner.commit(c);
+            },
+            close: () => inner.close(),
+          };
         },
-        children: [],
-      }),
-      create: () => ({ api: {}, bind: { "recording.engine": source } }),
-    };
-    const plugins = new PluginHost();
-    plugins.use({ specifier: "recording-engine", modules: [module], replaces: [] });
-    const logged: string[] = [];
-    const t = await createTestApp({ plugins, log: (line) => logged.push(line) });
-    try {
-      const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
-      expect((await owner.post("/api/projects", { projectId: PROJECT, name: "wf" })).status).toBe(
-        201,
-      );
-      const dir = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "demo");
-      await writeDemo(dir);
-      // Large enough that a commit and a restore are worth handing to this engine (`fasterFrom`).
-      for (let i = 0; i < 40; i++) {
-        await fs.writeFile(path.join(dir, "ui", `page-${i}.html`), `<p>${i}</p>`);
+      };
+      let cacheDir = "";
+      const source: GitEngineSource = (host) => {
+        cacheDir = host.cacheDir;
+        return engine;
+      };
+      const module: ModuleDef = {
+        manifest: parseManifest({
+          name: "RecordingEngine",
+          requires: {},
+          provides: {},
+          contributes: {
+            "AgentStateHistoryModule.engines": [{ id: "recording.engine", name: "recording" }],
+          },
+          children: [],
+        }),
+        create: () => ({ api: {}, bind: { "recording.engine": source } }),
+      };
+      const plugins = new PluginHost();
+      plugins.use({ specifier: "recording-engine", modules: [module], replaces: [] });
+      const logged: string[] = [];
+      const t = await createTestApp({ plugins, log: (line) => logged.push(line) });
+      try {
+        const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+        expect((await owner.post("/api/projects", { projectId: PROJECT, name: "wf" })).status).toBe(
+          201,
+        );
+        const dir = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+        await writeDemo(dir);
+        expect(cacheDir).toBe(path.join(t.root, "cache", "recording.engine"));
+        await waitFor(() => logged.some((line) => line.includes("recording records Agent State")));
+
+        const demo = await demoOf(owner);
+        expect(calls.filter((c) => c === "commit")).toEqual(["commit"]);
+        await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
+        await owner.post(`${BASE}/demo/reload`);
+        expect(
+          (await owner.put("/api/me/profile", { displayName: "Ada Lovelace" })).status,
+        ).toBeLessThan(300);
+        const back = await owner.post(`${BASE}/demo/rollback`, { revision: demo.revision });
+        expect(back.status, await back.text()).toBe(200);
+
+        // Three writes (the load, the reload, the restore), each reading the repository's
+        // objects back through the engine; how many reads a write or a walk takes is the
+        // repository's business, not the contract.
+        expect(calls.filter((c) => c === "commit")).toEqual(["commit", "commit", "commit"]);
+        expect(calls[calls.length - 1]).toBe("commit");
+        expect(calls).toContain("extractTree");
+        expect(calls).toContain("walkHistory");
+        const gitdir = path.join(agentDir(t.root, PROJECT, AGENT), "agent_state.git");
+        const tip = await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
+        const { commit } = await git.readCommit({ fs: nodeFs, gitdir, oid: tip });
+        expect(commit.author.name).toBe("Ada Lovelace");
+        expect(commit.message).toBe(`workbench demo @${demo.revision}\n`);
+      } finally {
+        await t.cleanup();
       }
-      expect(cacheDir).toBe(path.join(t.root, "cache", "recording.engine"));
-      await waitFor(() => logged.some((line) => line.includes("recording records Agent State")));
-
-      const demo = await demoOf(owner);
-      expect(calls).toEqual(["commit"]);
-      await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
-      await owner.post(`${BASE}/demo/reload`);
-      expect(
-        (await owner.put("/api/me/profile", { displayName: "Ada Lovelace" })).status,
-      ).toBeLessThan(300);
-      const back = await owner.post(`${BASE}/demo/rollback`, { revision: demo.revision });
-      expect(back.status, await back.text()).toBe(200);
-
-      expect(calls).toEqual(["commit", "commit", "readBlobs", "commit"]);
-      const gitdir = path.join(agentDir(t.root, PROJECT, AGENT), "agent_state.git");
-      const tip = await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
-      const { commit } = await git.readCommit({ fs: nodeFs, gitdir, oid: tip });
-      expect(commit.author.name).toBe("Ada Lovelace");
-      expect(commit.message).toBe(`workbench demo @${demo.revision}\n`);
-    } finally {
-      await t.cleanup();
-    }
-  });
+    },
+  );
 });
