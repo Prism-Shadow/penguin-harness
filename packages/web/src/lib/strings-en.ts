@@ -1870,7 +1870,9 @@ export const en: Strings = {
     commandPolicyInfo:
       "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression. A hit on a Deny rule is refused outright and a hit on an Ask rule waits for a person's go-ahead, whatever the approval mode allows; a Deny hit wins over an Ask hit. It is an accident guardrail: a command assembled at run time is not covered.",
     commandPolicyEnable: "Enable policy",
-    commandPolicyEnableDesc: "When off, no rule blocks anything.",
+    /** Off unless the Project's config turns it on, so the line says what off means. */
+    commandPolicyEnableDesc:
+      "Off by default. While it is off, the rules below do nothing and commands follow the approval mode alone; turn it on and a matching command is refused, or waits for a person's go-ahead.",
     commandPolicyRules: "Rules",
     commandPolicyRestore: "Restore defaults",
     /** Buffered like every edit (Save writes it), but it replaces the whole list in one click. */

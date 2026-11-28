@@ -235,13 +235,14 @@ export interface ProjectConfig {
    */
   default_chat?: ProjectChatDefaults;
   /**
-   * Sandbox command policy (`[command_policy]`): Project-owned deny rules for shell
+   * Sandbox command policy (`[command_policy]`): Project-owned ask and deny rules for shell
    * commands, threaded into every Session's Environment at creation and consulted ahead of
-   * the approval mode. The factory rule set is seeded at project creation like the model
-   * presets (copied in, never rewritten afterward); a config from before the seeding —
-   * absent block, or a block without a `rules` list — behaves as the factory set until the
-   * first saved edit materializes the list. Loaded tolerantly: an invalid value drops per
-   * key, and dropping `enabled` falls back to on.
+   * the approval mode while it is switched on — only `enabled = true` is on; a block without
+   * the key, or no block, is off. The factory rule set is seeded at project creation like the
+   * model presets (copied in, never rewritten afterward), with the switch left off; a config
+   * from before the seeding — absent block, or a block without a `rules` list — reads as the
+   * factory set until the first saved edit materializes the list. Loaded tolerantly: an
+   * invalid value drops per key, and a dropped `enabled` reads as off like an absent one.
    */
   command_policy?: CommandPolicyConfig;
   /**
@@ -272,9 +273,10 @@ export interface ProjectConfig {
 }
 
 /**
- * Returns the Project's default config: the factory command policy, and no providers, models or
- * default model. Core carries no model knowledge (PRN-021): the built-in catalog is the
- * server's, which seeds a new Project's file from it — the default model, each built-in group's
+ * Returns the Project's default config: the factory command-policy rules with the policy left
+ * off (no `enabled = true`), and no providers, models or default model. Core carries no model
+ * knowledge (PRN-021): the built-in catalog is the server's, which seeds a new Project's file
+ * from it — the default model, each built-in group's
  * `[providers.<id>]` table and the preset rows. A caller of the SDK alone writes its own
  * (addModel, setProviderConnection) before it creates a Session; this is also what
  * `loadProjectConfig` answers for a file that does not exist.
@@ -283,7 +285,8 @@ export function defaultProjectConfig(): ProjectConfig {
   return {
     // The factory command-policy rules are seeded like the model presets: copied into the
     // new project's config and owned by it from then on — later factory changes never
-    // rewrite an existing file. Spread to keep the module-level constant frozen.
+    // rewrite an existing file. Spread to keep the module-level constant frozen. No
+    // `enabled`: the policy stays off until a person switches it on.
     command_policy: { rules: DEFAULT_COMMAND_POLICY_RULES.map((r) => ({ ...r })) },
     models: [],
   };
@@ -631,12 +634,13 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
 /**
  * Leniently parses the `[command_policy]` block (sandbox command policy): each key is
  * validated independently and an invalid value drops that key rather than failing the
- * load. A non-boolean `enabled` falls back to on (the safe direction); a `rules` value
- * that is not an array reads as absent, i.e. the factory set. A present array is the
- * literal list — invalid entries are dropped individually, which can narrow the deny set,
- * but the write paths validate up front and the file is never hand-edited by design, so
- * this only fires for hand-placed data. A rule's `action` other than `"deny"` / `"ask"`
- * reads as absent, i.e. `deny` (the safe direction again).
+ * load. A non-boolean `enabled` drops, which reads as off like an absent one (only
+ * `enabled = true` switches the policy on); a `rules` value that is not an array reads as
+ * absent, i.e. the factory set. A present array is the literal list — invalid entries are
+ * dropped individually, which can narrow the deny set, but the write paths validate up front
+ * and the file is never hand-edited by design, so this only fires for hand-placed data. A
+ * rule's `action` other than `"deny"` / `"ask"` reads as absent, i.e. `deny` (the safe
+ * direction).
  *
  * Exported for the server's ProjectConfigService, which holds a cached parse of the same
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never

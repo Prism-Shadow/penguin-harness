@@ -1980,7 +1980,9 @@ export const zh = {
     commandPolicyInfo:
       "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式。命中「拒绝」规则即拒绝执行，命中「需确认」规则则等人同意后才执行，都不受审批模式影响；两种规则同时命中时以拒绝为准。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
     commandPolicyEnable: "启用策略",
-    commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
+    /** Off unless the Project's config turns it on, so the line says what off means. */
+    commandPolicyEnableDesc:
+      "默认关闭。关闭时下面的规则都不起作用，命令只按审批模式处理；打开后，命中规则的命令会被拒绝，或等人同意后才运行。",
     commandPolicyRules: "规则",
     commandPolicyRestore: "恢复默认",
     /** Buffered like every edit (Save writes it), but it replaces the whole list in one click. */

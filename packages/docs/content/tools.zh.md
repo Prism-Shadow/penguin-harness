@@ -358,7 +358,7 @@ type ApproveFn = (
 | CLI | `--approve` 有四种模式：`allow-all`（默认）、`deny-all`、`read-only`、`always-ask`。`read-only` 自动批准 `permission: "r"` 的工具，其余交给人工处理。这个标志设置 CLI 所驱动的服务器端 Session 的审批模式；不设置时，运行在 Agent 命令里的 CLI 会继承调用方 Session 的模式 |
 | Web / Server | 同样四种模式，按 Session 各自设置。每次决策都从数据库重新读取模式，因此改动立即生效。工具的 `r` / `rw` 取自运行上下文的工具集，因此权限改动在下一次轮换（压缩）时生效。人工决策通过 API 传入 |
 
-[命令策略](/configuration#命令策略)位于审批模式之上。`action: deny` 的规则把命中的调用当场以 `forbidden` 拒绝，不询问任何人；`action: ask` 的规则把命中的调用带着策略原因交给审批回调，服务端在 `deny-all` 以外的所有模式下都把它交给人决定（`deny-all` 下仍拒绝），所以即使在 `allow-all` 下，`gh pr merge` 也会停下来等人点一下。服务端把这样的调用作为普通的 `approval_request` 推送，附带 `reason: { kind: "policy", rule }`，Web App 的审批卡片会以一行弱化文字写明是哪条规则。无人值守的 Session（组织的工位与工单）无人可问，会当场拒绝这类调用。
+[命令策略](/configuration#命令策略)打开后位于审批模式之上；Project 配置里没写 `enabled = true` 时它是关闭的。`action: deny` 的规则把命中的调用当场以 `forbidden` 拒绝，不询问任何人；`action: ask` 的规则把命中的调用带着策略原因交给审批回调，服务端在 `deny-all` 以外的所有模式下都把它交给人决定（`deny-all` 下仍拒绝），所以即使在 `allow-all` 下，`gh pr merge` 也会停下来等人点一下。服务端把这样的调用作为普通的 `approval_request` 推送，附带 `reason: { kind: "policy", rule }`，Web App 的审批卡片会以一行弱化文字写明是哪条规则。无人值守的 Session（组织的工位与工单）无人可问，会当场拒绝这类调用。
 
 已安装的 pre-tool-use 钩子先于审批回调生效。钩子返回 `deny` 会直接拒绝调用，返回 `allow` 会直接批准，两者都不询问；但命令策略对它所匹配的调用依然说了算：命中 `deny` 规则的调用保持禁止，命中 `ask` 规则的调用仍交人决定，哪怕钩子已经放行。参见 [Pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)。
 

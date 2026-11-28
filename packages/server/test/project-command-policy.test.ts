@@ -2,8 +2,12 @@
  * A Project's sandbox command policy (GET|PUT /api/projects/:p/command-policy, the
  * `[command_policy]` block of .project_config.toml).
  *
- * - A new Project is seeded with the factory rules, every one of which asks; one from before
- *   seeding (no stored block) still serves them as the effective set, asking too.
+ * - A new Project is seeded with the factory rules, every one of which asks, and the policy
+ *   switched off: its file says nothing of `enabled`, and only `enabled = true` is on. One from
+ *   before seeding (no stored block) still serves the factory rules as its set, switched off
+ *   too.
+ * - Switching the policy on writes `enabled = true` into the file, the untouched factory rules
+ *   with it, and reads back on; switching it off writes `enabled = false`.
  * - Any member reads; only the owner writes, and a non-member cannot tell the Project exists.
  * - The rules are plain data: edit, disable, delete and add all round-trip, as do an empty
  *   list and a disabled policy, and a PUT materializes the full list.
@@ -18,6 +22,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import type {
   CommandPolicyDto,
   ErrorBody,
@@ -62,18 +67,25 @@ describe("project command policy", () => {
     ).toBe(201);
   });
 
-  it("a new project is seeded with the factory rules, all asking; any member reads; a non-member gets 404", async () => {
-    // Seeded at creation, model-presets style: the file itself carries the block.
-    const toml = await fs.readFile(
-      path.join(t.root, "projects", projectId, ".project_config.toml"),
-      "utf8",
-    );
-    expect(toml).toContain("[[command_policy.rules]]");
+  /** The `[command_policy]` block as the Project's file stores it. */
+  const storedBlock = async () =>
+    (
+      parseToml(
+        await fs.readFile(path.join(t.root, "projects", projectId, ".project_config.toml"), "utf8"),
+      ) as { command_policy?: { enabled?: unknown; rules?: unknown[] } }
+    ).command_policy;
+
+  it("a new project is seeded with the factory rules, all asking, and the policy off; any member reads; a non-member gets 404", async () => {
+    // Seeded at creation, model-presets style: the file itself carries the rules, and nothing
+    // that switches them on.
+    const block = await storedBlock();
+    expect(block?.rules?.length).toBeGreaterThan(0);
+    expect(block?.enabled).toBeUndefined();
 
     const res = await member.get(url);
     expect(res.status).toBe(200);
     const dto = (await res.json()) as CommandPolicyDto;
-    expect(dto.enabled).toBe(true);
+    expect(dto.enabled).toBe(false);
     expect(dto.rules.map((r) => r.name)).toContain("rm-recursive-force");
     expect(dto.rules.every((r) => r.enabled)).toBe(true);
     // A hit on any of them waits for a person; none refuses on its own.
@@ -82,7 +94,7 @@ describe("project command policy", () => {
     expect((await outsider.get(url)).status).toBe(404);
   });
 
-  it("a pre-seeding project (no stored block) still serves the factory rules", async () => {
+  it("a pre-seeding project (no stored block) still serves the factory rules, switched off", async () => {
     // Strip the seeded block, mimicking a config written before the feature existed
     // (drop every command_policy line up to the [[models]] section).
     const file = path.join(t.root, "projects", projectId, ".project_config.toml");
@@ -93,9 +105,22 @@ describe("project command policy", () => {
     await fs.writeFile(file, [...lines.slice(0, start), ...lines.slice(end)].join("\n"), "utf8");
 
     const dto = (await (await owner.get(url)).json()) as CommandPolicyDto;
-    expect(dto.enabled).toBe(true);
+    expect(dto.enabled).toBe(false);
     expect(dto.rules.map((r) => r.name)).toContain("rm-recursive-force");
     expect(dto.rules.every((r) => r.action === "ask")).toBe(true);
+  });
+
+  it("switching the policy on writes enabled = true with the untouched factory rules, and it stays on", async () => {
+    const seeded = (await (await owner.get(url)).json()) as CommandPolicyDto;
+    // What the settings page's switch sends: the stored rules as served, the flag flipped.
+    expect((await owner.put(url, { enabled: true, rules: seeded.rules })).status).toBe(200);
+    expect((await storedBlock())?.enabled).toBe(true);
+    const on = (await (await member.get(url)).json()) as CommandPolicyDto;
+    expect(on.enabled).toBe(true);
+    expect(on.rules).toEqual(seeded.rules);
+
+    expect((await owner.put(url, { enabled: false, rules: on.rules })).status).toBe(200);
+    expect((await storedBlock())?.enabled).toBe(false);
   });
 
   it("rules are editable data: edit, disable, delete and add all round-trip", async () => {

@@ -3,9 +3,10 @@
  * hands the call to the Session's approve callback with a policy reason, and the callback
  * (runtime/approvals.ts) puts it to a person whatever the approval mode.
  *
- * - Given an allow-all conversation on a real core Session, the model's `gh pr merge 7` waits
- *   for a person: the `approval_request` names the rule as its reason, a reconnecting page is
- *   told the same, and the person's no is the call's decision.
+ * - Given an allow-all conversation on a real core Session in a Project whose owner switched the
+ *   policy on, the model's `gh pr merge 7` waits for a person: the `approval_request` names the
+ *   rule as its reason, a reconnecting page is told the same, and the person's no is the call's
+ *   decision.
  * - Given a deny-all Session, such a call is denied and nobody is asked.
  * - Given an organization's Session (nobody watching), it is denied at once and nothing is
  *   pushed.
@@ -21,6 +22,7 @@ import type {
   ApproveFn,
 } from "@prismshadow/penguin-core";
 import type {
+  CommandPolicyDto,
   ProjectCreateResponse,
   ServerEvent,
   SessionCreateResponse,
@@ -94,6 +96,10 @@ describe("a command-policy ask hit in a real conversation", { timeout: 30_000 },
       await api.post("/api/projects", { projectId: "merge_user-ask", name: "ask project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+    // A new Project's policy is off: switched on as the settings page does, rules as seeded.
+    const policyUrl = `/api/projects/${projectId}/command-policy`;
+    const seeded = (await (await api.get(policyUrl)).json()) as CommandPolicyDto;
+    expect((await api.put(policyUrl, { enabled: true, rules: seeded.rules })).status).toBe(200);
     const models = await api.put(`/api/projects/${projectId}/models`, {
       defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
       models: [

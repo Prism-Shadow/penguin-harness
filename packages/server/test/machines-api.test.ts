@@ -29,7 +29,8 @@
  * - Given a model edit during a sync, it is written once afterwards, never dropped; what travels
  *   is every group connection and every row, a bare preset included.
  * - Given a Project config sync, the command policy and the new-chat defaults travel with the
- *   models — the machine keeps its own workspace, and its own default Agent when it lacks ours —
+ *   models — a policy block that never says `enabled = true` goes over switched off, the machine
+ *   keeps its own workspace, and its own default Agent when it lacks ours —
  *   and a value from this server's environment is named as not carried; a part the machine refuses
  *   is said and the rest still lands. Sync config checks the build first and refuses a machine on
  *   another build, writing nothing, and one not connected; a command policy saved here reaches the
@@ -1819,7 +1820,10 @@ describe("machines API", () => {
       );
       return { writes, answers, port, close: () => server.close() };
     };
-    /** This server's Project: a model keyed from its environment, a policy and new-chat defaults of its own. */
+    /**
+     * This server's Project: a model keyed from its environment, a policy and new-chat defaults
+     * of its own. The policy's block stores rules but no `enabled`, which is off.
+     */
     const bootOn = async (remote: Awaited<ReturnType<typeof machineServer>>) => {
       await boot({
         loadConfig: async () =>
@@ -1828,7 +1832,7 @@ describe("machines API", () => {
               { provider: "deepseek", model_id: "deepseek-v4-flash", api_key: "sk-x" },
               { provider: "openai", model_id: "gpt-5" },
             ],
-            command_policy: { enabled: false, rules: [{ name: "no-rm", pattern: "rm -rf" }] },
+            command_policy: { rules: [{ name: "no-rm", pattern: "rm -rf" }] },
             default_chat: { agent_id: "ours", workspace: "/home/me/here", thinking_level: "high" },
           }) as never,
         env: () => ({ OPENAI_API_KEY: "sk-env-0123456789" }),
@@ -1854,7 +1858,7 @@ describe("machines API", () => {
       return t.deps.machines.job()!;
     };
 
-    it("carries the command policy and the new-chat defaults, keeping the machine's own workspace and, when it lacks ours, its default Agent", async () => {
+    it("carries the command policy, off unless it says enabled = true, and the new-chat defaults, keeping the machine's own workspace and, when it lacks ours, its default Agent", async () => {
       const remote = await machineServer({
         refuse: (method, url, body) =>
           method === "PUT" &&

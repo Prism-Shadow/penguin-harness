@@ -163,15 +163,16 @@ export interface CommandPolicyRule {
  * wraps the injected approval callback with it, so a `deny` hit is refused without the human
  * being asked and an `ask` hit is put to a person — under every approval mode. It is
  * Project-owned security config, deliberately
- * outside Agent State so the Agent cannot rewrite it. The factory rule set is seeded into
- * new projects like model presets (copied at creation, never rewritten); an absent config
- * or an absent `rules` list means the factory set applies, and `enabled: false` switches
- * the whole policy off. An accident guardrail, not a security boundary — see
+ * outside Agent State so the Agent cannot rewrite it. It applies only while `enabled` is
+ * `true`: an absent config, or one that does not say `enabled: true`, applies no rule. The
+ * factory rule set is seeded into new projects like model presets (copied at creation, never
+ * rewritten), and an absent `rules` list means the factory set. An accident guardrail, not a
+ * security boundary — see
  * internal/command-policy.ts for what walks past it.
  * Docs: /docs/configuration § "Command policy".
  */
 export interface CommandPolicyConfig {
-  /** Master switch; absent = true. */
+  /** Master switch: only `true` turns the policy on; absent = off. */
   enabled?: boolean;
   /** The rule list; absent = the factory set (a stored empty list means no rules). A `deny` hit outranks an `ask` hit; within one action the first match in list order names the rule. */
   rules?: CommandPolicyRule[];
