@@ -13,6 +13,7 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import type { InstallStage } from "../src/api/endpoints";
 import {
   PluginBatchInstallModal,
   batchItemKey,
@@ -23,8 +24,14 @@ import {
 } from "../src/features/plugins/plugin-batch-install";
 import { pluginSourceConfigRequest } from "../src/features/plugins/plugin-source-assist";
 import { setActiveStrings } from "../src/lib/strings";
-import { EN_STRINGS } from "../src/lib/strings-en";
-import { click, mount, settle, unmount } from "./ui-harness";
+import { en } from "../src/lib/strings-en";
+import { click, mount, settle, unmountAll } from "./helpers/dom";
+
+beforeEach(() => {
+  localStorage.setItem("penguin.lang", "en");
+  setActiveStrings(en);
+});
+afterEach(unmountAll);
 
 const ITEMS: BatchPluginItem[] = [
   {
@@ -63,7 +70,7 @@ describe("batch install progress math and deduplication", () => {
         },
         [batchItemKey(ITEMS[1]!)]: {
           status: "running",
-          stage: { stage: "downloading" },
+          stage: { stage: "installing", source: "channel" },
           progress: { received: 500, total: 1000 },
           error: null,
         },
@@ -127,32 +134,21 @@ describe("batch install progress math and deduplication", () => {
 });
 
 describe("pluginSourceConfigRequest", () => {
-  const agents = [
-    { agentId: "a1", name: "Helper", model: "m" },
-    { agentId: "a2", name: "Secondary", model: "m" },
-  ] as unknown as AgentSummary[];
-
-  it("builds a /chat/new handoff mentioning failed plugins and mirror/source options", () => {
-    const req = pluginSourceConfigRequest(agents, [
-      { specifier: "@acme/alpha", error: "timed out reaching github.com" },
-    ]);
-    expect(req.path).toBe("/chat/new");
-    expect(req.state.agentId).toBe("a1");
-    expect(req.state.draft).toContain("@acme/alpha");
-    expect(req.state.draft).toContain("timed out reaching github.com");
-    expect(req.state.draft).toContain("gh-proxy.com");
+  it("prefills a temporary workspace prompt with failed plugin specifiers and errors", () => {
+    const agents = [{ agentId: "assistant" }] as AgentSummary[];
+    const req = pluginSourceConfigRequest(
+      [{ specifier: "@acme/beta", error: "ETIMEDOUT connecting to github.com" }],
+      agents,
+    );
+    expect(req).not.toBeNull();
+    expect(req!.agentId).toBe("assistant");
+    expect(req!.workspace).toBe("");
+    expect(req!.text).toContain("@acme/beta");
+    expect(req!.text).toContain("ETIMEDOUT connecting to github.com");
   });
 });
 
 describe("PluginBatchInstallModal", () => {
-  beforeEach(() => {
-    setActiveStrings(EN_STRINGS);
-  });
-
-  afterEach(async () => {
-    await unmount();
-  });
-
   it("shows structured reasons and clickable links before consent with zero silent downloads, then runs sequentially", async () => {
     let releaseFirst!: () => void;
     const started: string[] = [];
@@ -188,12 +184,12 @@ describe("PluginBatchInstallModal", () => {
         item: BatchPluginItem,
         cb: {
           onProgress: (r: number, t: number | null) => void;
-          onStage: (s: { stage: "checking" | "downloading" | "loading" }) => void;
+          onStage: (s: InstallStage) => void;
         },
       ) => {
         started.push(item.specifier);
         if (item.specifier === "@acme/alpha") {
-          cb.onStage({ stage: "downloading" });
+          cb.onStage({ stage: "installing", source: "channel" });
           cb.onProgress(512 * 1024, 1024 * 1024);
           return new Promise<{ loadError?: string }>((resolve) => {
             releaseFirst = () => resolve({});
