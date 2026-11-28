@@ -3095,6 +3095,7 @@ router
   .post("/api/builtin-browser/tabs/claim", browserUnavailable)
   .post("/api/builtin-browser/tabs/on-screen", browserUnavailable)
   .post("/api/builtin-browser/tabs/:tab/activate", browserUnavailable)
+  .post("/api/builtin-browser/tabs/:tab/viewport", browserUnavailable)
   .delete("/api/builtin-browser/tabs/:tab", browserUnavailable)
   .get("/api/builtin-browser/import/sources", (): BuiltinBrowserImportSourcesResponse => ({
     sources: [],

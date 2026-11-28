@@ -216,6 +216,9 @@ async function handle(server: string, command: DesktopBrowserCommand): Promise<u
     case "activate-tab":
       await tabs.activate(server, command.tabId);
       return {};
+    case "set-window-size":
+      if (paused) throw new Error("extension_paused");
+      return tabs.setWindowSize(server, command.tabId, command.width, command.height);
     case "read-cookies":
       if (paused) throw new Error("extension_paused");
       return cookieExport.read(server);
@@ -326,6 +329,10 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 
 chrome.tabGroups.onRemoved.addListener((group) => {
   void ready.then(() => tabs.onGroupRemoved(group.id));
+});
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  void ready.then(() => tabs.onWindowRemoved(windowId));
 });
 
 chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {

@@ -14,6 +14,7 @@
  *     unless --accept-dialogs)
  *   penguin browser screenshot [-o <file.png>] [--full-page]
  *   penguin browser cdp <Domain.method> [--params <json>]
+ *   penguin browser resize [<w>x<h>] [--scale <n>] | resize --fit
  *   penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
  *   penguin browser history [<query>] [-n <count>]
  *
@@ -41,6 +42,7 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
+  BuiltinBrowserViewportResult,
 } from "@prismshadow/penguin-server/api";
 import type { BrowserMessages } from "./browser.messages.js";
 import {
@@ -49,6 +51,7 @@ import {
   renderHistory,
   renderImportResult,
   renderImportSources,
+  renderResize,
   renderScan,
   renderStatus,
   renderTabs,
@@ -64,6 +67,8 @@ import {
   parseIndex,
   parseParams,
   parsePoint,
+  parseScale,
+  parseSize,
   parseTimeout,
   positiveInt,
   print,
@@ -394,6 +399,41 @@ export function registerBrowserCommand(browser: Command, t: BrowserMessages): vo
       if (opts.json === true) printJson(res);
       else print(renderCdpResult(res.result, t));
     }),
+  );
+
+  onTab(
+    browser
+      .command("resize")
+      .description(t.browser.resizeDesc)
+      .argument("[size]", t.browser.sizeArg)
+      .option("--scale <n>", t.browser.scale)
+      .option("--fit", t.browser.fit),
+  ).action(
+    action(
+      t,
+      async (raw: string | undefined, opts: CommonOpts & { scale?: string; fit?: boolean }) => {
+        const tab = tabRef(opts.tab, t);
+        if (raw !== undefined && opts.fit === true) throw invalid(t.browser.sizeAndFit());
+        if (raw === undefined && opts.scale !== undefined) {
+          throw invalid(t.browser.scaleWithoutSize());
+        }
+        const size = raw !== undefined ? parseSize(raw, t) : null;
+        const scale = opts.scale !== undefined ? parseScale(opts.scale, t) : undefined;
+        const client = await connect(opts, t);
+        const res = await client.request<BuiltinBrowserViewportResult>(
+          "POST",
+          `${BASE}/tabs/${tab}/viewport`,
+          {
+            ...(size !== null ? size : {}),
+            ...(scale !== undefined ? { scale } : {}),
+            ...(opts.fit === true ? { fit: true } : {}),
+            ...session(),
+          },
+        );
+        if (opts.json === true) printJson(res);
+        else print(renderResize(res, size, t));
+      },
+    ),
   );
 
   leaf(

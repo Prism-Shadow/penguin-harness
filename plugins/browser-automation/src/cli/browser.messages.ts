@@ -27,8 +27,13 @@ export interface BrowserText {
     typeDesc: string;
     screenshotDesc: string;
     cdpDesc: string;
+    resizeDesc: string;
     importDesc: string;
     historyDesc: string;
+    /** resize's `<w>x<h>`, `--scale` and `--fit`. */
+    sizeArg: string;
+    scale: string;
+    fit: string;
     /** --tab: which tab the command acts on. */
     tab: string;
     urlArg: string;
@@ -84,6 +89,7 @@ export interface BrowserText {
       dialog: string;
       memory: string;
       backend: string;
+      size: string;
     };
     /** `label: value`, in the language's punctuation. */
     line(label: string, value: string): string;
@@ -130,6 +136,24 @@ export interface BrowserText {
     /** Appended to the start of a value `--save` wrote to a file. */
     savedTo(path: string): string;
     screenshotSaved(path: string, size: string, kilobytes: number): string;
+    /**
+     * The value of `size:`: the page's size as it reports it, its pixel ratio, and whether it is
+     * fixed (`emulated`: in the user's Chrome, emulated over a window Chrome would not size so) or
+     * fits the Browser panel.
+     */
+    sizeValue(
+      width: number,
+      height: number,
+      scale: number,
+      mode: "fixed" | "emulated" | "fit",
+    ): string;
+    /** The `note:` when the page did not report the size asked for in time. */
+    sizeNotTaken(width: number, height: number): string;
+    sizeInvalid(value: string): string;
+    scaleInvalid(value: string): string;
+    /** resize given --fit with a size, or --scale without one. */
+    sizeAndFit(): string;
+    scaleWithoutSize(): string;
     importData(cookies: boolean, history: boolean): string;
     importCookies(c: { found: number; imported: number; skipped: number; failed: number }): string;
     importHistory(h: { found: number; imported: number }): string;
@@ -187,9 +211,15 @@ export const browserEn: BrowserText = {
       "Type text into the focused element (or --selector), optionally pressing Enter afterwards",
     screenshotDesc: "Save a PNG screenshot of the tab",
     cdpDesc: "Send a raw Chrome DevTools Protocol command to the tab",
+    resizeDesc:
+      "Give the tab a fixed page size (the page really is that size; the Browser panel scales it to fit), fit it to the panel again with --fit, or print its size with neither",
     importDesc:
       "Import cookies (sign-ins) and history from a browser installed on this machine (neither flag: both)",
     historyDesc: "Search the built-in browser's history (most visited first, then most recent)",
+    sizeArg: "Page size as <width>x<height> in CSS pixels, 200 to 4096 each, e.g. 1200x660",
+    scale:
+      "Device pixel ratio from 1 to 4: a screenshot is width × ratio pixels wide (default: the screen's)",
+    fit: "Fit the page to the Browser panel again",
     tab: 'Tab id, or "active" (default)',
     urlArg: "URL to open; https:// is added to a bare host",
     newTab: "Open it in a new tab",
@@ -243,6 +273,7 @@ export const browserEn: BrowserText = {
       dialog: "dialog",
       memory: "memory",
       backend: "backend",
+      size: "size",
     },
     line: (label, value) => `${label}: ${value}`,
     tabHead: (id, title, url, loading) =>
@@ -300,6 +331,20 @@ export const browserEn: BrowserText = {
     truncatedJson: () => "[truncated — use --json]",
     savedTo: (path) => `[saved to ${path}]`,
     screenshotSaved: (path, size, kilobytes) => `${path} (${size}, ${kilobytes} KB)`,
+    sizeValue: (width, height, scale, mode) =>
+      `${width}x${height} · ${scale}x pixels · ` +
+      (mode === "fit"
+        ? "fits the Browser panel"
+        : mode === "emulated"
+          ? "fixed, emulated (Chrome would not size its window to it: actions and screenshots see it, the window does not)"
+          : "fixed"),
+    sizeNotTaken: (width, height) =>
+      `The page did not report ${width}x${height} in time; the size stays set for the tab. Run penguin browser resize to read it again.`,
+    sizeInvalid: (value) =>
+      `The page size is <width>x<height> in CSS pixels, 200 to 4096 each (e.g. 1200x660), not '${value}'.`,
+    scaleInvalid: (value) => `--scale is a device pixel ratio from 1 to 4, not '${value}'.`,
+    sizeAndFit: () => "Give a page size or --fit, not both.",
+    scaleWithoutSize: () => "--scale goes with a page size, e.g. resize 1200x660 --scale 2.",
     importData: (cookies, history) =>
       [cookies ? "cookies" : "", history ? "history" : ""].filter(Boolean).join(", ") || "-",
     importCookies: (c) =>
@@ -390,8 +435,13 @@ export const browserZh: BrowserText = {
     typeDesc: "向当前聚焦的元素（或 --selector 指定的元素）输入文字，可随后按下回车",
     screenshotDesc: "把标签页截图保存为 PNG",
     cdpDesc: "向标签页发送一条原始的 Chrome DevTools Protocol 命令",
+    resizeDesc:
+      "给标签页固定页面尺寸（页面真的就是这个尺寸，浏览器面板按比例缩小显示）；--fit 恢复为适应面板；两者都不给时显示当前尺寸",
     importDesc: "从本机安装的浏览器导入 Cookie（登录状态）与历史记录（两个开关都不给时两者都导入）",
     historyDesc: "搜索内置浏览器的历史记录（访问次数多的在前，次数相同时较近的在前）",
+    sizeArg: "页面尺寸，写作 <宽>x<高>，单位为 CSS 像素，各为 200 到 4096，例如 1200x660",
+    scale: "设备像素比，1 到 4：截图宽度为页面宽度乘以它（缺省为屏幕的像素比）",
+    fit: "恢复为适应浏览器面板",
     tab: "标签页 id，或 active（缺省）",
     urlArg: "要打开的 URL；只写主机名时自动补上 https://",
     newTab: "在新标签页中打开",
@@ -445,6 +495,7 @@ export const browserZh: BrowserText = {
       dialog: "对话框",
       memory: "内存",
       backend: "后端",
+      size: "尺寸",
     },
     line: (label, value) => `${label}：${value}`,
     tabHead: (id, title, url, loading) =>
@@ -499,6 +550,20 @@ export const browserZh: BrowserText = {
     truncatedJson: () => "[已截断——完整结果请用 --json]",
     savedTo: (path) => `[已保存到 ${path}]`,
     screenshotSaved: (path, size, kilobytes) => `${path}（${size}，${kilobytes} KB）`,
+    sizeValue: (width, height, scale, mode) =>
+      `${width}x${height} · 像素比 ${scale} · ` +
+      (mode === "fit"
+        ? "适应浏览器面板"
+        : mode === "emulated"
+          ? "固定，模拟（Chrome 无法把窗口调到这个尺寸：操作与截图按此尺寸，窗口本身不变）"
+          : "固定"),
+    sizeNotTaken: (width, height) =>
+      `页面没有及时报告 ${width}x${height}；该尺寸仍记在这个标签页上。可运行 penguin browser resize 再读一次。`,
+    sizeInvalid: (value) =>
+      `页面尺寸写作 <宽>x<高>，单位为 CSS 像素，各为 200 到 4096（例如 1200x660），而不是「${value}」。`,
+    scaleInvalid: (value) => `--scale 是 1 到 4 的设备像素比，而不是「${value}」。`,
+    sizeAndFit: () => "页面尺寸与 --fit 只能给一个。",
+    scaleWithoutSize: () => "--scale 要与页面尺寸一起给，例如 resize 1200x660 --scale 2。",
     importData: (cookies, history) =>
       [cookies ? "Cookie" : "", history ? "历史记录" : ""].filter(Boolean).join("、") || "-",
     importCookies: (c) =>

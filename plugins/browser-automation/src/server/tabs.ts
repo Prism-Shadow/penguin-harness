@@ -9,9 +9,13 @@
  * Web App to create (POST /tabs, or a popup the shell turned into a request): the page creates
  * the <webview>, learns its webContents id, and claims the request with it — the first claim
  * wins, and a second window's claim is a duplicate it should remove.
+ *
+ * A tab's fixed page size (`viewport`, set by `resize`) is another fact the far side does not
+ * report: it is kept here beside the tab and laid over what the shell or the extension says, so
+ * every tab list carries it, and it goes with the tab. A popup's request carries its opener's.
  */
 import { randomUUID } from "node:crypto";
-import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import type { BuiltinBrowserTab, BuiltinBrowserViewport } from "@prismshadow/penguin-server/api";
 
 /** How long an unclaimed open request stays claimable. */
 const OPEN_REQUEST_TTL_MS = 60_000;
@@ -25,6 +29,8 @@ export interface OpenRequest {
   openerTabId?: number;
   sessionId?: string;
   partition?: string;
+  /** The page size the tab starts with: its opener's. */
+  viewport?: BuiltinBrowserViewport;
   createdAt: number;
   /** The tab that claimed it; null until then. */
   claimedTabId: number | null;
@@ -50,6 +56,7 @@ export class TabRegistry {
   private active: number | null = null;
   private readonly partitions = new Map<number, string>();
   private readonly owners = new Map<number, string>();
+  private readonly viewports = new Map<number, BuiltinBrowserViewport>();
   private readonly activeBySession = new Map<string, number>();
   /** A tab activated before the shell reported it. */
   private pendingActive: number | null = null;
@@ -95,11 +102,29 @@ export class TabRegistry {
   private owned(tab: BuiltinBrowserTab): BuiltinBrowserTab {
     const sessionId = this.owners.get(tab.id);
     const partition = this.partitions.get(tab.id);
+    const viewport = this.viewports.get(tab.id);
+    const { viewport: _reported, ...reported } = tab;
     return {
-      ...tab,
+      ...reported,
       ...(sessionId === undefined ? {} : { sessionId }),
       ...(partition === undefined ? {} : { partition }),
+      ...(viewport === undefined ? {} : { viewport }),
     };
+  }
+
+  /**
+   * Gives an open tab a fixed page size, or none (null: it fits the panel again). True when that
+   * changed the tab; a tab that is not open is left alone.
+   */
+  setViewport(id: number, viewport: BuiltinBrowserViewport | null): boolean {
+    const tab = this.tabs.get(id);
+    if (tab === undefined) return false;
+    const before = JSON.stringify(this.viewports.get(id) ?? null);
+    if (viewport === null) this.viewports.delete(id);
+    else this.viewports.set(id, viewport);
+    if (JSON.stringify(viewport) === before) return false;
+    this.tabs.set(id, this.owned(tab));
+    return true;
   }
 
   private rememberActive(id: number): void {
@@ -270,6 +295,7 @@ export class TabRegistry {
     openerTabId?: number;
     sessionId?: string;
     partition?: string;
+    viewport?: BuiltinBrowserViewport;
   }): OpenRequest {
     this.prune();
     const state: OpenState = {
@@ -279,6 +305,7 @@ export class TabRegistry {
       ...(opts.openerTabId !== undefined ? { openerTabId: opts.openerTabId } : {}),
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
       ...(opts.partition !== undefined ? { partition: opts.partition } : {}),
+      ...(opts.viewport !== undefined ? { viewport: opts.viewport } : {}),
       createdAt: this.now(),
       claimedTabId: null,
       waiters: new Set(),
@@ -300,6 +327,7 @@ export class TabRegistry {
     state.claimedTabId = tabId;
     if (!this.tabs.has(tabId)) this.claimedBeforeTab.add(tabId);
     if (state.partition !== undefined) this.partitions.set(tabId, state.partition);
+    if (state.viewport !== undefined) this.viewports.set(tabId, state.viewport);
     if (state.sessionId !== undefined) {
       this.owners.set(tabId, state.sessionId);
       if (state.activate) this.rememberActive(tabId);
@@ -377,6 +405,7 @@ export class TabRegistry {
       this.activeBySession.delete(owner);
     this.owners.delete(id);
     this.partitions.delete(id);
+    this.viewports.delete(id);
   }
 
   private settleFirstPage(id: number, started: boolean): void {

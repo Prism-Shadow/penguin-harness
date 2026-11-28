@@ -12,6 +12,7 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
+  BuiltinBrowserViewportResult,
   BrowserBackend,
   BrowserBackendResponse,
   BrowserExtensionPairingResponse,
@@ -118,6 +119,19 @@ export const navigateBuiltinBrowserTab = (tabId: number, url: string) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/navigate`), {
     method: "POST",
     body: { url },
+    server: null,
+  });
+/**
+ * Gives a tab a fixed page size, or the panel's again (`{ fit: true }`); answers once the page
+ * reports it. The user's own change: it names no session, so no agent is shown at work.
+ */
+export const resizeBuiltinBrowserTab = (
+  tabId: number,
+  body: { width: number; height: number } | { fit: true },
+) =>
+  apiFetch<BuiltinBrowserViewportResult>(builtinBrowserPath(`/tabs/${tabId}/viewport`), {
+    method: "POST",
+    body,
     server: null,
   });
 /** The system browsers' profiles on this computer that can be imported from. */

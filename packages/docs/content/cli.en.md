@@ -575,13 +575,14 @@ penguin browser click <selector> [--index <n>] | --at <x>,<y> [--accept-dialogs]
 penguin browser type <text> [--selector <css>] [--submit] [--accept-dialogs]
 penguin browser screenshot [-o <file.png>] [--full-page]
 penguin browser cdp <Domain.method> [--params '<json>']
+penguin browser resize [<w>x<h>] [--scale <n>] | --fit   # the tab's page size
 penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
 penguin browser history [<query>] [-n <count>]
 ```
 
 ### Tabs, output and the calling session
 
-- `--tab <id>` names the tab that `open`, `scan`, `exec`, `click`, `type`, `screenshot` and `cdp` act on: a tab id from `tabs`, or `active`, the default.
+- `--tab <id>` names the tab that `open`, `scan`, `exec`, `click`, `type`, `screenshot`, `cdp` and `resize` act on: a tab id from `tabs`, or `active`, the default.
 - `--json` prints the response as one line of JSON, and `--server` works as everywhere.
 - Inside a session, every command sends `PENGUIN_SESSION_ID`: in the body, or in the query of a `GET` or `DELETE`. The server then acts for the person driving that session, so an agent drives its own user's Chrome, and the app opens the Browser panel in the conversation that is driving it.
 - These commands never auto-start a server: a server started that way would have no desktop app to host the built-in browser, and no Chrome paired with it. With no server running they fail with `browser_unavailable`.
@@ -662,6 +663,11 @@ note: No visible change on the page.
 
 - `screenshot` writes a PNG to `-o`, by default `screenshot-<time>.png` in the working directory, and prints `screenshot: <path> (<width>x<height>, <size> KB)`. `--full-page` captures the whole page instead of the viewport. With `--json` it prints the response, `{mime, data}` with the image in base64, and writes a file only when `-o` is given.
 - `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root. It stays within the tab: the `Target` domain is refused (`cdp_refused`), and `Page.navigate` goes only to a web page or `about:blank` (`invalid_url`). In the user's Chrome more is refused, since the browser's cookies and stores are the user's own: the `Browser`, `Storage`, `Fetch`, `Security`, `Extensions` and `Tethering` domains, the `Network` methods that read or change cookies, clear the cache or intercept requests, `DOM.setFileInputFiles` and `Page.setDownloadBehavior`.
+
+### resize
+
+- A tab fits the Browser panel until it is given a size, so the page's width follows the user's layout. `resize <w>x<h>` gives it a fixed page size, 200 to 4096 CSS pixels each: the page is really laid out at that size, and the panel shows it scaled down to fit. In the user's Chrome, the tab moves into a Chrome window of its own sized to it; when Chrome cannot give that size, the size is emulated while the agent acts. `--scale <n>` sets the device pixel ratio, 1 to 4, so a screenshot is `<w> × <n>` pixels wide.
+- The command answers once the page reports the size and prints `size: 1200x660 · 2x pixels · fixed`, so a screenshot right after is at it. `resize --fit` returns the tab to the panel's size, and `resize` alone prints the size the page reports. The size stays with the tab across navigations and is not kept when the server restarts.
 
 ### import
 

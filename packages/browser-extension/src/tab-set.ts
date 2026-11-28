@@ -12,6 +12,13 @@
  * A released tab stays in the set, and in its group, until the user adds it again: nothing
  * re-attaches to it without that gesture.
  *
+ * A tab its server gives a fixed size (`set-window-size`) is moved into a window of its own,
+ * which takes it out of its group. That group change is the extension's, not the user's:
+ * `moving` forgets the tab's group before the move, so the change is only followed, as the one
+ * after `adopted` is, and `moved` groups the tab again in the new window. The windows the
+ * extension made this way are remembered, so a sized tab is not moved twice and new tabs keep
+ * opening in the user's own windows; a closed one is forgotten (`window-removed`).
+ *
  * The state is plain JSON: it is kept in `chrome.storage.session`, so a worker restart keeps it.
  */
 import type { TabReleaseReason } from "./wire.js";
@@ -34,6 +41,8 @@ export interface TabSetState {
   tabs: Record<string, DrivenTab>;
   /** `groupKey(server, windowId)` → the server's Penguin group in that window. */
   groups: Record<string, number>;
+  /** The windows the extension made to size a tab in, oldest first. */
+  windows: number[];
 }
 
 export type TabSetAction =
@@ -48,7 +57,12 @@ export type TabSetAction =
   /** The user took the tab back (the popup's Release): it leaves the set and its group. */
   | { type: "returned"; tabId: number }
   | { type: "removed"; tabId: number }
-  | { type: "server-forgotten"; server: string };
+  | { type: "server-forgotten"; server: string }
+  /** The extension is about to move the tab into a window of its own, to size it. */
+  | { type: "moving"; tabId: number }
+  /** It did: the tab sits alone in `windowId`, a window the extension made. */
+  | { type: "moved"; tabId: number; windowId: number }
+  | { type: "window-removed"; windowId: number };
 
 export type TabSetEffect =
   /** Announce the tab (its url, title, loading state) to its server. */
@@ -66,7 +80,7 @@ export interface TabSetResult {
   effects: TabSetEffect[];
 }
 
-export const emptyTabSet = (): TabSetState => ({ tabs: {}, groups: {} });
+export const emptyTabSet = (): TabSetState => ({ tabs: {}, groups: {}, windows: [] });
 
 export const groupKey = (server: string, windowId: number): string => `${windowId} ${server}`;
 
@@ -98,6 +112,11 @@ export function groupOf(state: TabSetState, server: string, windowId: number): n
   return state.groups[groupKey(server, windowId)];
 }
 
+/** Whether the extension made the window, to size a tab in (not one of the user's). */
+export function isOwnWindow(state: TabSetState, windowId: number): boolean {
+  return state.windows.includes(windowId);
+}
+
 function withTab(state: TabSetState, tab: DrivenTab): TabSetState {
   return { ...state, tabs: { ...state.tabs, [String(tab.tabId)]: tab } };
 }
@@ -106,6 +125,13 @@ function withoutTab(state: TabSetState, tabId: number): TabSetState {
   const tabs = { ...state.tabs };
   delete tabs[String(tabId)];
   return { ...state, tabs };
+}
+
+/** The tab with no group recorded: the next group change it sees is followed, not a drag-out. */
+function ungrouped(tab: DrivenTab): DrivenTab {
+  const next = { ...tab };
+  delete next.groupId;
+  return next;
 }
 
 /** A tab joins `server`: announced, grouped. */
@@ -266,11 +292,43 @@ export function reduce(state: TabSetState, action: TabSetAction): TabSetResult {
       );
       const grouped = gone.filter((tab) => tab.groupId !== undefined).map((tab) => tab.tabId);
       return {
-        state: { tabs, groups },
+        state: { ...state, tabs, groups },
         effects: [
           ...(grouped.length > 0 ? [{ type: "ungroup" as const, tabIds: grouped }] : []),
           ...gone.map((tab) => ({ type: "detach" as const, tabId: tab.tabId })),
         ],
+      };
+    }
+
+    case "moving": {
+      const tab = lookup(state, action.tabId);
+      if (tab === undefined || tab.groupId === undefined) return { state, effects: [] };
+      return { state: withTab(state, ungrouped(tab)), effects: [] };
+    }
+
+    case "moved": {
+      const tab = lookup(state, action.tabId);
+      if (tab === undefined) return { state, effects: [] };
+      const windows = state.windows.includes(action.windowId)
+        ? state.windows
+        : [...state.windows, action.windowId];
+      const moved = { ...ungrouped(tab), windowId: action.windowId };
+      const next = { ...withTab(state, moved), windows };
+      // Released while it moved: it is no longer driven, so it joins no group.
+      if (tab.released !== undefined) return { state: next, effects: [] };
+      return {
+        state: next,
+        effects: [
+          { type: "group", server: tab.server, tabId: tab.tabId, windowId: action.windowId },
+        ],
+      };
+    }
+
+    case "window-removed": {
+      if (!state.windows.includes(action.windowId)) return { state, effects: [] };
+      return {
+        state: { ...state, windows: state.windows.filter((id) => id !== action.windowId) },
+        effects: [],
       };
     }
   }
@@ -280,7 +338,11 @@ export function reduce(state: TabSetState, action: TabSetAction): TabSetResult {
 export function parseTabSet(value: unknown): TabSetState {
   const state = emptyTabSet();
   if (typeof value !== "object" || value === null) return state;
-  const { tabs, groups } = value as { tabs?: unknown; groups?: unknown };
+  const { tabs, groups, windows } = value as {
+    tabs?: unknown;
+    groups?: unknown;
+    windows?: unknown;
+  };
   if (typeof tabs === "object" && tabs !== null) {
     for (const raw of Object.values(tabs as Record<string, unknown>)) {
       if (typeof raw !== "object" || raw === null) continue;
@@ -304,6 +366,14 @@ export function parseTabSet(value: unknown): TabSetState {
   if (typeof groups === "object" && groups !== null) {
     for (const [key, groupId] of Object.entries(groups as Record<string, unknown>)) {
       if (Number.isSafeInteger(groupId) && key.includes(" ")) state.groups[key] = groupId as number;
+    }
+  }
+  // Absent from a set stored before tabs could be sized: then no window is the extension's.
+  if (Array.isArray(windows)) {
+    for (const windowId of windows) {
+      if (Number.isSafeInteger(windowId) && !state.windows.includes(windowId)) {
+        state.windows.push(windowId as number);
+      }
     }
   }
   return state;

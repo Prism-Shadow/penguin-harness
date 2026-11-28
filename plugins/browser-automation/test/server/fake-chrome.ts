@@ -2,7 +2,7 @@
  * Test double for the chrome backend's far side: the PenguinHarness Browser extension, as the
  * socket the server's ExtensionLink holds (ExtensionSocket). It speaks the extension's side of
  * the protocol the way the real one does — answers hello, tabs, ping, open-tab, close-tab,
- * activate-tab, cdp and read-cookies, pushes tab events, and fails a released tab's commands with
+ * activate-tab, set-window-size, cdp and read-cookies, pushes tab events, and fails a released tab's commands with
  * `tab_released` — over JSON text frames, so the link's own parsing runs. Its CDP answers come
  * from a handler each test supplies; `read-cookies` hands over `cookieJar` when the user allows
  * it on the consent page (`consent`).
@@ -37,6 +37,15 @@ export class FakeChrome implements ExtensionSocket {
   consent: "allow" | "deny" = "allow";
   /** False plays an extension from before `read-cookies`. */
   readsCookies = true;
+  /**
+   * The content area Chrome gives the window `set-window-size` sizes for a tab (the size asked
+   * for, unless the screen or Chrome's smallest window say otherwise); null plays an extension
+   * from before window sizing.
+   */
+  windowGives: ((width: number, height: number) => { width: number; height: number }) | null = (
+    width,
+    height,
+  ) => ({ width, height });
   /** `tabs` answers held back by {@link holdTabs}, sent when it is released. */
   private heldTabs: Array<() => void> | null = null;
   private nextTabId = 100;
@@ -148,6 +157,14 @@ export class FakeChrome implements ExtensionSocket {
         return;
       case "activate-tab":
         this.reply(msg.id, { ok: true, result: {} });
+        return;
+      case "set-window-size":
+        if (this.windowGives === null) this.reply(msg.id, { ok: false, error: "unknown_op" });
+        else if (!this.guests.has(command.tabId)) {
+          this.reply(msg.id, { ok: false, error: "no_such_tab" });
+        } else {
+          this.reply(msg.id, { ok: true, result: this.windowGives(command.width, command.height) });
+        }
         return;
       case "read-cookies":
         if (!this.readsCookies) this.reply(msg.id, { ok: false, error: "unknown_op" });

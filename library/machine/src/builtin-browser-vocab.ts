@@ -33,7 +33,27 @@ export interface BrowserHello {
 }
 
 export type BuiltinBrowserAction =
-  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
+  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp" | "resize";
+
+/**
+ * A tab's fixed page size, set by `resize` (the user's or an agent's); a tab without one fits the
+ * Browser panel. Held per tab in the server's registry, in memory only. Built-in: the page's
+ * `<webview>` box is laid out at `width` × `height` and scaled down to fit the panel. Chrome: the
+ * tab sits alone in a window the extension sized so its content area is that size.
+ */
+export interface BuiltinBrowserViewport {
+  /** CSS px. */
+  width: number;
+  height: number;
+  /** The device pixel ratio the page renders at; absent for the screen's own. */
+  scale?: number;
+  /**
+   * Chrome only: its window could not be given this size (beyond the screen, under Chrome's
+   * smallest window, an extension too old to size windows), so the size is emulated over the
+   * debugger while the agent acts, and the tab shows at its window's size otherwise.
+   */
+  emulated?: true;
+}
 
 /**
  * The built-in browser's load: GET /status's `metrics`, and the `builtin_browser_metrics` event
@@ -93,6 +113,8 @@ export interface BuiltinBrowserTab {
   canGoBack: boolean;
   canGoForward: boolean;
   favicon?: string;
+  /** The tab's fixed page size; absent while it fits the Browser panel. */
+  viewport?: BuiltinBrowserViewport;
   /**
    * Present while the page's renderer is gone, with Electron's reason (`crashed`, `oom`,
    * `killed`, …): the panel shows the crash until the page is reloaded, and an agent action on
@@ -145,6 +167,17 @@ export type DesktopBrowserCommand =
   | { op: "close-tab"; tabId: number }
   /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
   | { op: "activate-tab"; tabId: number }
+  /**
+   * Chrome only. Reply: `{ width: number; height: number }`, the tab's content area as Chrome then
+   * reports it (`tab.width` / `tab.height`). Moves the tab into a window of its own that the
+   * extension made for it — unless it already is the only tab of such a window — and sizes that
+   * window so the content area is `width` × `height`; the tab's Penguin group is made again there,
+   * and the move is not a release. The user's own windows are never moved or resized. Chrome keeps a
+   * window above its smallest size (500 px wide) and refuses one mostly off the screen, which
+   * leaves the window as it was, so the answer may differ from the request. `width` and `height`
+   * are whole pixels.
+   */
+  | { op: "set-window-size"; tabId: number; width: number; height: number }
   /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
   | { op: "ping" }
   /**

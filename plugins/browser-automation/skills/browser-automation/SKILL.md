@@ -1,7 +1,7 @@
 ---
 name: browser-automation
 description: "Drive the PenguinHarness agent browser — the desktop app's built-in browser or the user's own Chrome — from the shell with `penguin browser`: open pages, read them as simplified HTML or text, act with JavaScript and trusted clicks and typing, and pull structured data out of them (orders, search results, tables), signed in with the user's own accounts. Use it for any task on a website that needs a real browser or the user's sign-in, such as finding an Amazon order."
-version: 2026.11.19.1
+version: 2026.11.27.1
 ---
 
 # Browser automation
@@ -70,6 +70,7 @@ EOF
 - **Dialogs** are answered for you during exec, click and type: an alert is accepted; a confirm, a prompt or a leave-page dialog is dismissed and printed as `dialog: confirm "…" → dismissed (rerun with --accept-dialogs to accept)`. Rerun with `--accept-dialogs` only when accepting is what the task asks for, never to confirm a purchase, a payment or a deletion the user has not approved.
 - File uploads, cross-origin iframes and closed shadow roots: see [reference/page-recipes.md](reference/page-recipes.md) (`DataTransfer`, and raw DevTools Protocol commands through `penguin browser cdp`).
 - When layout matters or text is drawn in a canvas or an image, `penguin browser screenshot -o shot.png` (`--full-page` for the whole page), then look at the file.
+- **Page size.** A tab fits the user's Browser panel unless given a size, so its width changes with their layout. To see or capture the page at a chosen size, `penguin browser resize 1200x660` (`--scale 2` for a sharper screenshot: it is width × 2 pixels wide); the page really becomes that size, the panel shows it scaled to fit, and the size stays with the tab across navigations. `penguin browser resize` alone prints the current size. Use this, not `penguin browser cdp Emulation.*`. When done, `penguin browser resize --fit` gives the user their panel's size back.
 - Verify figures on the detail page rather than a summary or a list: a list's total can differ from the order's.
 - `error: tab_crashed` means the tab's page crashed (often from running out of memory). Retrying in that tab will not work: close it (`penguin browser close <tab-id>`) and open the page again with `penguin browser open <url> --new-tab`.
 - `error: tab_released` (Chrome) means the user took that tab back from you in their Chrome. Never retry it: open a new tab (`penguin browser open <url> --new-tab`), or ask the user to hand the tab over again with the extension's toolbar icon.
@@ -110,6 +111,7 @@ Finding and listing Amazon orders — the sign-in check, searching, extracting r
 | --- | --- |
 | `penguin browser tabs` | The open tabs (`*` marks the active one) |
 | `penguin browser switch <id>` / `close [<id>]` | Change or close tabs |
+| `penguin browser resize [<w>x<h>] [--scale <n>]` / `resize --fit` | Fix the tab's page size, read it, or fit it to the panel again |
 | `penguin browser cdp <Domain.method> --params '<json>'` | A raw Chrome DevTools Protocol command |
 | `penguin browser history [<query>] [-n 20]` | Pages visited in the built-in browser, and imported history (built-in only) |
 | `--json` on any command | The raw response |

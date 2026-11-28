@@ -575,13 +575,14 @@ penguin browser click <selector> [--index <n>] | --at <x>,<y> [--accept-dialogs]
 penguin browser type <text> [--selector <css>] [--submit] [--accept-dialogs]
 penguin browser screenshot [-o <file.png>] [--full-page]
 penguin browser cdp <Domain.method> [--params '<json>']
+penguin browser resize [<w>x<h>] [--scale <n>] | --fit   # 标签页的页面尺寸
 penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
 penguin browser history [<query>] [-n <count>]
 ```
 
 ### 标签页、输出与调用方会话
 
-- `--tab <id>` 指定 `open`、`scan`、`exec`、`click`、`type`、`screenshot` 和 `cdp` 作用的标签页：取 `tabs` 列出的标签页 id，或 `active`（默认值）。
+- `--tab <id>` 指定 `open`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` 和 `resize` 作用的标签页：取 `tabs` 列出的标签页 id，或 `active`（默认值）。
 - `--json` 把响应打印为一行 JSON；`--server` 与其他命令相同。
 - 在会话内部，每条命令都会发送 `PENGUIN_SESSION_ID`：放在请求体里，`GET` 和 `DELETE` 则放在查询参数里。服务器据此按正在驱动该会话的那个人行事，所以 Agent 驱动的是它自己的用户的 Chrome；应用也据此在正在驱动浏览器的那个对话里打开浏览器面板。
 - 这些命令从不自动启动服务器：这样启动的服务器既没有承载内置浏览器的桌面应用，也没有与之配对的 Chrome。没有服务器在运行时，命令以 `browser_unavailable` 失败。
@@ -662,6 +663,11 @@ note: No visible change on the page.
 
 - `screenshot` 把 PNG 写入 `-o` 指定的文件（默认是工作目录下的 `screenshot-<time>.png`），并打印 `screenshot: <path> (<width>x<height>, <size> KB)`。`--full-page` 截取整个页面而不只是视口。加 `--json` 时打印响应本身，即 `{mime, data}`，图片以 base64 编码；此时只有给了 `-o` 才写文件。
 - `cdp` 向标签页发送一条 Chrome DevTools Protocol 命令，并把结果打印为紧凑 JSON，超过 8,000 个字符时截断（加 `--json` 打印完整结果）。页面 JavaScript 够不到的地方都靠它：文件输入框的文件（`DOM.setFileInputFiles`）、跨域 iframe（`Page.createIsolatedWorld`）、封闭的 shadow root。它只作用于当前标签页：`Target` 域的命令一律拒绝（`cdp_refused`），`Page.navigate` 只能前往网页或 `about:blank`（`invalid_url`）。在用户自己的 Chrome 里拒绝的更多，因为那里的 Cookie 和存储都是用户本人的：`Browser`、`Storage`、`Fetch`、`Security`、`Extensions` 和 `Tethering` 域，读写 Cookie、清除缓存或拦截请求的 `Network` 方法，以及 `DOM.setFileInputFiles` 和 `Page.setDownloadBehavior`。
+
+### resize
+
+- 标签页在设定尺寸之前适应浏览器面板，页面宽度随用户的布局变化。`resize <w>x<h>` 给它固定的页面尺寸，宽高各为 200 到 4096 CSS 像素：页面真的按这个尺寸排版，面板里按比例缩小显示。在用户自己的 Chrome 里，该标签页移到一个按此尺寸调整的专属 Chrome 窗口；Chrome 给不出这个尺寸时，改为在 Agent 操作期间模拟。`--scale <n>` 设置设备像素比（1 到 4），截图宽度即为 `<w> × <n>` 像素。
+- 命令在页面报告该尺寸后才返回，并打印 `size: 1200x660 · 2x pixels · fixed`，紧接着的截图即为该尺寸。`resize --fit` 恢复为适应面板，`resize` 不带参数时打印页面报告的尺寸。尺寸跟随标签页，跳转后保留，服务端重启后不保留。
 
 ### import
 
