@@ -2,7 +2,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { cleanTypeWs, EMPTY_DOC, parsedDocFromRaw, slugOf } from "./jsdoc.js";
+import {
+  cleanTypeWs,
+  EMPTY_DOC,
+  extractFileTopJsDoc,
+  extractJsDoc,
+  parseRawJsDocComment,
+  slugOf,
+} from "./jsdoc.js";
 import type {
   AreaKind,
   BindField,
@@ -63,26 +70,6 @@ function lineOf(sf: ts.SourceFile, pos: number): number {
   return sf.getLineAndCharacterOfPosition(pos).line + 1;
 }
 
-function getJsDocFull(sf: ts.SourceFile, node: ts.Node): ParsedDoc {
-  const ranges = ts.getLeadingCommentRanges(sf.text, node.pos);
-  if (!ranges) return EMPTY_DOC;
-  for (let i = ranges.length - 1; i >= 0; i--) {
-    const range = ranges[i];
-    if (!range) continue;
-    const txt = sf.text.slice(range.pos, range.end);
-    if (txt.startsWith("/**")) return parsedDocFromRaw(txt);
-  }
-  return EMPTY_DOC;
-}
-
-function getFileTopJsDoc(sf: ts.SourceFile): ParsedDoc {
-  const ranges = ts.getLeadingCommentRanges(sf.text, 0);
-  const first = ranges?.[0];
-  if (!first) return EMPTY_DOC;
-  const txt = sf.text.slice(first.pos, first.end);
-  return txt.startsWith("/**") ? parsedDocFromRaw(txt) : EMPTY_DOC;
-}
-
 function getDecorators(node: ts.Node): readonly ts.Decorator[] {
   return ts.canHaveDecorators(node) ? (ts.getDecorators(node) ?? []) : [];
 }
@@ -110,6 +97,18 @@ function isNonPublic(node: ts.Node, name: string): boolean {
     hasMod(node, ts.SyntaxKind.PrivateKeyword) ||
     hasMod(node, ts.SyntaxKind.ProtectedKeyword)
   );
+}
+
+function extractParams(
+  params: ts.NodeArray<ts.ParameterDeclaration>,
+  sf: ts.SourceFile,
+): ParamItem[] {
+  return params.map((p) => ({
+    name: p.name.getText(sf),
+    optional: Boolean(p.questionToken || p.initializer),
+    type: p.type ? cleanTypeWs(p.type.getText(sf)) : "unknown",
+    defaultVal: p.initializer ? cleanTypeWs(p.initializer.getText(sf)) : "",
+  }));
 }
 
 function evalExpr(node: ts.Expression | undefined, sf: ts.SourceFile): unknown {
@@ -149,6 +148,65 @@ function evalExpr(node: ts.Expression | undefined, sf: ts.SourceFile): unknown {
   return node.getText(sf);
 }
 
+function memberFromDecl(
+  m: ts.ClassElement | ts.TypeElement,
+  sf: ts.SourceFile,
+  includeConstructors: boolean,
+): MemberItem | null {
+  if (includeConstructors && ts.isConstructorDeclaration(m)) {
+    const params = extractParams(m.parameters, sf);
+    const mp = m.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(", ");
+    return {
+      name: "constructor",
+      kind: "method",
+      sig: `constructor(${mp})`,
+      params,
+      returnType: "",
+      doc: extractJsDoc(m, sf),
+      line: lineOf(sf, m.getStart(sf)),
+    };
+  }
+
+  if ((ts.isMethodDeclaration(m) || ts.isMethodSignature(m)) && m.name) {
+    const mName = propNameText(m.name, sf);
+    if (isNonPublic(m, mName)) return null;
+    const opt = m.questionToken ? "?" : "";
+    const tp = m.typeParameters
+      ? `<${m.typeParameters.map((x) => cleanTypeWs(x.getText(sf))).join(", ")}>`
+      : "";
+    const params = extractParams(m.parameters, sf);
+    const paramText = m.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(", ");
+    const returnType = m.type ? cleanTypeWs(m.type.getText(sf)) : "";
+    return {
+      name: mName,
+      kind: "method",
+      sig: `${mName}${opt}${tp}(${paramText})${returnType ? `: ${returnType}` : ""}`,
+      params,
+      returnType,
+      doc: extractJsDoc(m, sf),
+      line: lineOf(sf, m.getStart(sf)),
+    };
+  }
+
+  if ((ts.isPropertyDeclaration(m) || ts.isPropertySignature(m)) && m.name) {
+    const mName = propNameText(m.name, sf);
+    if (isNonPublic(m, mName)) return null;
+    const opt = m.questionToken ? "?" : "";
+    const ro = hasMod(m, ts.SyntaxKind.ReadonlyKeyword) ? "readonly " : "";
+    const typ = m.type ? cleanTypeWs(m.type.getText(sf)) : "unknown";
+    return {
+      name: mName,
+      kind: "property",
+      sig: `${ro}${mName}${opt}: ${typ}`,
+      params: [],
+      returnType: typ,
+      doc: extractJsDoc(m, sf),
+      line: lineOf(sf, m.getStart(sf)),
+    };
+  }
+  return null;
+}
+
 function extractMembers(
   members: ts.NodeArray<ts.ClassElement> | ts.NodeArray<ts.TypeElement>,
   sf: ts.SourceFile,
@@ -156,54 +214,110 @@ function extractMembers(
 ): MemberItem[] {
   const out: MemberItem[] = [];
   for (const m of members) {
-    if (includeConstructors && ts.isConstructorDeclaration(m)) {
-      const mp = m.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(", ");
-      const mj = getJsDocFull(sf, m);
+    const item = memberFromDecl(m, sf, includeConstructors);
+    if (item) out.push(item);
+  }
+  return out;
+}
+
+const TS_PRINTER = ts.createPrinter({ removeComments: true });
+
+function printNode(node: ts.Node, sf: ts.SourceFile): string {
+  return cleanTypeWs(TS_PRINTER.printNode(ts.EmitHint.Unspecified, node, sf));
+}
+
+/** Extract resolved property/method members from any TypeScript Type via TypeChecker (handles Omit, Pick, Partial, Readonly, extends, intersections, and generics natively). */
+function extractMembersFromType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  location: ts.Node,
+): MemberItem[] {
+  const locSf = location.getSourceFile();
+  const synthNode = checker.typeToTypeNode(type, location, ts.NodeBuilderFlags.NoTruncation);
+  const synthMemberByName = new Map<string, ts.TypeElement>();
+  if (synthNode && ts.isTypeLiteralNode(synthNode)) {
+    for (const m of synthNode.members) {
+      if ((ts.isPropertySignature(m) || ts.isMethodSignature(m)) && m.name) {
+        const key =
+          ts.isIdentifier(m.name) || ts.isStringLiteral(m.name) || ts.isNumericLiteral(m.name)
+            ? m.name.text
+            : printNode(m.name, locSf).replace(/^["']|["']$/g, "");
+        synthMemberByName.set(key, m);
+      }
+    }
+  }
+
+  const out: MemberItem[] = [];
+  for (const propSym of type.getProperties()) {
+    const name = propSym.getName();
+    const decl = propSym.valueDeclaration ?? propSym.declarations?.[0];
+    const sf = decl?.getSourceFile();
+    const doc = decl && sf ? extractJsDoc(decl, sf) : EMPTY_DOC;
+    const line = decl && sf ? lineOf(sf, decl.getStart(sf)) : 1;
+    const isOptional = Boolean(propSym.flags & ts.SymbolFlags.Optional);
+
+    const synth = synthMemberByName.get(name);
+    if (synth && ts.isMethodSignature(synth)) {
+      const params: ParamItem[] = synth.parameters.map((p) => ({
+        name: printNode(p.name, locSf),
+        optional: Boolean(p.questionToken || p.initializer),
+        type: p.type ? printNode(p.type, locSf) : "unknown",
+        defaultVal: p.initializer ? printNode(p.initializer, locSf) : "",
+      }));
+      const retStr = synth.type ? printNode(synth.type, locSf) : "unknown";
+      const paramText = params
+        .map((p) => `${p.name}${p.optional ? "?" : ""}: ${p.type}`)
+        .join(", ");
       out.push({
-        name: "constructor",
+        name,
         kind: "method",
-        sig: `constructor(${mp})`,
-        doc: mj.doc,
-        docBlocks: mj.docBlocks,
-        line: lineOf(sf, m.getStart(sf)),
+        sig: `${name}${isOptional ? "?" : ""}(${paramText}): ${retStr}`,
+        params,
+        returnType: retStr,
+        doc,
+        line,
       });
       continue;
     }
 
-    if ((ts.isMethodDeclaration(m) || ts.isMethodSignature(m)) && m.name) {
-      const mName = propNameText(m.name, sf);
-      if (isNonPublic(m, mName)) continue;
-      const opt = m.questionToken ? "?" : "";
-      const tp = m.typeParameters
-        ? `<${m.typeParameters.map((x) => cleanTypeWs(x.getText(sf))).join(", ")}>`
-        : "";
-      const params = m.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(", ");
-      const ret = m.type ? `: ${cleanTypeWs(m.type.getText(sf))}` : "";
-      const mj = getJsDocFull(sf, m);
+    if (synth && ts.isPropertySignature(synth)) {
+      const ro = hasMod(synth, ts.SyntaxKind.ReadonlyKeyword) ? "readonly " : "";
+      const typStr = synth.type ? printNode(synth.type, locSf) : "unknown";
       out.push({
-        name: mName,
-        kind: "method",
-        sig: `${mName}${opt}${tp}(${params})${ret}`,
-        doc: mj.doc,
-        docBlocks: mj.docBlocks,
-        line: lineOf(sf, m.getStart(sf)),
-      });
-    } else if ((ts.isPropertyDeclaration(m) || ts.isPropertySignature(m)) && m.name) {
-      const mName = propNameText(m.name, sf);
-      if (isNonPublic(m, mName)) continue;
-      const opt = m.questionToken ? "?" : "";
-      const ro = hasMod(m, ts.SyntaxKind.ReadonlyKeyword) ? "readonly " : "";
-      const typ = m.type ? cleanTypeWs(m.type.getText(sf)) : "unknown";
-      const mj = getJsDocFull(sf, m);
-      out.push({
-        name: mName,
+        name,
         kind: "property",
-        sig: `${ro}${mName}${opt}: ${typ}`,
-        doc: mj.doc,
-        docBlocks: mj.docBlocks,
-        line: lineOf(sf, m.getStart(sf)),
+        sig: `${ro}${name}${isOptional ? "?" : ""}: ${typStr}`,
+        params: [],
+        returnType: typStr,
+        doc,
+        line,
       });
+      continue;
     }
+
+    // Fallback: format directly via TypeChecker while preserving explicit `null` in optional unions
+    const propType = checker.getTypeOfSymbolAtLocation(propSym, location);
+    const typNode = checker.typeToTypeNode(propType, location, ts.NodeBuilderFlags.NoTruncation);
+    let typStr = typNode
+      ? printNode(typNode, locSf)
+      : cleanTypeWs(checker.typeToString(propType, location, ts.TypeFormatFlags.NoTruncation));
+    if (isOptional) {
+      typStr =
+        typStr
+          .split(/\s*\|\s*/)
+          .filter((part) => part !== "undefined")
+          .join(" | ") || "undefined";
+    }
+    const ro = decl && hasMod(decl, ts.SyntaxKind.ReadonlyKeyword) ? "readonly " : "";
+    out.push({
+      name,
+      kind: propType.getCallSignatures().length > 0 ? "method" : "property",
+      sig: `${ro}${name}${isOptional ? "?" : ""}: ${typStr}`,
+      params: [],
+      returnType: typStr,
+      doc,
+      line,
+    });
   }
   return out;
 }
@@ -267,6 +381,16 @@ function extractClassDecl(
   return bodyLines.length ? `${header} {\n${bodyLines.join("\n")}\n}` : `${header} {}`;
 }
 
+/* ---------- TypeChecker Symbol Resolution (Replaces Hand-Rolled Module/Export Resolver) ---------- */
+
+function resolveIdentifierDecl(ident: ts.Identifier, checker: ts.TypeChecker): ts.Node | null {
+  const sym = checker.getSymbolAtLocation(ident);
+  if (!sym) return null;
+  const target = sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
+  const decl = target.valueDeclaration ?? target.declarations?.[0];
+  return decl ?? null;
+}
+
 function extractEndpointsFromNode(root: ts.Node, sf: ts.SourceFile): HttpEndpoint[] {
   const eps: HttpEndpoint[] = [];
   const seen = new Set<string>();
@@ -296,171 +420,28 @@ function extractEndpointsFromNode(root: ts.Node, sf: ts.SourceFile): HttpEndpoin
   return eps;
 }
 
-function findTopLevelDecl(sf: ts.SourceFile, name: string): ts.Node | null {
-  for (const st of sf.statements) {
-    if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name?.text === name) {
-      return st;
-    }
-    if (ts.isVariableStatement(st)) {
-      for (const d of st.declarationList.declarations) {
-        if (ts.isIdentifier(d.name) && d.name.text === name) return d;
-      }
-    }
-  }
-  return null;
-}
-
-function resolveExportedDecl(
-  sf: ts.SourceFile,
-  fileRel: string,
-  symbolName: string,
-  fileSfCache: ReadonlyMap<string, ts.SourceFile>,
-  pkgSrcRelByName: ReadonlyMap<string, string>,
-  depth = 0,
-): { sf: ts.SourceFile; rel: string; decl: ts.Node } | null {
-  if (depth > 5) return null;
-  if (symbolName !== "default") {
-    const direct = findTopLevelDecl(sf, symbolName);
-    if (direct) return { sf, rel: fileRel, decl: direct };
-  }
-  for (const st of sf.statements) {
-    if (
-      !ts.isExportDeclaration(st) ||
-      !st.moduleSpecifier ||
-      !ts.isStringLiteral(st.moduleSpecifier)
-    ) {
-      continue;
-    }
-    const spec = st.moduleSpecifier.text;
-    const targetRel = resolveModuleSpecifier(spec, fileRel, fileSfCache, pkgSrcRelByName);
-    if (!targetRel) continue;
-    const targetSf = fileSfCache.get(targetRel);
-    if (!targetSf) continue;
-
-    if (!st.exportClause) {
-      const starHit = resolveExportedDecl(
-        targetSf,
-        targetRel,
-        symbolName,
-        fileSfCache,
-        pkgSrcRelByName,
-        depth + 1,
-      );
-      if (starHit) return starHit;
-    } else if (ts.isNamedExports(st.exportClause)) {
-      const hit = st.exportClause.elements.find((e) => e.name.text === symbolName);
-      if (hit) {
-        const orig = hit.propertyName ? hit.propertyName.text : hit.name.text;
-        return resolveExportedDecl(
-          targetSf,
-          targetRel,
-          orig,
-          fileSfCache,
-          pkgSrcRelByName,
-          depth + 1,
-        );
-      }
-    }
-  }
-  return null;
-}
-
-function resolveModuleSpecifier(
-  spec: string,
-  fromFileRel: string,
-  fileSfCache: ReadonlyMap<string, ts.SourceFile>,
-  pkgSrcRelByName: ReadonlyMap<string, string>,
-): string | null {
-  const tryRel = (baseRel: string): string | null => {
-    const normalized = path.normalize(baseRel).replace(/\\/g, "/");
-    for (const cand of [
-      normalized,
-      `${normalized}.ts`,
-      `${normalized}.tsx`,
-      `${normalized}/index.ts`,
-      `${normalized}/index.tsx`,
-    ]) {
-      if (fileSfCache.has(cand)) return cand;
-    }
-    return null;
-  };
-
-  if (spec.startsWith("./") || spec.startsWith("../")) {
-    return tryRel(path.join(path.dirname(fromFileRel), spec.replace(/\.js$/, "")));
-  }
-
-  // Workspace package specifier (e.g. `@prismshadow/penguin-library-session` or `@pkg/subpath`)
-  for (const [pkgName, srcRel] of pkgSrcRelByName) {
-    if (spec === pkgName) {
-      return tryRel(`${srcRel}/index`);
-    }
-    if (spec.startsWith(`${pkgName}/`)) {
-      const sub = spec.slice(pkgName.length + 1).replace(/\.js$/, "");
-      return tryRel(`${srcRel}/${sub}`);
-    }
-  }
-  return null;
-}
-
-function findImportedSymbolFile(
-  sf: ts.SourceFile,
-  fileRel: string,
-  symbolName: string,
-  fileSfCache: ReadonlyMap<string, ts.SourceFile>,
-  pkgSrcRelByName: ReadonlyMap<string, string>,
-): { sf: ts.SourceFile; rel: string; origName: string; decl: ts.Node | null } | null {
-  for (const st of sf.statements) {
-    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
-    const spec = st.moduleSpecifier.text;
-    const clause = st.importClause;
-    let origName: string | null = null;
-    if (clause?.name?.text === symbolName) {
-      origName = "default";
-    } else if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
-      const hit = clause.namedBindings.elements.find((e) => e.name.text === symbolName);
-      if (hit) origName = hit.propertyName ? hit.propertyName.text : hit.name.text;
-    }
-    if (!origName) continue;
-    const targetRel = resolveModuleSpecifier(spec, fileRel, fileSfCache, pkgSrcRelByName);
-    if (!targetRel) continue;
-    const targetSf = fileSfCache.get(targetRel);
-    if (!targetSf) continue;
-    const resolved =
-      origName === "default"
-        ? null
-        : resolveExportedDecl(targetSf, targetRel, origName, fileSfCache, pkgSrcRelByName);
-    if (resolved) {
-      return { sf: resolved.sf, rel: resolved.rel, origName, decl: resolved.decl };
-    }
-    return { sf: targetSf, rel: targetRel, origName, decl: null };
-  }
-  return null;
-}
-
-function findBoundTargetNames(
+function findBoundTargetIdentifiers(
   clsNode: ts.ClassDeclaration,
   bindFields: ReadonlySet<string>,
   sf: ts.SourceFile,
-): string[] {
-  const fnNames: string[] = [];
-  function collectCalls(expr: ts.Expression): void {
+): ts.Identifier[] {
+  const idents: ts.Identifier[] = [];
+  function collect(expr: ts.Expression): void {
     if (ts.isCallExpression(expr)) {
-      if (ts.isIdentifier(expr.expression)) fnNames.push(expr.expression.text);
-      for (const a of expr.arguments) collectCalls(a);
+      if (ts.isIdentifier(expr.expression)) idents.push(expr.expression);
+      for (const a of expr.arguments) collect(a);
     } else if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) {
-      const visitBody = (n: ts.Node): void => {
-        if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
-          fnNames.push(n.expression.text);
-        }
-        ts.forEachChild(n, visitBody);
+      const walkBody = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) idents.push(n.expression);
+        ts.forEachChild(n, walkBody);
       };
-      visitBody(expr.body);
+      walkBody(expr.body);
     } else if (ts.isIdentifier(expr)) {
-      fnNames.push(expr.text);
+      idents.push(expr);
     } else if (ts.isObjectLiteralExpression(expr)) {
       for (const p of expr.properties) {
-        if (ts.isPropertyAssignment(p)) collectCalls(p.initializer);
-        else if (ts.isShorthandPropertyAssignment(p)) fnNames.push(p.name.text);
+        if (ts.isPropertyAssignment(p)) collect(p.initializer);
+        else if (ts.isShorthandPropertyAssignment(p)) idents.push(p.name);
       }
     }
   }
@@ -472,19 +453,19 @@ function findBoundTargetNames(
       n.left.expression.kind === ts.SyntaxKind.ThisKeyword &&
       bindFields.has(n.left.name.text)
     ) {
-      collectCalls(n.right);
+      collect(n.right);
     } else if (
       ts.isPropertyDeclaration(n) &&
       n.name &&
       n.initializer &&
       bindFields.has(propNameText(n.name, sf))
     ) {
-      collectCalls(n.initializer);
+      collect(n.initializer);
     }
     ts.forEachChild(n, visit);
   }
   visit(clsNode);
-  return [...new Set(fnNames)];
+  return idents;
 }
 
 function joinCmdPath(parent: string, sub: string): string {
@@ -497,10 +478,7 @@ function joinCmdPath(parent: string, sub: string): string {
 
 function extractCommanderInfo(
   root: ts.Node,
-  sf: ts.SourceFile,
-  fileRel: string,
-  fileSfCache: ReadonlyMap<string, ts.SourceFile>,
-  pkgSrcRelByName: ReadonlyMap<string, string>,
+  checker: ts.TypeChecker,
   rootPrefix = "",
   visited = new Set<string>(),
   depth = 0,
@@ -511,7 +489,8 @@ function extractCommanderInfo(
   descriptions: string[];
 } {
   if (depth > 6) return { commands: [], options: [], descriptions: [] };
-  const visitKey = `${fileRel}:${root.pos}:${rootPrefix}:${cmdParamIdx}`;
+  const sf = root.getSourceFile();
+  const visitKey = `${sf.fileName}:${root.pos}:${rootPrefix}:${cmdParamIdx}`;
   if (visited.has(visitKey)) return { commands: [], options: [], descriptions: [] };
   visited.add(visitKey);
 
@@ -520,12 +499,9 @@ function extractCommanderInfo(
   const descriptions: string[] = [];
   const varPaths = new Map<string, string>();
 
-  // Seed Commander parameter identifier at `cmdParamIdx` (supports Command in any parameter position)
   const seedParam = (params: ts.NodeArray<ts.ParameterDeclaration>): void => {
     const param = params[cmdParamIdx];
-    if (param && ts.isIdentifier(param.name)) {
-      varPaths.set(param.name.text, rootPrefix);
-    }
+    if (param && ts.isIdentifier(param.name)) varPaths.set(param.name.text, rootPrefix);
   };
   if (ts.isFunctionDeclaration(root) || ts.isArrowFunction(root) || ts.isFunctionExpression(root)) {
     seedParam(root.parameters);
@@ -576,7 +552,6 @@ function extractCommanderInfo(
         }
         return null;
       }
-      // Wrapper helper like `scoped(ticket.command("show <id>"), t)` or `node(command)`
       for (const a of expr.arguments) {
         const p = resolveExprPath(a);
         if (p !== null) return p;
@@ -586,12 +561,9 @@ function extractCommanderInfo(
   };
 
   function visit(node: ts.Node): void {
-    // Track `const ticket = org.command("ticket")...`
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
       const boundPath = resolveExprPath(node.initializer);
-      if (boundPath !== null) {
-        varPaths.set(node.name.text, boundPath);
-      }
+      if (boundPath !== null) varPaths.set(node.name.text, boundPath);
     }
 
     if (ts.isCallExpression(node)) {
@@ -619,8 +591,6 @@ function extractCommanderInfo(
           }
         }
       } else if (ts.isIdentifier(node.expression) && node.arguments.length > 0) {
-        // Follow any local or imported helper receiving a tracked Commander instance in any argument position
-        const callee = node.expression.text;
         let cmdArgIdx = -1;
         let cmdArgPath: string | null = null;
         for (let i = 0; i < node.arguments.length; i++) {
@@ -633,14 +603,11 @@ function extractCommanderInfo(
           }
         }
         if (cmdArgPath !== null && cmdArgIdx !== -1) {
-          const localDecl = findTopLevelDecl(sf, callee);
-          if (localDecl) {
+          const targetDecl = resolveIdentifierDecl(node.expression, checker);
+          if (targetDecl) {
             const sub = extractCommanderInfo(
-              localDecl,
-              sf,
-              fileRel,
-              fileSfCache,
-              pkgSrcRelByName,
+              targetDecl,
+              checker,
               cmdArgPath,
               visited,
               depth + 1,
@@ -649,24 +616,6 @@ function extractCommanderInfo(
             commands.push(...sub.commands);
             options.push(...sub.options);
             descriptions.push(...sub.descriptions);
-          } else {
-            const imp = findImportedSymbolFile(sf, fileRel, callee, fileSfCache, pkgSrcRelByName);
-            if (imp) {
-              const sub = extractCommanderInfo(
-                imp.decl ?? imp.sf,
-                imp.sf,
-                imp.rel,
-                fileSfCache,
-                pkgSrcRelByName,
-                cmdArgPath,
-                visited,
-                depth + 1,
-                cmdArgIdx,
-              );
-              commands.push(...sub.commands);
-              options.push(...sub.options);
-              descriptions.push(...sub.descriptions);
-            }
           }
         }
       }
@@ -691,255 +640,266 @@ function parseSlotType(
   return { data: cleanTypeWs(typeNode.getText(sf)), code: null };
 }
 
-/* ---------- @prismshadow/penguin-core/kernel Extraction ---------- */
+/* ---------- @prismshadow/penguin-core/kernel Extraction via Official TypeScript Program + TypeChecker ---------- */
 
-interface KernelFileEntry {
-  fn: string;
-  rel: string;
-  sf: ts.SourceFile;
+function sanitizeKernelSlug(rawName: string): string {
+  const candidate = /^[A-Za-z0-9_$][A-Za-z0-9_$.-]*$/.test(rawName) ? rawName : slugOf(rawName);
+  if (!candidate || candidate === "." || candidate === ".." || /[/\\]/.test(candidate)) {
+    throw new Error(`Unsafe kernel export slug derived from "${rawName}"`);
+  }
+  return candidate;
 }
-
-type ResolvedKernelSymbol =
-  | {
-      externalReexport: {
-        from: string;
-        orig: string;
-        sf: ts.SourceFile;
-        st: ts.ExportDeclaration;
-        fn: string;
-        rel: string;
-      };
-    }
-  | {
-      externalReexport?: undefined;
-      st: ts.Statement;
-      sf: ts.SourceFile;
-      fn: string;
-      rel: string;
-    };
 
 function extractKernelPackage(repo: string): { exports: KernelExport[] } {
   const kdir = path.join(repo, "packages/core/src/kernel");
   const idxPath = path.join(kdir, "index.ts");
   if (!fs.existsSync(idxPath)) return { exports: [] };
 
-  const sfByFile = new Map<string, KernelFileEntry>();
-  for (const fn of fs
-    .readdirSync(kdir)
-    .filter((x) => x.endsWith(".ts"))
-    .sort()) {
-    const full = path.join(kdir, fn);
-    const text = fs.readFileSync(full, "utf8");
-    sfByFile.set(fn, {
-      fn,
-      rel: `packages/core/src/kernel/${fn}`,
-      sf: ts.createSourceFile(full, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS),
-    });
+  const program = ts.createProgram([idxPath], {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    strict: true,
+    skipLibCheck: true,
+  });
+  const checker = program.getTypeChecker();
+  const idxSf = program.getSourceFile(idxPath);
+  if (!idxSf) return { exports: [] };
+
+  // Collect export order & isTypeOnly flags from index.ts, while resolving every symbol through TypeChecker!
+  interface BarrelEntry {
+    name: string;
+    isTypeOnly: boolean;
+    specifier: ts.ExportSpecifier;
+    stmt: ts.ExportDeclaration;
   }
-
-  function resolveSymbolInFile(
-    fn: string,
-    origName: string,
-    depth = 0,
-  ): ResolvedKernelSymbol | null {
-    if (depth > 4) return null;
-    const entry = sfByFile.get(fn);
-    if (!entry) return null;
-    const { sf, rel } = entry;
-
-    for (const st of sf.statements) {
-      if (
-        (ts.isFunctionDeclaration(st) ||
-          ts.isClassDeclaration(st) ||
-          ts.isInterfaceDeclaration(st) ||
-          ts.isTypeAliasDeclaration(st)) &&
-        st.name?.text === origName
-      ) {
-        return { st, sf, fn, rel };
-      }
-      if (ts.isVariableStatement(st)) {
-        for (const decl of st.declarationList.declarations) {
-          if (ts.isIdentifier(decl.name) && decl.name.text === origName) {
-            return { st, sf, fn, rel };
-          }
-        }
-      }
-      if (
-        ts.isExportDeclaration(st) &&
-        st.moduleSpecifier &&
-        ts.isStringLiteral(st.moduleSpecifier) &&
-        st.exportClause &&
-        ts.isNamedExports(st.exportClause)
-      ) {
-        for (const el of st.exportClause.elements) {
-          if (el.name.text !== origName) continue;
-          const targetName = el.propertyName ? el.propertyName.text : el.name.text;
-          const spec = st.moduleSpecifier.text;
-          if (spec.startsWith("./")) {
-            return resolveSymbolInFile(
-              spec.slice(2).replace(/\.js$/, ".ts"),
-              targetName,
-              depth + 1,
-            );
-          }
-          return {
-            externalReexport: { from: spec, orig: targetName, sf, st, fn, rel },
-          };
-        }
-      }
-    }
-    return null;
-  }
-
-  const idxEntry = sfByFile.get("index.ts");
-  if (!idxEntry) return { exports: [] };
-  const exportsList: KernelExport[] = [];
-
-  for (const st of idxEntry.sf.statements) {
-    if (
-      !ts.isExportDeclaration(st) ||
-      !st.moduleSpecifier ||
-      !ts.isStringLiteral(st.moduleSpecifier) ||
-      !st.exportClause ||
-      !ts.isNamedExports(st.exportClause)
-    ) {
+  const barrelEntries: BarrelEntry[] = [];
+  for (const st of idxSf.statements) {
+    if (!ts.isExportDeclaration(st) || !st.exportClause || !ts.isNamedExports(st.exportClause)) {
       continue;
     }
-    const fromFile = st.moduleSpecifier.text.slice(2).replace(/\.js$/, ".ts");
-    const stmtTypeOnly = st.isTypeOnly;
     for (const el of st.exportClause.elements) {
-      const name = el.name.text;
-      const orig = el.propertyName ? el.propertyName.text : name;
-      const isTypeOnly = stmtTypeOnly || el.isTypeOnly;
-      const resolved = resolveSymbolInFile(fromFile, orig);
-      if (!resolved) continue;
-
-      const importStmt = isTypeOnly
-        ? `import type { ${name} } from "@prismshadow/penguin-core/kernel";`
-        : `import { ${name} } from "@prismshadow/penguin-core/kernel";`;
-
-      if (resolved.externalReexport) {
-        const ex = resolved.externalReexport;
-        const jsd = getJsDocFull(ex.sf, ex.st);
-        const fallback = `Re-exported from \`${ex.from}\` for defining versioned context schemas passed to \`schema()\`.`;
-        exportsList.push({
-          name,
-          slug: name,
-          isTypeOnly,
-          kind: "function",
-          sourceFile: ex.fn,
-          file: ex.rel,
-          line: lineOf(ex.sf, ex.st.getStart(ex.sf)),
-          importStmt,
-          sig: `export { ${ex.orig}${ex.orig !== name ? ` as ${name}` : ""} } from "${ex.from}";`,
-          doc: jsd.doc.length ? jsd.doc : [fallback],
-          docBlocks: jsd.docBlocks.length ? jsd.docBlocks : [{ kind: "p", text: fallback }],
-          params: [],
-          returnType: "",
-          members: [],
-          variants: [],
-        });
-        continue;
-      }
-
-      const { st: node, sf, fn, rel } = resolved;
-      const jsd = getJsDocFull(sf, node);
-      let kind: KernelExportKind = "type_alias";
-      let sig = "";
-      let params: ParamItem[] = [];
-      let returnType = "";
-      let members: MemberItem[] = [];
-      const variants: UnionVariant[] = [];
-
-      if (ts.isFunctionDeclaration(node)) {
-        kind = KERNEL_DECORATORS.has(name) ? "decorator" : "function";
-        const isAsync = hasMod(node, ts.SyntaxKind.AsyncKeyword);
-        const tp = node.typeParameters
-          ? `<${node.typeParameters.map((x) => x.getText(sf)).join(", ")}>`
-          : "";
-        params = node.parameters.map((p) => ({
-          name: p.name.getText(sf),
-          optional: Boolean(p.questionToken || p.initializer),
-          type: p.type ? cleanTypeWs(p.type.getText(sf)) : "unknown",
-          defaultVal: p.initializer ? cleanTypeWs(p.initializer.getText(sf)) : "",
-        }));
-        returnType = node.type ? cleanTypeWs(node.type.getText(sf)) : "";
-        const paramsFormatted =
-          node.parameters.length > 2
-            ? `\n  ${node.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(",\n  ")},\n`
-            : node.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(", ");
-        sig = `export ${isAsync ? "async " : ""}function ${name}${tp}(${paramsFormatted})${returnType ? `: ${returnType}` : ""}`;
-      } else if (ts.isClassDeclaration(node)) {
-        kind = "class";
-        sig = extractClassDecl(node, sf, "class");
-        members = extractMembers(node.members, sf, true);
-      } else if (ts.isInterfaceDeclaration(node)) {
-        kind = "interface";
-        sig = node.getText(sf);
-        members = extractMembers(node.members, sf, false);
-      } else if (ts.isTypeAliasDeclaration(node)) {
-        kind = "type_alias";
-        sig = node.getText(sf);
-        if (ts.isUnionTypeNode(node.type)) {
-          let prevEnd = node.type.pos;
-          for (const branch of node.type.types) {
-            let bj = getJsDocFull(sf, branch);
-            if (!bj.doc.length) {
-              const slice = sf.text.slice(prevEnd, branch.getStart(sf));
-              const m = slice.match(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*\|?\s*$/);
-              if (m?.[1]) bj = parsedDocFromRaw(`/**${m[1]}*/`);
-            }
-            variants.push({
-              type: cleanTypeWs(branch.getText(sf)),
-              doc: bj.doc,
-              docBlocks: bj.docBlocks,
-            });
-            prevEnd = branch.end;
-          }
-        } else if (ts.isTypeLiteralNode(node.type)) {
-          members = extractMembers(node.type.members, sf, false);
-        }
-      } else {
-        kind = "function";
-        sig = node.getText(sf);
-      }
-
-      exportsList.push({
-        name,
-        slug: name,
-        isTypeOnly,
-        kind,
-        sourceFile: fn,
-        file: rel,
-        line: lineOf(sf, node.getStart(sf)),
-        importStmt,
-        sig,
-        doc: jsd.doc,
-        docBlocks: jsd.docBlocks,
-        params,
-        returnType,
-        members,
-        variants,
+      barrelEntries.push({
+        name: el.name.text,
+        isTypeOnly: Boolean(st.isTypeOnly || el.isTypeOnly),
+        specifier: el,
+        stmt: st,
       });
     }
   }
 
-  // Scheme B (Angular-style exact identifier slug): preserve original casing for safe single-segment
-  // identifiers, sanitize any non-identifier alias, and disambiguate case-insensitive collisions by kind.
-  const sanitizeKernelSlug = (rawName: string): string => {
-    const candidate = /^[A-Za-z0-9_$][A-Za-z0-9_$.-]*$/.test(rawName) ? rawName : slugOf(rawName);
-    if (!candidate || candidate === "." || candidate === ".." || /[/\\]/.test(candidate)) {
-      throw new Error(`Unsafe kernel export slug derived from "${rawName}"`);
+  const indexModSym = checker.getSymbolAtLocation(idxSf);
+  const modExportByName = new Map(
+    (indexModSym ? checker.getExportsOfModule(indexModSym) : []).map((s) => [s.getName(), s]),
+  );
+
+  // Build declaration-node -> exported-name map so TypeChecker cross-references resolve natively!
+  const canonicalSymToExportName = new Map<ts.Symbol, string>();
+  const resolvedByName = new Map<
+    string,
+    {
+      entry: BarrelEntry;
+      targetSym: ts.Symbol | null;
+      decl: ts.Declaration | null;
+      externalFrom: string | null;
+      externalReexpStmt: ts.ExportDeclaration | null;
+      origName: string;
     }
-    return candidate;
-  };
+  >();
+
+  for (const entry of barrelEntries) {
+    const expSym = modExportByName.get(entry.name);
+    let targetSym: ts.Symbol | null = null;
+    let externalFrom: string | null = null;
+    let externalReexpStmt: ts.ExportDeclaration | null = null;
+    let origName = entry.specifier.propertyName ? entry.specifier.propertyName.text : entry.name;
+
+    // Walk immediate alias hops to preserve any local re-export from an external package (e.g. schema.ts -> "arktype")
+    let curSym: ts.Symbol | undefined = expSym;
+    for (let hop = 0; hop < 8 && curSym; hop++) {
+      for (const d of curSym.declarations ?? []) {
+        if (ts.isExportSpecifier(d) && d.getSourceFile().fileName.startsWith(kdir)) {
+          const expDecl = d.parent.parent;
+          if (expDecl.moduleSpecifier && ts.isStringLiteral(expDecl.moduleSpecifier)) {
+            const spec = expDecl.moduleSpecifier.text;
+            if (!spec.startsWith(".")) {
+              externalFrom = spec;
+              externalReexpStmt = expDecl;
+              origName = d.propertyName ? d.propertyName.text : d.name.text;
+            }
+          }
+        }
+      }
+      if (!(curSym.flags & ts.SymbolFlags.Alias)) break;
+      const next = checker.getImmediateAliasedSymbol(curSym);
+      if (!next || next === curSym) break;
+      curSym = next;
+    }
+
+    if (expSym) {
+      try {
+        targetSym = expSym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(expSym) : expSym;
+      } catch {
+        targetSym = expSym;
+      }
+    }
+    const decl =
+      targetSym?.valueDeclaration ??
+      targetSym?.declarations?.find((d) => !ts.isExportSpecifier(d)) ??
+      targetSym?.declarations?.[0] ??
+      null;
+
+    if (targetSym && !externalFrom) canonicalSymToExportName.set(targetSym, entry.name);
+    resolvedByName.set(entry.name, {
+      entry,
+      targetSym,
+      decl,
+      externalFrom,
+      externalReexpStmt,
+      origName,
+    });
+  }
+
+  // First pass: assign Scheme B slugs deterministically so expandedOptions can link to typeSlug
   const lowerCounts = new Map<string, number>();
-  for (const e of exportsList) {
-    const base = sanitizeKernelSlug(e.name);
-    const lc = base.toLowerCase();
+  for (const entry of barrelEntries) {
+    const lc = sanitizeKernelSlug(entry.name).toLowerCase();
     lowerCounts.set(lc, (lowerCounts.get(lc) ?? 0) + 1);
   }
+
+  const exportsList: KernelExport[] = [];
+  const declNodesByExportName = new Map<string, ts.Node>();
+
+  for (const entry of barrelEntries) {
+    const info = resolvedByName.get(entry.name);
+    if (!info) continue;
+    const { targetSym, decl, externalFrom, externalReexpStmt, origName } = info;
+    const importStmt = entry.isTypeOnly
+      ? `import type { ${entry.name} } from "@prismshadow/penguin-core/kernel";`
+      : `import { ${entry.name} } from "@prismshadow/penguin-core/kernel";`;
+
+    if (externalFrom || !decl || !decl.getSourceFile().fileName.startsWith(kdir)) {
+      const reexpStmt = externalReexpStmt ?? entry.stmt;
+      const sf = reexpStmt.getSourceFile();
+      const fn = path.basename(sf.fileName);
+      const jsd = extractJsDoc(reexpStmt, sf);
+      const fromLabel = externalFrom ?? "external";
+      const fallback = `Re-exported from \`${fromLabel}\` for defining versioned context schemas passed to \`schema()\`.`;
+      exportsList.push({
+        name: entry.name,
+        slug: entry.name,
+        isTypeOnly: entry.isTypeOnly,
+        kind: "function",
+        sourceFile: fn,
+        file: `packages/core/src/kernel/${fn}`,
+        line: lineOf(sf, reexpStmt.getStart(sf)),
+        importStmt,
+        sig: `export { ${origName}${origName !== entry.name ? ` as ${entry.name}` : ""} } from "${fromLabel}";`,
+        doc: jsd.markdown ? jsd : { markdown: fallback, summary: fallback, tags: [] },
+        params: [],
+        returnType: "",
+        members: [],
+        variants: [],
+        expandedOptions: null,
+        references: [],
+      });
+      continue;
+    }
+
+    const sf = decl.getSourceFile();
+    const fn = path.basename(sf.fileName);
+    const rel = `packages/core/src/kernel/${fn}`;
+    const stmtNode =
+      ts.isVariableDeclaration(decl) && ts.isVariableDeclarationList(decl.parent)
+        ? decl.parent.parent
+        : decl;
+    const jsd = extractJsDoc(stmtNode, sf);
+
+    let kind: KernelExportKind = "type_alias";
+    let sig = "";
+    let params: ParamItem[] = [];
+    let returnType = "";
+    let members: MemberItem[] = [];
+    const variants: UnionVariant[] = [];
+
+    if (ts.isFunctionDeclaration(decl)) {
+      kind = KERNEL_DECORATORS.has(entry.name) ? "decorator" : "function";
+      const isAsync = hasMod(decl, ts.SyntaxKind.AsyncKeyword);
+      const tp = decl.typeParameters
+        ? `<${decl.typeParameters.map((x) => x.getText(sf)).join(", ")}>`
+        : "";
+      params = extractParams(decl.parameters, sf);
+      returnType = decl.type ? cleanTypeWs(decl.type.getText(sf)) : "";
+      const paramsFormatted =
+        decl.parameters.length > 2
+          ? `\n  ${decl.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(",\n  ")},\n`
+          : decl.parameters.map((p) => cleanTypeWs(p.getText(sf))).join(", ");
+      sig = `export ${isAsync ? "async " : ""}function ${entry.name}${tp}(${paramsFormatted})${returnType ? `: ${returnType}` : ""}`;
+    } else if (ts.isClassDeclaration(decl)) {
+      kind = "class";
+      sig = extractClassDecl(decl, sf, "class");
+      members = extractMembers(decl.members, sf, true);
+    } else if (ts.isInterfaceDeclaration(decl)) {
+      kind = "interface";
+      sig = decl.getText(sf);
+      members = extractMembers(decl.members, sf, false);
+    } else if (ts.isTypeAliasDeclaration(decl)) {
+      kind = "type_alias";
+      sig = decl.getText(sf);
+      if (ts.isUnionTypeNode(decl.type)) {
+        let prevEnd = decl.type.pos;
+        for (const branch of decl.type.types) {
+          let bj = extractJsDoc(branch, sf);
+          if (!bj.markdown) {
+            const slice = sf.text.slice(prevEnd, branch.getStart(sf));
+            const ranges = ts.getLeadingCommentRanges(slice, 0) ?? [];
+            const lastRange = ranges[ranges.length - 1];
+            if (lastRange) {
+              const rawC = slice.slice(lastRange.pos, lastRange.end);
+              if (rawC.startsWith("/**")) bj = parseRawJsDocComment(rawC);
+            }
+          }
+          variants.push({ type: cleanTypeWs(branch.getText(sf)), doc: bj });
+          prevEnd = branch.end;
+        }
+      } else if (ts.isTypeLiteralNode(decl.type)) {
+        members = extractMembers(decl.type.members, sf, false);
+      } else if (targetSym) {
+        // Native TypeChecker evaluation for Omit<...>, Pick<...>, Partial<...>, intersections, etc.!
+        const resolvedType = checker.getDeclaredTypeOfSymbol(targetSym);
+        if (resolvedType.flags & ts.TypeFlags.Object || resolvedType.isIntersection()) {
+          members = extractMembersFromType(resolvedType, checker, decl);
+        }
+      }
+    } else {
+      kind = "function";
+      sig = stmtNode.getText(sf);
+    }
+
+    declNodesByExportName.set(entry.name, stmtNode);
+    exportsList.push({
+      name: entry.name,
+      slug: entry.name,
+      isTypeOnly: entry.isTypeOnly,
+      kind,
+      sourceFile: fn,
+      file: rel,
+      line: lineOf(sf, stmtNode.getStart(sf)),
+      importStmt,
+      sig,
+      doc: jsd,
+      params,
+      returnType,
+      members,
+      variants,
+      expandedOptions: null,
+      references: [],
+    });
+  }
+
+  // Finalize Scheme B slugs + collision check
   const seenLowerSlugs = new Set<string>();
+  const slugByName = new Map<string, string>();
   for (const e of exportsList) {
     const base = sanitizeKernelSlug(e.name);
     e.slug = (lowerCounts.get(base.toLowerCase()) ?? 0) > 1 ? `${base}.${e.kind}` : base;
@@ -948,12 +908,98 @@ function extractKernelPackage(repo: string): { exports: KernelExport[] } {
       throw new Error(`Unresolved case-insensitive kernel slug collision: ${e.slug}`);
     }
     seenLowerSlugs.add(slugLc);
+    slugByName.set(e.name, e.slug);
+  }
+
+  // Resolve decorator/function expandedOptions & AST/TypeChecker cross-reference graph natively!
+  for (const e of exportsList) {
+    const decl = resolvedByName.get(e.name)?.decl;
+    if (
+      decl &&
+      ts.isFunctionDeclaration(decl) &&
+      (e.kind === "decorator" || e.kind === "function")
+    ) {
+      for (const p of decl.parameters) {
+        const pName = p.name.getText(decl.getSourceFile());
+        const pTypeText = p.type ? cleanTypeWs(p.type.getText(decl.getSourceFile())) : "";
+        const isOptParam =
+          e.kind === "decorator" ||
+          /^(opts|options|meta|config|cfg)$/i.test(pName) ||
+          /(Options|Meta|Config)\b/.test(pTypeText);
+        if (!isOptParam || !p.type) continue;
+        const pType = checker.getTypeAtLocation(p.type);
+        const nonNullable = checker.getNonNullableType(pType);
+        const typeSym = nonNullable.aliasSymbol ?? nonNullable.getSymbol();
+        const typeName = typeSym
+          ? (canonicalSymToExportName.get(typeSym) ?? typeSym.getName())
+          : "";
+        const typeSlug = slugByName.get(typeName);
+        if (
+          typeName &&
+          typeSlug &&
+          (nonNullable.flags & ts.TypeFlags.Object || nonNullable.isIntersection())
+        ) {
+          const optMembers = extractMembersFromType(nonNullable, checker, p.type);
+          if (optMembers.length > 0) {
+            e.expandedOptions = {
+              paramName: pName,
+              defaultVal: p.initializer
+                ? cleanTypeWs(p.initializer.getText(decl.getSourceFile()))
+                : "",
+              typeName,
+              typeSlug,
+              members: optMembers,
+            };
+            break;
+          }
+        }
+      }
+    }
+
+    // Native TypeChecker cross-reference graph on the declaration signature (excluding function bodies!)
+    const rootNode = declNodesByExportName.get(e.name);
+    if (rootNode) {
+      const refs = new Set<string>();
+      const walkRefs = (n: ts.Node): void => {
+        // Do not descend into function/method/constructor implementation bodies
+        if (
+          (ts.isFunctionDeclaration(n) ||
+            ts.isMethodDeclaration(n) ||
+            ts.isConstructorDeclaration(n) ||
+            ts.isGetAccessorDeclaration(n)) &&
+          n.body
+        ) {
+          for (const ch of n.getChildren()) {
+            if (ch !== n.body) walkRefs(ch);
+          }
+          return;
+        }
+        if (ts.isTypeReferenceNode(n)) {
+          const sym = checker.getSymbolAtLocation(n.typeName);
+          if (sym) {
+            const target = sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
+            const refName = canonicalSymToExportName.get(target);
+            if (refName && refName !== e.name) refs.add(refName);
+          }
+        } else if (ts.isExpressionWithTypeArguments(n) && ts.isIdentifier(n.expression)) {
+          const sym = checker.getSymbolAtLocation(n.expression);
+          if (sym) {
+            const target = sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
+            const refName = canonicalSymToExportName.get(target);
+            if (refName && refName !== e.name) refs.add(refName);
+          }
+        }
+        ts.forEachChild(n, walkRefs);
+      };
+      walkRefs(rootNode);
+      e.references = [...refs].sort((a, b) => a.localeCompare(b));
+    }
   }
 
   return { exports: exportsList };
 }
 
-/* ---------- Full Monorepo AST Extraction ---------- */
+/* ---------- Full Monorepo Extraction via Official TypeScript Program + TypeChecker ---------- */
 
 interface PkgRoot {
   sub: string;
@@ -968,10 +1014,8 @@ interface RawSlotIface {
   prop: string;
   data: string;
   code: string | null;
-  doc: string[];
-  docBlocks: ParsedDoc["docBlocks"];
-  parentDoc: string[];
-  parentDocBlocks: ParsedDoc["docBlocks"];
+  doc: ParsedDoc;
+  parentDoc: ParsedDoc;
   pkg: string;
   area: AreaKind;
   file: string;
@@ -1025,9 +1069,32 @@ export function extractAll(repoPath: string): ExtractedData {
   const repo = path.resolve(repoPath);
   const git = readGitStamp(repo);
   const pkgRoots = discoverPackages(repo);
-  const pkgSrcRelByName = new Map(
-    pkgRoots.map((pr) => [pr.pkgName, path.relative(repo, pr.srcDir).replace(/\\/g, "/")]),
-  );
+
+  // Build workspace `paths` map for a single official TypeScript Program across the monorepo!
+  const allFiles: string[] = [];
+  const filePkgMap = new Map<string, PkgRoot>();
+  const tsPaths: Record<string, string[]> = {};
+  for (const pr of pkgRoots) {
+    tsPaths[pr.pkgName] = [path.join(pr.srcDir, "index.ts")];
+    tsPaths[`${pr.pkgName}/*`] = [path.join(pr.srcDir, "*")];
+    for (const f of walkTs(pr.srcDir)) {
+      allFiles.push(f);
+      filePkgMap.set(path.resolve(f), pr);
+    }
+  }
+
+  const program = ts.createProgram(allFiles, {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    jsx: ts.JsxEmit.ReactJSX,
+    strict: true,
+    skipLibCheck: true,
+    noLib: true,
+    baseUrl: repo,
+    paths: tsPaths,
+  });
+  const checker = program.getTypeChecker();
 
   const rawModules: ModuleRecord[] = [];
   const rawComponents: ComponentRecord[] = [];
@@ -1037,170 +1104,154 @@ export function extractAll(repoPath: string): ExtractedData {
   const fileHostClasses = new Map<string, Array<{ name: string; kind: "module" | "component" }>>();
   const classNodeByKey = new Map<string, ts.ClassDeclaration>();
 
-  for (const pr of pkgRoots) {
-    for (const f of walkTs(pr.srcDir)) {
-      const rel = path.relative(repo, f).replace(/\\/g, "/");
-      const text = fs.readFileSync(f, "utf8");
-      const sf = ts.createSourceFile(
-        f,
-        text,
-        ts.ScriptTarget.Latest,
-        true,
-        f.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-      );
-      fileSfCache.set(rel, sf);
+  for (const absFile of allFiles) {
+    const pr = filePkgMap.get(path.resolve(absFile));
+    const sf = program.getSourceFile(absFile);
+    if (!pr || !sf) continue;
+    const rel = path.relative(repo, absFile).replace(/\\/g, "/");
+    fileSfCache.set(rel, sf);
 
-      const hostClasses: Array<{ name: string; kind: "module" | "component" }> = [];
-      for (const st of sf.statements) {
-        if (ts.isClassDeclaration(st) && st.name) {
-          const name = st.name.text;
-          const decs = getDecorators(st);
-          const decNames = decs.map((d) => decName(d, sf));
-          const isModule = decNames.includes("Module");
-          const isComp = decNames.includes("Component");
-          const isIface = decNames.includes("Interface");
+    const hostClasses: Array<{ name: string; kind: "module" | "component" }> = [];
+    for (const st of sf.statements) {
+      if (ts.isClassDeclaration(st) && st.name) {
+        const name = st.name.text;
+        const decs = getDecorators(st);
+        const decNames = decs.map((d) => decName(d, sf));
+        const isModule = decNames.includes("Module");
+        const isComp = decNames.includes("Component");
+        const isIface = decNames.includes("Interface");
 
-          if (isModule || isComp) {
-            const nodeKind = isModule ? "module" : "component";
-            hostClasses.push({ name, kind: nodeKind });
-            classNodeByKey.set(`${rel}#${name}`, st);
-            const dec = decs.find((d) => decName(d, sf) === (isModule ? "Module" : "Component"));
-            let meta: Record<string, unknown> = {};
-            let contextRaw: string | null = null;
-            if (dec && ts.isCallExpression(dec.expression) && dec.expression.arguments.length > 0) {
-              const arg = dec.expression.arguments[0];
-              if (arg && ts.isObjectLiteralExpression(arg)) {
-                const evaluated = evalExpr(arg, sf);
-                if (evaluated && typeof evaluated === "object") {
-                  meta = evaluated as Record<string, unknown>;
-                }
-                for (const prop of arg.properties) {
-                  if (ts.isPropertyAssignment(prop) && propNameText(prop.name, sf) === "context") {
-                    contextRaw = prop.initializer.getText(sf);
-                  }
+        if (isModule || isComp) {
+          const nodeKind = isModule ? "module" : "component";
+          hostClasses.push({ name, kind: nodeKind });
+          classNodeByKey.set(`${rel}#${name}`, st);
+          const dec = decs.find((d) => decName(d, sf) === (isModule ? "Module" : "Component"));
+          let meta: Record<string, unknown> = {};
+          let contextRaw: string | null = null;
+          if (dec && ts.isCallExpression(dec.expression) && dec.expression.arguments.length > 0) {
+            const arg = dec.expression.arguments[0];
+            if (arg && ts.isObjectLiteralExpression(arg)) {
+              const evaluated = evalExpr(arg, sf);
+              if (evaluated && typeof evaluated === "object") {
+                meta = evaluated as Record<string, unknown>;
+              }
+              for (const prop of arg.properties) {
+                if (ts.isPropertyAssignment(prop) && propNameText(prop.name, sf) === "context") {
+                  contextRaw = prop.initializer.getText(sf);
                 }
               }
-            }
-
-            const uses: UseField[] = [];
-            const provides: ProvideField[] = [];
-            const binds: BindField[] = [];
-            for (const m of st.members) {
-              if (!ts.isPropertyDeclaration(m) || !m.name) continue;
-              const field = propNameText(m.name, sf);
-              const typeStr = m.type ? cleanTypeWs(m.type.getText(sf)) : "unknown";
-              const raw = m.getText(sf).trim();
-              for (const md of getDecorators(m)) {
-                const dn = decName(md, sf);
-                const firstArg =
-                  ts.isCallExpression(md.expression) && md.expression.arguments.length > 0
-                    ? evalExpr(md.expression.arguments[0], sf)
-                    : undefined;
-                if (dn === "Use") {
-                  uses.push({
-                    field,
-                    type: typeStr,
-                    from: typeof firstArg === "string" ? firstArg : null,
-                    raw,
-                  });
-                } else if (dn === "Provide") {
-                  provides.push({ field, type: typeStr, raw });
-                } else if (dn === "Bind") {
-                  binds.push({ field, id: String(firstArg ?? ""), type: typeStr, raw });
-                }
-              }
-            }
-
-            const impls: string[] = [];
-            for (const hc of st.heritageClauses ?? []) {
-              if (hc.token === ts.SyntaxKind.ImplementsKeyword) {
-                for (const t of hc.types) impls.push(t.expression.getText(sf));
-              }
-            }
-
-            const clsJsd = getJsDocFull(sf, st);
-            const methods = extractMembers(st.members, sf, false).filter(
-              (m) => m.kind === "method",
-            );
-            const baseRec = {
-              name,
-              slug: "",
-              pkg: pr.pkgName,
-              pkgSub: pr.sub,
-              area: pr.area,
-              file: rel,
-              line: lineOf(sf, st.getStart(sf)),
-              doc: clsJsd.doc,
-              docBlocks: clsJsd.docBlocks,
-              children: Array.isArray(meta.children)
-                ? meta.children.filter((x): x is string => typeof x === "string")
-                : [],
-              exports: Array.isArray(meta.exports)
-                ? meta.exports.filter((x): x is string => typeof x === "string")
-                : [],
-              contributes:
-                meta.contributes && typeof meta.contributes === "object"
-                  ? (meta.contributes as Record<string, unknown>)
-                  : {},
-              context: contextRaw,
-              uses,
-              provides,
-              binds,
-              implements: impls,
-              methods,
-              rawDecl: extractClassDecl(st, sf, nodeKind),
-              parents: [] as ModuleRecord[],
-            };
-            if (isModule) {
-              rawModules.push({ ...baseRec, kind: "module", resolvedChildren: [] });
-            } else {
-              rawComponents.push({ ...baseRec, kind: "component", primaryParent: null, href: "" });
             }
           }
 
-          if (isIface) {
-            const ij = getJsDocFull(sf, st);
-            rawIfaces.push({
-              name,
-              slug: "",
-              pkg: pr.pkgName,
-              pkgSub: pr.sub,
-              area: pr.area,
-              file: rel,
-              line: lineOf(sf, st.getStart(sf)),
-              doc: ij.doc,
-              docBlocks: ij.docBlocks,
-              members: extractMembers(st.members, sf, false),
-              rawDecl: extractClassDecl(st, sf, "interface"),
-            });
-          }
-        } else if (ts.isInterfaceDeclaration(st) && st.name.text.endsWith("Slots")) {
-          const baseName = st.name.text.slice(0, -"Slots".length);
-          const ifaceDoc = getJsDocFull(sf, st);
+          const uses: UseField[] = [];
+          const provides: ProvideField[] = [];
+          const binds: BindField[] = [];
           for (const m of st.members) {
-            if (!ts.isPropertySignature(m) || !m.name) continue;
-            const { data, code } = parseSlotType(m.type, sf);
-            const mj = getJsDocFull(sf, m);
-            rawSlotIfaces.push({
-              slotsIface: st.name.text,
-              baseName,
-              prop: propNameText(m.name, sf),
-              data,
-              code,
-              doc: mj.doc,
-              docBlocks: mj.docBlocks,
-              parentDoc: ifaceDoc.doc,
-              parentDocBlocks: ifaceDoc.docBlocks,
-              pkg: pr.pkgName,
-              area: pr.area,
-              file: rel,
-              line: lineOf(sf, m.getStart(sf)),
-            });
+            if (!ts.isPropertyDeclaration(m) || !m.name) continue;
+            const field = propNameText(m.name, sf);
+            const typeStr = m.type ? cleanTypeWs(m.type.getText(sf)) : "unknown";
+            const raw = m.getText(sf).trim();
+            for (const md of getDecorators(m)) {
+              const dn = decName(md, sf);
+              const firstArg =
+                ts.isCallExpression(md.expression) && md.expression.arguments.length > 0
+                  ? evalExpr(md.expression.arguments[0], sf)
+                  : undefined;
+              if (dn === "Use") {
+                uses.push({
+                  field,
+                  type: typeStr,
+                  from: typeof firstArg === "string" ? firstArg : null,
+                  raw,
+                });
+              } else if (dn === "Provide") {
+                provides.push({ field, type: typeStr, raw });
+              } else if (dn === "Bind") {
+                binds.push({ field, id: String(firstArg ?? ""), type: typeStr, raw });
+              }
+            }
+          }
+
+          const impls: string[] = [];
+          for (const hc of st.heritageClauses ?? []) {
+            if (hc.token === ts.SyntaxKind.ImplementsKeyword) {
+              for (const t of hc.types) impls.push(t.expression.getText(sf));
+            }
+          }
+
+          const methods = extractMembers(st.members, sf, false).filter((m) => m.kind === "method");
+          const baseRec = {
+            name,
+            slug: "",
+            pkg: pr.pkgName,
+            pkgSub: pr.sub,
+            area: pr.area,
+            file: rel,
+            line: lineOf(sf, st.getStart(sf)),
+            doc: extractJsDoc(st, sf),
+            children: Array.isArray(meta.children)
+              ? meta.children.filter((x): x is string => typeof x === "string")
+              : [],
+            exports: Array.isArray(meta.exports)
+              ? meta.exports.filter((x): x is string => typeof x === "string")
+              : [],
+            contributes:
+              meta.contributes && typeof meta.contributes === "object"
+                ? (meta.contributes as Record<string, unknown>)
+                : {},
+            context: contextRaw,
+            uses,
+            provides,
+            binds,
+            implements: impls,
+            methods,
+            rawDecl: extractClassDecl(st, sf, nodeKind),
+            parents: [] as ModuleRecord[],
+          };
+          if (isModule) {
+            rawModules.push({ ...baseRec, kind: "module", resolvedChildren: [] });
+          } else {
+            rawComponents.push({ ...baseRec, kind: "component", primaryParent: null, href: "" });
           }
         }
+
+        if (isIface) {
+          rawIfaces.push({
+            name,
+            slug: "",
+            pkg: pr.pkgName,
+            pkgSub: pr.sub,
+            area: pr.area,
+            file: rel,
+            line: lineOf(sf, st.getStart(sf)),
+            doc: extractJsDoc(st, sf),
+            members: extractMembers(st.members, sf, false),
+            rawDecl: extractClassDecl(st, sf, "interface"),
+          });
+        }
+      } else if (ts.isInterfaceDeclaration(st) && st.name.text.endsWith("Slots")) {
+        const baseName = st.name.text.slice(0, -"Slots".length);
+        const parentDoc = extractJsDoc(st, sf);
+        for (const m of st.members) {
+          if (!ts.isPropertySignature(m) || !m.name) continue;
+          const { data, code } = parseSlotType(m.type, sf);
+          rawSlotIfaces.push({
+            slotsIface: st.name.text,
+            baseName,
+            prop: propNameText(m.name, sf),
+            data,
+            code,
+            doc: extractJsDoc(m, sf),
+            parentDoc,
+            pkg: pr.pkgName,
+            area: pr.area,
+            file: rel,
+            line: lineOf(sf, m.getStart(sf)),
+          });
+        }
       }
-      fileHostClasses.set(rel, hostClasses);
     }
+    fileHostClasses.set(rel, hostClasses);
   }
 
   // Assign deterministic module slugs
@@ -1333,7 +1384,7 @@ export function extractAll(repoPath: string): ExtractedData {
   const nodeHref = (n: ModuleRecord | ComponentRecord): string =>
     n.kind === "module" ? `modules/${n.slug}/` : n.href;
 
-  // Slots & contributors
+  // Contribution slots (preferring @Module exports & @Provide ownership across files)
   const contribBySlot = new Map<string, SlotContributor[]>();
   for (const node of allNodes) {
     for (const [slotKey, val] of Object.entries(node.contributes)) {
@@ -1352,8 +1403,6 @@ export function extractAll(repoPath: string): ExtractedData {
     }
   }
 
-  // Map explicit `@Module({ exports })` and `@Provide()` interface names to their host nodes across files.
-  // Never let a bare `@Component implements X` override the `@Module` that exports/owns `X` (e.g. `ProjectsModule.appSeeds` vs `HostAppSeeds`).
   const moduleExportsHosts = new Map<string, ModuleRecord[]>();
   for (const mod of rawModules) {
     for (const expName of mod.exports) {
@@ -1364,10 +1413,8 @@ export function extractAll(repoPath: string): ExtractedData {
   }
   const provideHosts = new Map<string, Array<ModuleRecord | ComponentRecord>>();
   for (const node of allNodes) {
-    const providedIfaces = new Set<string>(
-      node.provides.map((p) => p.type.replace(/[<[\s|&?].*$/, "")),
-    );
-    for (const ifaceName of providedIfaces) {
+    for (const p of node.provides) {
+      const ifaceName = p.type.replace(/[<[\s|&?].*$/, "");
       if (!ifaceName) continue;
       const list = provideHosts.get(ifaceName) ?? [];
       list.push(node);
@@ -1388,16 +1435,15 @@ export function extractAll(repoPath: string): ExtractedData {
     const sameFileHosts = fileHostClasses.get(s.file) ?? [];
 
     const candidateHosts = [
-      ...exportedMods.map((h) => ({ name: h.name, kind: h.kind, area: h.area, pkg: h.pkg })),
-      ...providedNodes.map((h) => ({ name: h.name, kind: h.kind, area: h.area, pkg: h.pkg })),
-      ...sameFileHosts.map((h) => ({ name: h.name, kind: h.kind, area: s.area, pkg: s.pkg })),
+      ...exportedMods.map((h) => ({ name: h.name, kind: h.kind })),
+      ...providedNodes.map((h) => ({ name: h.name, kind: h.kind })),
+      ...sameFileHosts,
     ];
-
     let key = candidateHosts
       .map((h) => `${h.name}.${s.prop}`)
       .find((cand) => contribBySlot.has(cand));
     if (!key) {
-      const preferredOwner =
+      const owner =
         exportedMods.find((h) => h.pkg === s.pkg) ??
         exportedMods.find((h) => h.area === s.area) ??
         providedNodes.find((h) => h.kind === "module" && h.pkg === s.pkg) ??
@@ -1405,8 +1451,8 @@ export function extractAll(repoPath: string): ExtractedData {
         providedNodes.find((h) => h.pkg === s.pkg) ??
         exportedMods[0] ??
         providedNodes[0];
-      if (preferredOwner) {
-        key = `${preferredOwner.name}.${s.prop}`;
+      if (owner) {
+        key = `${owner.name}.${s.prop}`;
       } else {
         const modHost =
           sameFileHosts.find((h) => h.kind === "module" && h.name.startsWith(s.baseName)) ??
@@ -1418,6 +1464,9 @@ export function extractAll(repoPath: string): ExtractedData {
     const hostClass = key.split(".")[0] ?? s.baseName;
     const hostMod = resolveModuleFor(hostClass, s.area, s.file);
     const hostComp = compByName.get(hostClass);
+    const fallbackDoc: ParsedDoc = s.parentDoc.summary
+      ? { markdown: s.parentDoc.summary, summary: s.parentDoc.summary, tags: [] }
+      : EMPTY_DOC;
     slotMap.set(key, {
       key,
       slotsIface: s.slotsIface,
@@ -1430,8 +1479,7 @@ export function extractAll(repoPath: string): ExtractedData {
       line: s.line,
       data: s.data,
       code: s.code,
-      doc: s.doc.length ? s.doc : s.parentDoc.slice(0, 1),
-      docBlocks: s.docBlocks.length ? s.docBlocks : s.parentDocBlocks.slice(0, 1),
+      doc: s.doc.markdown ? s.doc : fallbackDoc,
       contributors: contribBySlot.get(key) ?? [],
     });
   }
@@ -1452,14 +1500,13 @@ export function extractAll(repoPath: string): ExtractedData {
       line: hostMod?.line ?? hostComp?.line ?? 1,
       data: "unknown",
       code: null,
-      doc: [],
-      docBlocks: [],
+      doc: EMPTY_DOC,
       contributors,
     });
   }
   const slots = [...slotMap.values()].sort((a, b) => a.key.localeCompare(b.key));
 
-  // HTTP route contributions (scoped per contribution ID & matching @Bind router)
+  // HTTP route contributions (per contribution ID -> @Bind -> TypeChecker-resolved router function)
   const httpCountByFile = new Map<string, number>();
   for (const node of allNodes) {
     const entries = node.contributes["HttpModule.routes"];
@@ -1519,20 +1566,15 @@ export function extractAll(repoPath: string): ExtractedData {
           entryId: entry.id || undefined,
         };
         if (fields.size > 0) {
-          const targetFns = findBoundTargetNames(clsNode, fields, sf);
-          for (const fnName of targetFns) {
-            const localDecl = findTopLevelDecl(sf, fnName);
-            if (localDecl) {
-              addEndpoints(extractEndpointsFromNode(localDecl, sf), meta);
-              continue;
-            }
-            const imp = findImportedSymbolFile(sf, node.file, fnName, fileSfCache, pkgSrcRelByName);
-            if (imp) {
-              addEndpoints(extractEndpointsFromNode(imp.decl ?? imp.sf, imp.sf), {
-                ...meta,
-                fileOverride: imp.rel,
-              });
-            }
+          for (const ident of findBoundTargetIdentifiers(clsNode, fields, sf)) {
+            const decl = resolveIdentifierDecl(ident, checker);
+            if (!decl) continue;
+            const declSf = decl.getSourceFile();
+            const declRel = path.relative(repo, declSf.fileName).replace(/\\/g, "/");
+            addEndpoints(extractEndpointsFromNode(decl, declSf), {
+              ...meta,
+              fileOverride: declRel !== node.file ? declRel : undefined,
+            });
           }
         }
       }
@@ -1546,7 +1588,6 @@ export function extractAll(repoPath: string): ExtractedData {
       }
     }
 
-    // Fallback to file-wide scan ONLY when this class is the sole HTTP contributor in its file and has a single mount
     if (
       endpoints.length === 0 &&
       sf &&
@@ -1554,29 +1595,11 @@ export function extractAll(repoPath: string): ExtractedData {
       (httpCountByFile.get(node.file) ?? 0) === 1
     ) {
       const only = parsedEntries[0];
-      const meta = {
+      addEndpoints(extractEndpointsFromNode(sf, sf), {
         mountPrefix: only?.prefix || undefined,
         auth: only?.auth || undefined,
         entryId: only?.id || undefined,
-      };
-      addEndpoints(extractEndpointsFromNode(sf, sf), meta);
-      if (endpoints.length === 0) {
-        for (const st of sf.statements) {
-          if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
-          const spec = st.moduleSpecifier.text;
-          if (!spec.startsWith("./") && !spec.startsWith("../")) continue;
-          const targetRel = path
-            .normalize(path.join(path.dirname(node.file), spec.replace(/\.js$/, ".ts")))
-            .replace(/\\/g, "/");
-          const impSf = fileSfCache.get(targetRel);
-          if (!impSf) continue;
-          const more = extractEndpointsFromNode(impSf, impSf);
-          if (more.length > 0) {
-            addEndpoints(more, { ...meta, fileOverride: targetRel });
-            break;
-          }
-        }
-      }
+      });
     }
 
     httpContribs.push({
@@ -1588,7 +1611,6 @@ export function extractAll(repoPath: string): ExtractedData {
       file: node.file,
       line: node.line,
       doc: node.doc,
-      docBlocks: node.docBlocks,
       binds: node.binds,
       entries: parsedEntries,
       endpoints,
@@ -1596,7 +1618,7 @@ export function extractAll(repoPath: string): ExtractedData {
   }
   httpContribs.sort((a, b) => a.cls.localeCompare(b.cls));
 
-  // CLI commands (scoped per @Bind command factory, following registration helpers & command chains)
+  // CLI commands (per @Bind -> TypeChecker-resolved helper tree)
   const cliMap = new Map<string, CliCommandRecord>();
   const cliSlotKeys = [
     "CliCommandsModule.commands",
@@ -1619,7 +1641,7 @@ export function extractAll(repoPath: string): ExtractedData {
       if (!Array.isArray(list)) continue;
       const sf = fileSfCache.get(node.file);
       const clsNode = classNodeByKey.get(`${node.file}#${node.name}`);
-      const topDoc = sf ? getFileTopJsDoc(sf) : EMPTY_DOC;
+      const topDoc = sf ? extractFileTopJsDoc(sf) : EMPTY_DOC;
       const isSoleInFile = (cliCountByFile.get(node.file) ?? 0) === 1;
 
       for (const rawEntry of list) {
@@ -1639,61 +1661,23 @@ export function extractAll(repoPath: string): ExtractedData {
           const bindFields = new Set(
             (matchingBinds.length > 0 ? matchingBinds : node.binds).map((b) => b.field),
           );
-          const targetFns = findBoundTargetNames(clsNode, bindFields, sf);
-          for (const fnName of targetFns) {
-            const localDecl = findTopLevelDecl(sf, fnName);
-            if (localDecl) {
-              const info = extractCommanderInfo(
-                localDecl,
-                sf,
-                node.file,
-                fileSfCache,
-                pkgSrcRelByName,
-                rootCmdPath,
-              );
-              cmdInfo.commands.push(...info.commands);
-              cmdInfo.options.push(...info.options);
-              cmdInfo.descriptions.push(...info.descriptions);
-              continue;
-            }
-            const imp = findImportedSymbolFile(sf, node.file, fnName, fileSfCache, pkgSrcRelByName);
-            if (imp) {
-              const info = extractCommanderInfo(
-                imp.decl ?? imp.sf,
-                imp.sf,
-                imp.rel,
-                fileSfCache,
-                pkgSrcRelByName,
-                rootCmdPath,
-              );
-              cmdInfo.commands.push(...info.commands);
-              cmdInfo.options.push(...info.options);
-              cmdInfo.descriptions.push(...info.descriptions);
-            }
+          for (const ident of findBoundTargetIdentifiers(clsNode, bindFields, sf)) {
+            const decl = resolveIdentifierDecl(ident, checker);
+            if (!decl) continue;
+            const info = extractCommanderInfo(decl, checker, rootCmdPath);
+            cmdInfo.commands.push(...info.commands);
+            cmdInfo.options.push(...info.options);
+            cmdInfo.descriptions.push(...info.descriptions);
           }
           if (cmdInfo.commands.length === 0 && cmdInfo.options.length === 0) {
-            const clsInfo = extractCommanderInfo(
-              clsNode,
-              sf,
-              node.file,
-              fileSfCache,
-              pkgSrcRelByName,
-              rootCmdPath,
-            );
+            const clsInfo = extractCommanderInfo(clsNode, checker, rootCmdPath);
             cmdInfo.commands.push(...clsInfo.commands);
             cmdInfo.options.push(...clsInfo.options);
             cmdInfo.descriptions.push(...clsInfo.descriptions);
           }
         }
         if (cmdInfo.commands.length === 0 && cmdInfo.options.length === 0 && sf && isSoleInFile) {
-          cmdInfo = extractCommanderInfo(
-            sf,
-            sf,
-            node.file,
-            fileSfCache,
-            pkgSrcRelByName,
-            rootCmdPath,
-          );
+          cmdInfo = extractCommanderInfo(sf, checker, rootCmdPath);
         }
 
         const dedupedOpts: CliOption[] = [];
@@ -1720,8 +1704,7 @@ export function extractAll(repoPath: string): ExtractedData {
           line: node.line,
           brief: summaryEn || summaryZh || cmdInfo.descriptions[0] || "",
           briefZh: summaryZh,
-          doc: node.doc.length ? node.doc : topDoc.doc,
-          docBlocks: node.docBlocks.length ? node.docBlocks : topDoc.docBlocks,
+          doc: node.doc.markdown ? node.doc : topDoc,
           subcommands: [...new Set(cmdInfo.commands)],
           options: dedupedOpts,
         });
@@ -1739,9 +1722,9 @@ export function extractAll(repoPath: string): ExtractedData {
       const rel = `packages/cli/src/commands/${f}`;
       const sf = fileSfCache.get(rel);
       const cmdInfo = sf
-        ? extractCommanderInfo(sf, sf, rel, fileSfCache, pkgSrcRelByName, cmdName)
+        ? extractCommanderInfo(sf, checker, cmdName)
         : { commands: [], options: [], descriptions: [] };
-      const topDoc = sf ? getFileTopJsDoc(sf) : EMPTY_DOC;
+      const topDoc = sf ? extractFileTopJsDoc(sf) : EMPTY_DOC;
       const existing = cliMap.get(slug);
       if (!existing) {
         cliMap.set(slug, {
@@ -1754,21 +1737,18 @@ export function extractAll(repoPath: string): ExtractedData {
           pkg: "@prismshadow/penguin-cli",
           file: rel,
           line: 1,
-          brief: cmdInfo.descriptions[0] || topDoc.doc[0] || "",
+          brief: cmdInfo.descriptions[0] || topDoc.summary || "",
           briefZh: "",
-          doc: topDoc.doc,
-          docBlocks: topDoc.docBlocks,
+          doc: topDoc,
           subcommands: cmdInfo.commands,
           options: cmdInfo.options,
         });
       } else {
-        if (!existing.subcommands.length && cmdInfo.commands.length)
+        if (!existing.subcommands.length && cmdInfo.commands.length) {
           existing.subcommands = cmdInfo.commands;
-        if (!existing.options.length && cmdInfo.options.length) existing.options = cmdInfo.options;
-        if (!existing.doc.length && topDoc.doc.length) {
-          existing.doc = topDoc.doc;
-          existing.docBlocks = topDoc.docBlocks;
         }
+        if (!existing.options.length && cmdInfo.options.length) existing.options = cmdInfo.options;
+        if (!existing.doc.markdown && topDoc.markdown) existing.doc = topDoc;
       }
     }
   }

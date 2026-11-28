@@ -1,21 +1,15 @@
-export type DocBlock =
-  | { kind: "p"; text: string }
-  | { kind: "ul"; items: string[] }
-  | { kind: "code"; lang: string; code: string }
-  | { kind: "tag"; tag: string; text: string };
+import type { Root } from "hast";
 
-export interface ParsedDoc {
-  doc: string[];
-  docBlocks: DocBlock[];
+export interface JsDocTagEntry {
+  tag: string;
+  name?: string;
+  markdown: string;
 }
 
-export interface MemberItem {
-  name: string;
-  kind: "method" | "property";
-  sig: string;
-  doc: string[];
-  docBlocks: DocBlock[];
-  line: number;
+export interface ParsedDoc {
+  markdown: string;
+  summary: string;
+  tags: JsDocTagEntry[];
 }
 
 export interface ParamItem {
@@ -25,33 +19,20 @@ export interface ParamItem {
   defaultVal: string;
 }
 
-export interface UnionVariant {
-  type: string;
-  doc: string[];
-  docBlocks: DocBlock[];
-}
-
-export type KernelExportKind = "decorator" | "function" | "class" | "interface" | "type_alias";
-
-export interface KernelExport {
+export interface MemberItem {
   name: string;
-  slug: string;
-  isTypeOnly: boolean;
-  kind: KernelExportKind;
-  sourceFile: string;
-  file: string;
-  line: number;
-  importStmt: string;
+  kind: "method" | "property";
   sig: string;
-  doc: string[];
-  docBlocks: DocBlock[];
   params: ParamItem[];
   returnType: string;
-  members: MemberItem[];
-  variants: UnionVariant[];
+  doc: ParsedDoc;
+  line: number;
 }
 
-export type AreaKind = "server" | "cli" | "core" | "library" | "plugin" | "web" | "package";
+export interface UnionVariant {
+  type: string;
+  doc: ParsedDoc;
+}
 
 export interface UseField {
   field: string;
@@ -73,17 +54,17 @@ export interface BindField {
   raw: string;
 }
 
+export type AreaKind = "server" | "cli" | "core" | "library" | "plugin" | "web" | "package";
+
 export interface NodeBase {
   name: string;
   slug: string;
-  kind: "module" | "component";
   pkg: string;
   pkgSub: string;
   area: AreaKind;
   file: string;
   line: number;
-  doc: string[];
-  docBlocks: DocBlock[];
+  doc: ParsedDoc;
   children: string[];
   exports: string[];
   contributes: Record<string, unknown>;
@@ -124,10 +105,38 @@ export interface IfaceRecord {
   area: AreaKind;
   file: string;
   line: number;
-  doc: string[];
-  docBlocks: DocBlock[];
+  doc: ParsedDoc;
   members: MemberItem[];
   rawDecl: string;
+}
+
+export type KernelExportKind = "decorator" | "function" | "class" | "interface" | "type_alias";
+
+export interface ExpandedOptionsInfo {
+  paramName: string;
+  defaultVal: string;
+  typeName: string;
+  typeSlug: string;
+  members: MemberItem[];
+}
+
+export interface KernelExport {
+  name: string;
+  slug: string;
+  isTypeOnly: boolean;
+  kind: KernelExportKind;
+  sourceFile: string;
+  file: string;
+  line: number;
+  importStmt: string;
+  sig: string;
+  doc: ParsedDoc;
+  params: ParamItem[];
+  returnType: string;
+  members: MemberItem[];
+  variants: UnionVariant[];
+  expandedOptions: ExpandedOptionsInfo | null;
+  references: string[];
 }
 
 export interface SlotContributor {
@@ -152,8 +161,7 @@ export interface SlotRecord {
   line: number;
   data: string;
   code: string | null;
-  doc: string[];
-  docBlocks: DocBlock[];
+  doc: ParsedDoc;
   contributors: SlotContributor[];
 }
 
@@ -183,8 +191,7 @@ export interface HttpContribRecord {
   pkg: string;
   file: string;
   line: number;
-  doc: string[];
-  docBlocks: DocBlock[];
+  doc: ParsedDoc;
   binds: BindField[];
   entries: HttpEntry[];
   endpoints: HttpEndpoint[];
@@ -209,8 +216,7 @@ export interface CliCommandRecord {
   line: number;
   brief: string;
   briefZh: string;
-  doc: string[];
-  docBlocks: DocBlock[];
+  doc: ParsedDoc;
   subcommands: string[];
   options: CliOption[];
 }
@@ -231,6 +237,7 @@ export interface VerifiedSample {
   key: string;
   doc: string;
   code: string;
+  hast?: Root;
   html: string;
   testFile: string;
   line: number;

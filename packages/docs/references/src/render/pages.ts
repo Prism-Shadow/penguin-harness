@@ -47,14 +47,14 @@ export function createPagesRenderer(ctx: RenderContext) {
     const totalEndpoints = httpContribs.reduce((n, g) => n + g.endpoints.length, 0);
     const totalHttpEntries = httpContribs.reduce((n, g) => n + g.entries.length, 0);
     const totalMembers = ifaces.reduce((n, i) => n + i.members.length, 0);
-    const modDocs = modules.filter((m) => m.doc.length > 0).length;
-    const compDocs = components.filter((c) => c.doc.length > 0).length;
-    const ifaceDocs = ifaces.filter((i) => i.doc.length > 0).length;
+    const modDocs = modules.filter((m) => Boolean(m.doc.markdown)).length;
+    const compDocs = components.filter((c) => Boolean(c.doc.markdown)).length;
+    const ifaceDocs = ifaces.filter((i) => Boolean(i.doc.markdown)).length;
     const memDocs = ifaces.reduce(
-      (n, i) => n + i.members.filter((m) => m.doc.length > 0).length,
+      (n, i) => n + i.members.filter((m) => Boolean(m.doc.markdown)).length,
       0,
     );
-    const kDocs = kernelExports.filter((e) => e.doc.length > 0).length;
+    const kDocs = kernelExports.filter((e) => Boolean(e.doc.markdown)).length;
 
     const body = `
 <div class="docs-decorative-header">
@@ -219,8 +219,8 @@ ${standaloneSec}`;
             ? `${r}${target.href}`
             : null;
         const badge = isMod ? "@Module" : "@Component";
-        const firstDoc = target?.doc[0];
-        const docPreview = firstDoc ? `<p>${ctx.renderInlineDoc(firstDoc, r)}</p>` : "";
+        const firstDoc = target?.doc.summary;
+        const docPreview = firstDoc ? `<p>${esc(firstDoc)}</p>` : "";
         const wiring = target ? ctx.nodeWiringChips(target, r) : "";
         const exportsRow =
           isMod && target.exports.length
@@ -281,7 +281,7 @@ ${standaloneSec}`;
     </div>
     <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(m.file, m.line)}" title="View source at ${esc(m.file)}:${m.line}" aria-label="View source">${ICONS.code}</a>
   </div>
-  <section class="docs-reference-description">${m.docBlocks.length ? ctx.renderDocBlocks(m.docBlocks, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}</section>
+  <section class="docs-reference-description">${m.doc.markdown || m.doc.tags.length ? ctx.renderParsedDoc(m.doc, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}</section>
 </header>
 <div class="docs-reference-api-section">
   <h2 id="api" class="docs-reference-section-heading"><a class="docs-anchor" href="#api">API</a></h2>
@@ -357,7 +357,7 @@ ${contribHtml}
     </div>
     <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(comp.file, comp.line)}" title="View source at ${esc(comp.file)}:${comp.line}" aria-label="View source">${ICONS.code}</a>
   </div>
-  <section class="docs-reference-description">${comp.docBlocks.length ? ctx.renderDocBlocks(comp.docBlocks, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}</section>
+  <section class="docs-reference-description">${comp.doc.markdown || comp.doc.tags.length ? ctx.renderParsedDoc(comp.doc, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}</section>
 </header>
 <div class="docs-reference-api-section">
   <h2 id="api" class="docs-reference-section-heading"><a class="docs-anchor" href="#api">API</a></h2>
@@ -507,7 +507,7 @@ ${ifaceSecs}`;
     <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(it.file, it.line)}" title="View source at ${esc(it.file)}:${it.line}" aria-label="View source">${ICONS.code}</a>
   </div>
   <section class="docs-reference-description">
-    ${it.docBlocks.length ? ctx.renderDocBlocks(it.docBlocks, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}
+    ${it.doc.markdown || it.doc.tags.length ? ctx.renderParsedDoc(it.doc, r) : '<p class="muted">No JSDoc comment in source yet.</p>'}
   </section>
 </header>
 <div class="docs-reference-api-section">
@@ -647,7 +647,7 @@ ${g.endpoints
     </div>
     <a class="docs-github-links" target="_blank" rel="noopener" href="${ctx.srcUrl(g.file, g.line)}" title="View source" aria-label="View source">${ICONS.code}</a>
   </div>
-  ${g.docBlocks.length ? `<section class="docs-reference-description">${ctx.renderDocBlocks(g.docBlocks, r)}</section>` : ""}
+  ${g.doc.markdown || g.doc.tags.length ? `<section class="docs-reference-description">${ctx.renderParsedDoc(g.doc, r)}</section>` : ""}
 </header>
 <div class="docs-reference-api-section">
   <h2 id="contrib" class="docs-reference-section-heading"><a class="docs-anchor" href="#contrib">API</a></h2>
@@ -702,7 +702,7 @@ ${c.options
       ...(c.options.length
         ? [`<li class="docs-faceted-list-item"><a href="#options">Options</a></li>`]
         : []),
-      ...(c.docBlocks.length
+      ...(c.doc.markdown || c.doc.tags.length
         ? [`<li class="docs-faceted-list-item"><a href="#doc">Source Doc</a></li>`]
         : []),
     ].join("");
@@ -722,7 +722,7 @@ ${c.options
 <p class="muted">Registered via <code>${esc(c.slot)}</code>${c.id ? ` (id: <code>${esc(c.id)}</code>)` : ""}.</p>
 ${subHtml}
 ${optHtml}
-${c.docBlocks.length ? `<h2 id="doc" class="docs-reference-section-heading"><a class="docs-anchor" href="#doc">Source Doc</a></h2>${ctx.renderDocBlocks(c.docBlocks, r)}` : ""}`;
+${c.doc.markdown || c.doc.tags.length ? `<h2 id="doc" class="docs-reference-section-heading"><a class="docs-anchor" href="#doc">Source Doc</a></h2>${ctx.renderParsedDoc(c.doc, r)}` : ""}`;
 
     return ctx.shell({
       r,
@@ -773,7 +773,7 @@ ${list
   </header>
   <div class="docs-reference-card-body">
     <div class="docs-reference-card-item">
-      ${s.docBlocks.length ? `<div class="docs-function-definition">${ctx.renderDocBlocks(s.docBlocks, r)}</div>` : ""}
+      ${s.doc.markdown || s.doc.tags.length ? `<div class="docs-function-definition">${ctx.renderParsedDoc(s.doc, r)}</div>` : ""}
       <div class="docs-param-group"><span class="docs-param-keyword">@data</span><span class="docs-param-name">manifest</span><code>${ctx.hl(s.data, r)}</code></div>
       <div class="docs-return-type"><span class="docs-param-keyword">@code</span><code>${s.code ? ctx.hl(s.code, r) : '<span class="muted">data-only (never)</span>'}</code></div>
       ${s.contributors.length ? `<div class="docs-param-group"><span class="docs-param-keyword">contributors</span><span class="docs-param-name">(${s.contributors.length})</span><div class="docs-wiring-chips">${s.contributors.map((c) => `<a class="docs-wiring-chip" href="${r}${c.href}">${esc(c.name)}${c.count > 1 ? ` ×${c.count}` : ""}</a>`).join("")}</div></div>` : ""}

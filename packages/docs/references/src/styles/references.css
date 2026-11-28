@@ -341,7 +341,7 @@ html.docs-dark-mode .docs-sample-fail {
   overflow-x: auto;
 }
 
-/* Shiki dual-theme token colors */
+/* Shiki dual-theme token colors (both block <pre class="shiki"> and inline <span class="shiki">) */
 .shiki,
 .shiki span {
   color: var(--shiki-light);
@@ -350,6 +350,27 @@ html.docs-dark-mode .docs-sample-fail {
 html.docs-dark-mode .shiki,
 html.docs-dark-mode .shiki span {
   color: var(--shiki-dark);
+}
+.docs-code > pre.shiki {
+  margin: 0;
+  padding-block: 0.9rem;
+  background: transparent !important;
+  overflow-x: auto;
+}
+.docs-code > pre.shiki > code {
+  display: block;
+  min-width: max-content;
+}
+.docs-code > pre.shiki a.code-link,
+.shiki a.code-link {
+  color: inherit;
+  text-decoration: none;
+}
+.docs-code > pre.shiki a.code-link:hover,
+.shiki a.code-link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bright-blue);
+  text-underline-offset: 2px;
 }
 
 /* Official Twoslash variables mapped to Frost/Console light & dark tokens */

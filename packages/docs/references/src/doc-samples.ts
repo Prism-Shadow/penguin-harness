@@ -6,11 +6,12 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { transformerNotationHighlight, transformerRemoveLineBreak } from "@shikijs/transformers";
 import { rendererRich, transformerTwoslash } from "@shikijs/twoslash";
-import type { Element, ElementContent, Root, RootContent } from "hast";
+import type { ElementContent, Root, RootContent } from "hast";
+import { toHtml } from "hast-util-to-html";
 import { createHighlighter } from "shiki";
 import ts from "typescript";
 import { extractAll } from "./extract.js";
-import { slugOf } from "./jsdoc.js";
+import { extractJsDoc, markdownToHast, slugOf } from "./jsdoc.js";
 import type { VerifiedSample, VerifiedSamplesFile } from "./types.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -49,26 +50,21 @@ function extractRegions(filePath: string): {
   const docs = new Map<string, string>();
   const regions = new Map<string, RegionInfo>();
 
-  const docRe = /\/\*\*([\s\S]*?)\*\//g;
-  let dm: RegExpExecArray | null;
-  while ((dm = docRe.exec(text)) !== null) {
-    const raw = (dm[1] ?? "")
-      .split(/\r\n|\r|\n/)
-      .map((l) => l.replace(/^\s*\*\s?/, "").trim())
-      .filter(Boolean);
-    const targetIdx = raw.findIndex((l) => l.startsWith("@docTarget "));
-    if (targetIdx !== -1) {
-      const key = (raw[targetIdx] ?? "").replace(/^@docTarget\s+/, "").trim();
-      const desc = raw
-        .slice(targetIdx + 1)
-        .join(" ")
-        .trim();
-      if (key && desc) docs.set(key, desc);
-    }
+  // Extract `@docTarget <key>` descriptions via TypeScript's official JSDoc AST (no regex!)
+  for (const st of sf.statements) {
+    const parsed = extractJsDoc(st, sf);
+    const targetTag = parsed.tags.find((t) => t.tag === "docTarget");
+    if (!targetTag) continue;
+    const raw = targetTag.markdown.trim();
+    const spaceIdx = raw.search(/\s/);
+    if (spaceIdx === -1) continue;
+    const key = raw.slice(0, spaceIdx).trim();
+    const desc = raw.slice(spaceIdx).trim();
+    if (key && desc) docs.set(key, desc);
   }
 
   // Line-by-line region parser: rejects duplicate openers, unclosed regions (including at EOF),
-  // nested openers, and extra/mismatched/premature #enddocregion markers.
+  // nested openers, and extra/mismatched/premature #enddocregion markers across LF/CRLF/CR.
   const openRe = /^[ \t]*\/\/[ \t]*#docregion[ \t]+([^\s]+)[ \t]*$/;
   const closeRe = /^[ \t]*\/\/[ \t]*#enddocregion[ \t]+([^\s]+)[ \t]*$/;
   const lineRe = /[^\r\n]*(?:\r\n|\r|\n|$)/g;
@@ -174,51 +170,6 @@ function textOf(node: RootContent | undefined): string {
   if (node.type === "text") return node.value;
   if (node.type === "element") return node.children.map(textOf).join("");
   return "";
-}
-
-function renderInlineMdToHast(
-  md: string,
-  kernelSlugByName: ReadonlyMap<string, string>,
-): ElementContent[] {
-  const out: ElementContent[] = [];
-  const clean = md.replace(/\s+/g, " ").trim();
-  const re = /\{@link\s+([^}\s]+)(?:\s+([^}]*))?\}|`([^`]+)`/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(clean)) !== null) {
-    if (m.index > last) out.push({ type: "text", value: clean.slice(last, m.index) });
-    if (m[1]) {
-      const sym = m[1].replace(/\(\)$/, "");
-      const label = (m[2]?.trim() || m[1]).trim();
-      const slug = kernelSlugByName.get(sym);
-      const codeEl: Element = {
-        type: "element",
-        tagName: "code",
-        properties: {},
-        children: [{ type: "text", value: label }],
-      };
-      out.push(
-        slug
-          ? {
-              type: "element",
-              tagName: "a",
-              properties: { class: "twoslash-ref-link", href: `__KERNEL_ROOT__${slug}/` },
-              children: [codeEl],
-            }
-          : codeEl,
-      );
-    } else if (m[3]) {
-      out.push({
-        type: "element",
-        tagName: "code",
-        properties: {},
-        children: [{ type: "text", value: m[3] }],
-      });
-    }
-    last = re.lastIndex;
-  }
-  if (last < clean.length) out.push({ type: "text", value: clean.slice(last) });
-  return out;
 }
 
 function transformerKernelLinks(kernelSlugByName: ReadonlyMap<string, string>) {
@@ -377,14 +328,14 @@ export async function runDocSamples(): Promise<void> {
       errorRendering: "hover",
       renderMarkdown(md) {
         const firstPara = md.split(/\r?\n\s*\r?\n/)[0] ?? "";
-        return [
-          {
-            type: "element",
-            tagName: "p",
-            properties: {},
-            children: renderInlineMdToHast(firstPara, kernelSlugByName),
+        const hast = markdownToHast(firstPara, {
+          linkClass: "twoslash-ref-link",
+          resolveSymbolHref: (sym) => {
+            const slug = kernelSlugByName.get(sym);
+            return slug ? `__KERNEL_ROOT__${slug}/` : null;
           },
-        ];
+        });
+        return hast.children.filter((c): c is ElementContent => c.type !== "doctype");
       },
     }),
     twoslashOptions: {
@@ -419,12 +370,12 @@ export async function runDocSamples(): Promise<void> {
         }
         globalRegionKeys.add(key);
       }
-      const htmlByKey = new Map<string, string>();
+      const hastByKey = new Map<string, Root>();
       const tsErrByKey = new Map<string, string>();
 
       for (const [key, reg] of regions) {
         try {
-          const html = highlighter.codeToHtml(reg.twoslashSource, {
+          const hast = highlighter.codeToHast(reg.twoslashSource, {
             lang: "ts",
             themes: { light: "github-light", dark: "github-dark-default" },
             defaultColor: false,
@@ -435,7 +386,7 @@ export async function runDocSamples(): Promise<void> {
               transformerKernelLinks(kernelSlugByName),
             ],
           });
-          htmlByKey.set(key, html);
+          hastByKey.set(key, hast);
         } catch (err) {
           anyFailed = true;
           const msg = err instanceof Error ? err.message : String(err);
@@ -467,11 +418,13 @@ export async function runDocSamples(): Promise<void> {
           const reg = regions.get(r.key);
           if (!reg) throw new Error(`Missing #docregion ${r.key} in ${tf}`);
           const tsErr = tsErrByKey.get(r.key) ?? null;
+          const hast = hastByKey.get(r.key);
           verified[r.key] = {
             key: r.key,
             doc: docs.get(r.key) ?? "",
             code: reg.code,
-            html: htmlByKey.get(r.key) ?? "",
+            hast,
+            html: hast ? toHtml(hast) : "",
             testFile: reg.file,
             line: reg.line,
             title: r.title,
@@ -497,11 +450,13 @@ export async function runDocSamples(): Promise<void> {
           .join("\n");
         console.error(`  FAIL ${path.relative(PKG_ROOT, tf)}:\n${msg}`);
         for (const [key, reg] of regions) {
+          const hast = hastByKey.get(key);
           verified[key] = {
             key,
             doc: docs.get(key) ?? "",
             code: reg.code,
-            html: htmlByKey.get(key) ?? "",
+            hast,
+            html: hast ? toHtml(hast) : "",
             testFile: reg.file,
             line: reg.line,
             verified: false,

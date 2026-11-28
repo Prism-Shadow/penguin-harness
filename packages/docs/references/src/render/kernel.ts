@@ -1,5 +1,5 @@
 import { slugOf } from "../jsdoc.js";
-import type { DocBlock, KernelExport, KernelExportKind, MemberItem } from "../types.js";
+import type { JsDocTagEntry, KernelExport, KernelExportKind } from "../types.js";
 import { apiLabel, COPY_BTN, esc, ICONS, kernelBadgeMeta, type RenderContext } from "./context.js";
 
 export interface KernelGroup {
@@ -89,17 +89,16 @@ function buildKernelGrouping(exports: readonly KernelExport[]): KernelGrouping {
   const byGroup = new Map<string, KernelExport[]>(KERNEL_GROUPS.map((g) => [g.id, []]));
 
   const resolveGroup = (k: KernelExport): KernelGroup => {
-    const catTag = k.docBlocks.find(
-      (b): b is Extract<DocBlock, { kind: "tag" }> =>
-        b.kind === "tag" && (b.tag === "category" || b.tag === "group"),
-    );
-    if (catTag?.text) {
+    const catTag = k.doc.tags.find((t) => t.tag === "category" || t.tag === "group");
+    if (catTag?.markdown) {
       const match = KERNEL_GROUPS.find(
-        (g) => g.title.toLowerCase() === catTag.text.toLowerCase() || g.id === slugOf(catTag.text),
+        (g) =>
+          g.title.toLowerCase() === catTag.markdown.toLowerCase() ||
+          g.id === slugOf(catTag.markdown),
       );
       if (match) return match;
     }
-    const isInternal = k.docBlocks.some((b) => b.kind === "tag" && b.tag === "internal");
+    const isInternal = k.doc.tags.some((t) => t.tag === "internal");
     if (!isInternal) {
       for (const g of KERNEL_GROUPS) {
         if (g.symbols?.has(k.name)) return g;
@@ -130,40 +129,6 @@ function buildKernelGrouping(exports: readonly KernelExport[]): KernelGrouping {
     }
   }
   return { groupByName, byGroup };
-}
-
-function resolveTypeMembers(
-  ctx: RenderContext,
-  typeExpr: string,
-): { typeName: string; typeSlug: string; members: MemberItem[] } | null {
-  const clean = typeExpr.trim().replace(/\s+/g, " ");
-  const directName = clean.replace(/<.*$/, "").replace(/\[\]$/, "").trim();
-  const direct = ctx.kernelByName.get(directName);
-  if (direct && direct.members.length > 0) {
-    return { typeName: direct.name, typeSlug: direct.slug, members: direct.members };
-  }
-
-  const aliasSig = direct && direct.kind === "type_alias" ? direct.sig : clean;
-  const utilMatch = aliasSig.match(
-    /\b(Omit|Pick|Partial|Readonly|Required)\s*<\s*([A-Za-z_]\w*)(?:\s*,\s*([^>]+))?\s*>/,
-  );
-  if (!utilMatch?.[1] || !utilMatch[2]) return null;
-  const base = ctx.kernelByName.get(utilMatch[2]);
-  if (!base || base.members.length === 0) return null;
-
-  let members = base.members;
-  if ((utilMatch[1] === "Omit" || utilMatch[1] === "Pick") && utilMatch[3]) {
-    const keys = new Set([...utilMatch[3].matchAll(/["']([^"']+)["']/g)].map((m) => m[1] ?? ""));
-    members =
-      utilMatch[1] === "Omit"
-        ? base.members.filter((mb) => !keys.has(mb.name))
-        : base.members.filter((mb) => keys.has(mb.name));
-  }
-  return {
-    typeName: direct ? direct.name : base.name,
-    typeSlug: direct ? direct.slug : base.slug,
-    members,
-  };
 }
 
 function compactSig(sig: string): string {
@@ -212,7 +177,7 @@ export function createKernelRenderer(ctx: RenderContext) {
       items
         .map((e) => {
           const bm = kernelBadgeMeta(e.kind);
-          const firstDoc = e.doc[0] ?? "";
+          const firstDoc = e.doc.summary;
           const summary = firstDoc.length > 140 ? `${firstDoc.slice(0, 140)}…` : firstDoc;
           const sigPreview = compactSig(e.sig);
           return `<a class="kernel-api-row" href="${esc(`${e.slug}/`)}" data-item-type="${esc(e.kind)}" data-item-name="${esc(`${e.name} ${e.sourceFile} ${summary} ${sigPreview}`.toLowerCase())}">
@@ -221,7 +186,7 @@ export function createKernelRenderer(ctx: RenderContext) {
         <span class="kernel-api-name">${e.kind === "decorator" ? "@" : ""}${esc(e.name)}</span>
         ${e.isTypeOnly ? '<span class="kernel-type-pill">type</span>' : ""}
       </div>
-      <div class="kernel-api-row-desc">${summary ? ctx.renderInlineDoc(summary, r, true, false) : `<code class="kernel-api-sig">${ctx.hl(sigPreview, null, true)}</code>`}</div>
+      <div class="kernel-api-row-desc">${summary ? esc(summary) : `<code class="kernel-api-sig">${ctx.hl(sigPreview, null, true)}</code>`}</div>
       <div class="kernel-api-row-meta"><code>${esc(e.sourceFile)}:${e.line}</code></div>
     </a>`;
         })
@@ -303,56 +268,35 @@ ${catalogSections}`;
     const refsOut = ctx.kernelReferences.get(k.name) ?? [];
     const refsIn = ctx.kernelReferencedBy.get(k.name) ?? [];
 
+    // Consume structured TS JSDoc AST tags (zero @param regex!)
     const paramDocMap = new Map<string, string>();
     let returnDoc = "";
-    const bodyDocBlocks: DocBlock[] = [];
-    for (const b of k.docBlocks) {
-      if (b.kind === "tag" && b.tag === "param") {
-        const m = b.text.match(/^(\[?[\w.$]+\]?)\s*(?:-\s*)?([\s\S]*)$/);
-        if (m?.[1]) {
-          const pKey = m[1].replace(/^\[|\]$/g, "").split(".")[0] ?? "";
-          if (k.params.some((p) => p.name === pKey)) {
-            paramDocMap.set(pKey, (m[2] ?? "").trim());
-            continue;
-          }
+    const remainingTags: JsDocTagEntry[] = [];
+    for (const t of k.doc.tags) {
+      if (t.tag === "param" && t.name) {
+        const rootParam = t.name.split(".")[0] ?? t.name;
+        if (k.params.some((p) => p.name === rootParam)) {
+          paramDocMap.set(rootParam, t.markdown);
+          continue;
         }
-      } else if (b.kind === "tag" && (b.tag === "returns" || b.tag === "return") && k.returnType) {
-        returnDoc = b.text;
+      } else if ((t.tag === "returns" || t.tag === "return") && k.returnType) {
+        returnDoc = t.markdown;
         continue;
       } else if (
-        b.kind === "tag" &&
-        (b.tag === "category" || b.tag === "group" || b.tag === "internal" || b.tag === "publicApi")
+        t.tag === "category" ||
+        t.tag === "group" ||
+        t.tag === "internal" ||
+        t.tag === "publicApi"
       ) {
         continue;
       }
-      bodyDocBlocks.push(b);
+      remainingTags.push(t);
     }
 
-    let expandedOptions: {
-      paramName: string;
-      defaultVal: string;
-      typeName: string;
-      typeSlug: string;
-      members: MemberItem[];
-    } | null = null;
-    if (k.kind === "decorator" || k.kind === "function") {
-      for (const p of k.params) {
-        const isOptParam =
-          k.kind === "decorator" ||
-          /^(opts|options|meta|config|cfg)$/i.test(p.name) ||
-          /(Options|Meta|Config)\b/.test(p.type);
-        if (!isOptParam) continue;
-        const resolved = resolveTypeMembers(ctx, p.type);
-        if (resolved && resolved.members.length > 0) {
-          expandedOptions = { paramName: p.name, defaultVal: p.defaultVal, ...resolved };
-          break;
-        }
-      }
-    }
-
+    const expandedOptions = k.expandedOptions;
     const optionsHtml = expandedOptions
       ? `<h2 id="options" class="docs-reference-section-heading"><a class="docs-anchor" href="#options">Options</a> <span class="kernel-file-meta">${[
-          `<a href="../${expandedOptions.typeSlug}/"><code>${esc(expandedOptions.typeName)}</code></a>`,
+          `<a href="../${esc(expandedOptions.typeSlug)}/"><code>${esc(expandedOptions.typeName)}</code></a>`,
           ...(expandedOptions.defaultVal
             ? [`default <code>${esc(expandedOptions.defaultVal)}</code>`]
             : []),
@@ -387,7 +331,7 @@ ${k.params
     hasBody
       ? `
   <div class="docs-reference-card-body"><div class="docs-reference-card-item">
-    ${pDesc ? `<div class="docs-function-definition"><p>${ctx.renderInlineDoc(pDesc, r, true)}</p></div>` : ""}
+    ${pDesc ? `<div class="docs-function-definition">${ctx.renderMarkdown(pDesc, r, true)}</div>` : ""}
     ${p.defaultVal ? `<div class="docs-param-group"><span class="docs-param-keyword">default</span><code>${ctx.hl(p.defaultVal, r, true, k.name)}</code></div>` : ""}
   </div></div>`
       : ""
@@ -404,25 +348,18 @@ ${
   </header>${
     returnDoc
       ? `
-  <div class="docs-reference-card-body"><div class="docs-reference-card-item"><div class="docs-function-definition"><p>${ctx.renderInlineDoc(returnDoc, r, true)}</p></div></div></div>`
+  <div class="docs-reference-card-body"><div class="docs-reference-card-item"><div class="docs-function-definition">${ctx.renderMarkdown(returnDoc, r, true)}</div></div></div>`
       : ""
   }
 </div>`
     : ""
 }
 </div>`
-        : `<h2 id="returns" class="docs-reference-section-heading"><a class="docs-anchor" href="#returns">Return Type</a></h2><p><code>${ctx.hl(k.returnType, r, true, k.name)}</code></p>${returnDoc ? `<p>${ctx.renderInlineDoc(returnDoc, r, true)}</p>` : ""}`;
+        : `<h2 id="returns" class="docs-reference-section-heading"><a class="docs-anchor" href="#returns">Return Type</a></h2><p><code>${ctx.hl(k.returnType, r, true, k.name)}</code></p>${returnDoc ? ctx.renderMarkdown(returnDoc, r, true) : ""}`;
 
-    const ownMembers =
-      k.members.length > 0
-        ? k.members
-        : k.kind === "type_alias"
-          ? (resolveTypeMembers(ctx, k.name)?.members ?? [])
-          : [];
-
-    const membersHtml = ownMembers.length
-      ? `<h2 id="members" class="docs-reference-section-heading"><a class="docs-anchor" href="#members">Members (${ownMembers.length})</a></h2>
-<div class="docs-reference-members">${ownMembers.map((mb) => ctx.memberSection(mb, r, true, k.name, k.name)).join("")}</div>`
+    const membersHtml = k.members.length
+      ? `<h2 id="members" class="docs-reference-section-heading"><a class="docs-anchor" href="#members">Members (${k.members.length})</a></h2>
+<div class="docs-reference-members">${k.members.map((mb) => ctx.memberSection(mb, r, true, k.name, k.name)).join("")}</div>`
       : "";
 
     const variantsHtml = k.variants.length
@@ -435,9 +372,9 @@ ${k.variants
     <h3><a class="docs-anchor" href="#variant-${idx + 1}">Variant ${idx + 1}</a></h3>
     <div class="docs-card-sig"><code>${ctx.hl(v.type, r, true, k.name)}</code></div>
   </header>${
-    v.docBlocks.length
+    v.doc.markdown || v.doc.tags.length
       ? `
-  <div class="docs-reference-card-body"><div class="docs-reference-card-item"><div class="docs-function-definition">${ctx.renderDocBlocks(v.docBlocks, r, true)}</div></div></div>`
+  <div class="docs-reference-card-body"><div class="docs-reference-card-item"><div class="docs-function-definition">${ctx.renderParsedDoc(v.doc, r, true)}</div></div></div>`
       : ""
   }
 </div>`,
@@ -454,13 +391,11 @@ ${k.variants
     <span class="docs-wiring-sub">Static signature graph within @prismshadow/penguin-core/kernel</span>
   </div>
   <div class="docs-wiring-grid">
-    ${refsOut.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">references</span><span class="docs-wiring-role">${refsOut.length} kernel ${refsOut.length === 1 ? "type" : "types"}</span><div class="docs-wiring-chips">${refsOut.map((x) => `<a class="docs-wiring-chip" href="../${x.slug}/">${x.kind === "decorator" ? "@" : ""}${esc(x.name)}</a>`).join("")}</div></div>` : ""}
-    ${refsIn.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">referenced by</span><span class="docs-wiring-role">${refsIn.length} kernel ${refsIn.length === 1 ? "API" : "APIs"}</span><div class="docs-wiring-chips">${refsIn.map((x) => `<a class="docs-wiring-chip" href="../${x.slug}/">${x.kind === "decorator" ? "@" : ""}${esc(x.name)}</a>`).join("")}</div></div>` : ""}
+    ${refsOut.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">references</span><span class="docs-wiring-role">${refsOut.length} kernel ${refsOut.length === 1 ? "type" : "types"}</span><div class="docs-wiring-chips">${refsOut.map((x) => `<a class="docs-wiring-chip" href="../${esc(x.slug)}/">${x.kind === "decorator" ? "@" : ""}${esc(x.name)}</a>`).join("")}</div></div>` : ""}
+    ${refsIn.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">referenced by</span><span class="docs-wiring-role">${refsIn.length} kernel ${refsIn.length === 1 ? "API" : "APIs"}</span><div class="docs-wiring-chips">${refsIn.map((x) => `<a class="docs-wiring-chip" href="../${esc(x.slug)}/">${x.kind === "decorator" ? "@" : ""}${esc(x.name)}</a>`).join("")}</div></div>` : ""}
   </div>
 </section>`
         : "";
-
-    const declSig = k.sig;
 
     const toc = [
       `<li class="docs-faceted-list-item"><a href="#api">Declaration</a></li>`,
@@ -478,10 +413,10 @@ ${k.variants
             `<li class="docs-faceted-list-item"><a href="#${k.params.length ? "parameters" : "returns"}">${paramsHeading}</a></li>`,
           ]
         : []),
-      ...(ownMembers.length
+      ...(k.members.length
         ? [
-            `<li class="docs-faceted-list-item"><a href="#members">Members (${ownMembers.length})</a></li>`,
-            ...ownMembers
+            `<li class="docs-faceted-list-item"><a href="#members">Members (${k.members.length})</a></li>`,
+            ...k.members
               .slice(0, 20)
               .map(
                 (mb) =>
@@ -498,6 +433,8 @@ ${k.variants
         ? [`<li class="docs-faceted-list-item"><a href="#xrefs">Type Cross-References</a></li>`]
         : []),
     ].join("");
+
+    const descHtml = ctx.renderParsedDoc(k.doc, r, true, remainingTags);
 
     const body = `
 <header class="docs-reference-header">
@@ -516,11 +453,11 @@ ${k.variants
     <code>${ctx.hl(k.importStmt, r, true, k.name)}</code>
     ${COPY_BTN}
   </div>
-  ${bodyDocBlocks.length ? `<section class="docs-reference-description">${ctx.renderDocBlocks(bodyDocBlocks, r, true)}</section>` : ""}
+  ${descHtml ? `<section class="docs-reference-description">${descHtml}</section>` : ""}
 </header>
 <div class="docs-reference-api-section">
   <h2 id="api" class="docs-reference-section-heading"><a class="docs-anchor" href="#api">Declaration</a></h2>
-  ${ctx.codeBlock(declSig, { file: k.file, line: k.line, r, preferKernel: true, currentSymbol: k.name })}
+  ${ctx.codeBlock(k.sig, { file: k.file, line: k.line, r, preferKernel: true, currentSymbol: k.name })}
 </div>
 ${optionsHtml}
 ${paramsHtml}

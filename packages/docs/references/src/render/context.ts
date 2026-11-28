@@ -1,61 +1,27 @@
-import { slugOf } from "../jsdoc.js";
+import type { Element } from "hast";
+import { toHtml } from "hast-util-to-html";
+import {
+  type CodeHighlighter,
+  rewriteKernelRootInHast,
+  stripSelfLinksInHast,
+  type SymbolLinkResolver,
+} from "../highlight.js";
+import { renderMarkdownHtml, slugOf } from "../jsdoc.js";
 import type {
   ComponentRecord,
-  DocBlock,
   ExtractedData,
   HttpContribRecord,
   IfaceRecord,
+  JsDocTagEntry,
   KernelExport,
   KernelExportKind,
   MemberItem,
   ModuleRecord,
   NodeBase,
+  ParsedDoc,
   SlotRecord,
   VerifiedSample,
 } from "../types.js";
-
-const KW = new Set([
-  "abstract",
-  "class",
-  "export",
-  "interface",
-  "readonly",
-  "new",
-  "extends",
-  "implements",
-  "const",
-  "let",
-  "var",
-  "function",
-  "return",
-  "type",
-  "import",
-  "from",
-  "default",
-  "async",
-  "await",
-  "this",
-  "null",
-  "undefined",
-  "true",
-  "false",
-  "void",
-  "never",
-  "unknown",
-  "any",
-  "string",
-  "number",
-  "boolean",
-  "object",
-  "of",
-  "in",
-  "satisfies",
-  "private",
-  "protected",
-  "public",
-  "get",
-  "set",
-]);
 
 export const ICONS = {
   overview: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>`,
@@ -128,6 +94,7 @@ export interface ShellOptions {
 export interface CodeBlockOptions {
   file?: string;
   line?: number | null;
+  lang?: string;
   r?: string | null;
   preferKernel?: boolean;
   currentSymbol?: string | null;
@@ -149,6 +116,7 @@ export class RenderContext {
     readonly data: ExtractedData,
     readonly verifiedSamples: Readonly<Record<string, VerifiedSample>>,
     readonly assetVer: string,
+    readonly highlighter: CodeHighlighter,
   ) {
     this.gitSha = data.git.sha || "main";
     this.standaloneComponents = data.components.filter((c) => !c.primaryParent);
@@ -168,23 +136,13 @@ export class RenderContext {
     for (const s of data.slots) this.slotByKey.set(s.key, s);
     for (const g of data.httpContribs) this.httpByCls.set(g.cls, g);
 
-    // Static Kernel type cross-reference graph (comments, strings, and property keys stripped)
+    // Build reverse cross-reference graph directly from TypeChecker-resolved `k.references`
     for (const k of data.kernel.exports) {
-      const seen = new Set<string>();
-      const codeOnly = k.sig
-        .replace(/\/\*[\s\S]*?\*\//g, " ")
-        .replace(/\/\/[^\n]*/g, " ")
-        .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g, " ");
-      const tok = /\b[A-Za-z_]\w*\b/g;
-      let m: RegExpExecArray | null;
-      while ((m = tok.exec(codeOnly)) !== null) {
-        const w = m[0];
-        const target = this.kernelByName.get(w);
-        if (w === k.name || !target || seen.has(w)) continue;
-        if (/^\s*\??\s*:/.test(codeOnly.slice(tok.lastIndex))) continue;
-        seen.add(w);
+      for (const refName of k.references) {
+        const target = this.kernelByName.get(refName);
+        if (!target) continue;
         this.kernelReferences.get(k.name)?.push(target);
-        this.kernelReferencedBy.get(w)?.push(k);
+        this.kernelReferencedBy.get(refName)?.push(k);
       }
     }
     for (const list of this.kernelReferences.values()) {
@@ -217,99 +175,111 @@ export class RenderContext {
     return null;
   }
 
+  private linkResolver(
+    r: string | null,
+    preferKernel: boolean,
+    currentSymbol: string | null,
+  ): SymbolLinkResolver | null {
+    if (r === null) return null;
+    return {
+      resolveSymbol: (word, isDecorator) => {
+        if (word === currentSymbol) return null;
+        if (
+          !isDecorator &&
+          !/^[A-Z]/.test(word) &&
+          !(preferKernel && this.kernelByName.has(word))
+        ) {
+          return null;
+        }
+        return this.symbolHref(word, r, preferKernel || isDecorator);
+      },
+      resolveSlot: (slotKey) =>
+        this.slotByKey.has(slotKey) ? `${r}contributions/index.html#${slugOf(slotKey)}` : null,
+    };
+  }
+
+  /** Highlight inline TypeScript/code via official Shiki + HAST symbol linking. */
   hl(
     src: string,
     r: string | null = null,
     preferKernel = false,
     currentSymbol: string | null = null,
+    lang = "ts",
   ): string {
-    const tok =
-      /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|@[A-Za-z_]\w*|\b[A-Za-z_]\w*\b/g;
-    let out = "";
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = tok.exec(src)) !== null) {
-      out += esc(src.slice(last, m.index));
-      const s = m[0];
-      if (s.startsWith("//") || s.startsWith("/*")) {
-        out += `<span class="tk-c">${esc(s)}</span>`;
-      } else if (s[0] === '"' || s[0] === "'" || s[0] === "`") {
-        const inner = s.slice(1, -1);
-        if (r !== null && this.slotByKey.has(inner)) {
-          out += `<a class="code-link" href="${r}contributions/index.html#${slugOf(inner)}"><span class="tk-s">${esc(s)}</span></a>`;
-        } else {
-          out += `<span class="tk-s">${esc(s)}</span>`;
-        }
-      } else if (s[0] === "@") {
-        const base = s.slice(1);
-        const href = base === currentSymbol ? null : this.symbolHref(base, r, true);
-        out += href
-          ? `<a class="code-link" href="${href}"><span class="tk-d">${esc(s)}</span></a>`
-          : `<span class="tk-d">${esc(s)}</span>`;
-      } else if (KW.has(s)) {
-        out += `<span class="tk-k">${esc(s)}</span>`;
-      } else if (/^[A-Z]/.test(s) || (preferKernel && this.kernelByName.has(s))) {
-        const href = s === currentSymbol ? null : this.symbolHref(s, r, preferKernel);
-        out += href
-          ? `<a class="code-link" href="${href}"><span class="tk-t">${esc(s)}</span></a>`
-          : `<span class="tk-t">${esc(s)}</span>`;
-      } else {
-        out += esc(s);
-      }
-      last = tok.lastIndex;
-    }
-    return out + esc(src.slice(last));
+    const resolver = this.linkResolver(r, preferKernel, currentSymbol);
+    const cacheKey = `${r ?? "-"}|${preferKernel ? 1 : 0}|${currentSymbol ?? ""}`;
+    const inner = this.highlighter.highlightInline(src, lang, resolver, cacheKey);
+    return `<span class="shiki">${inner}</span>`;
   }
 
   codeBlock(src: string, opts: CodeBlockOptions = {}): string {
-    const { file, line = null, r = null, preferKernel = false, currentSymbol = null } = opts;
-    const lines = src
-      .split("\n")
-      .map((l) => `<span class="line">${this.hl(l, r, preferKernel, currentSymbol) || " "}</span>`)
-      .join("");
+    const {
+      file,
+      line = null,
+      lang = "ts",
+      r = null,
+      preferKernel = false,
+      currentSymbol = null,
+    } = opts;
+    const resolver = this.linkResolver(r, preferKernel, currentSymbol);
+    const cacheKey = `${r ?? "-"}|${preferKernel ? 1 : 0}|${currentSymbol ?? ""}`;
+    const shikiPre = this.highlighter.highlightBlock(src, lang, resolver, cacheKey);
     const head = file
       ? `<div class="docs-code-header"><a href="${this.srcUrl(file, line)}" target="_blank" rel="noopener">${esc(file)}${line ? `:${line}` : ""} ↗</a></div>`
       : "";
-    return `<div class="docs-code">${head}${COPY_BTN}<pre><code>${lines}</code></pre></div>`;
+    return `<div class="docs-code">${head}${COPY_BTN}${shikiPre}</div>`;
   }
 
-  renderInlineDoc(text: string, r = "", preferKernel = false, allowLinks = true): string {
-    return esc(text)
-      .replace(/\{@link\s+([^}\s]+)(?:\s+([^}]*))?\}/g, (_, sym: string, label?: string) => {
-        const cleanSym = sym.replace(/\(\)$/, "");
-        const href = allowLinks ? this.symbolHref(cleanSym, r, preferKernel) : null;
-        const shown = label?.trim() || sym;
-        return href ? `<a href="${esc(href)}"><code>${shown}</code></a>` : `<code>${shown}</code>`;
-      })
-      .replace(/`([^`]+)`/g, (_, code: string) => {
-        const cleanSym = code.replace(/^@/, "").replace(/\(\)$/, "");
-        const isSimple = /^@?[A-Za-z_]\w*(\(\))?$/.test(code);
-        const href =
-          allowLinks && isSimple
-            ? this.symbolHref(cleanSym, r, preferKernel || code.startsWith("@"))
-            : null;
-        return href ? `<a href="${esc(href)}"><code>${code}</code></a>` : `<code>${code}</code>`;
-      });
+  renderMarkdown(
+    markdown: string,
+    r = "",
+    preferKernel = false,
+    opts: { allowLinks?: boolean; inlineOnly?: boolean } = {},
+  ): string {
+    if (!markdown.trim()) return "";
+    const allowLinks = opts.allowLinks ?? true;
+    const resolver = allowLinks ? this.linkResolver(r, preferKernel, null) : null;
+    return renderMarkdownHtml(markdown, {
+      inlineOnly: opts.inlineOnly,
+      resolveSymbolHref: allowLinks
+        ? (sym, preferHint) => this.symbolHref(sym, r, preferKernel || preferHint)
+        : undefined,
+      renderCodeBlock: (code, lang): Element => ({
+        type: "element",
+        tagName: "div",
+        properties: { className: ["docs-code"] },
+        children: [this.highlighter.highlightBlockHast(code, lang, resolver)],
+      }),
+    });
   }
 
-  renderDocBlocks(blocks: readonly DocBlock[], r = "", preferKernel = false): string {
-    return blocks
-      .map((b) => {
-        if (b.kind === "p") return `<p>${this.renderInlineDoc(b.text, r, preferKernel)}</p>`;
-        if (b.kind === "ul") {
-          return `<ul class="docs-doc-list">${b.items.map((it) => `<li>${this.renderInlineDoc(it, r, preferKernel)}</li>`).join("")}</ul>`;
-        }
-        if (b.kind === "code") return this.codeBlock(b.code, { r, preferKernel });
-        return `<div class="docs-param-group"><span class="docs-param-keyword">@${esc(b.tag)}</span><span>${this.renderInlineDoc(b.text, r, preferKernel)}</span></div>`;
-      })
-      .join("\n");
+  renderParsedDoc(
+    doc: ParsedDoc,
+    r = "",
+    preferKernel = false,
+    visibleTags?: readonly JsDocTagEntry[],
+  ): string {
+    const parts: string[] = [];
+    if (doc.markdown) {
+      parts.push(this.renderMarkdown(doc.markdown, r, preferKernel));
+    }
+    const tags = visibleTags ?? doc.tags;
+    for (const t of tags) {
+      const tagBody = t.name
+        ? `<code>${esc(t.name)}</code>${t.markdown ? ` ${this.renderMarkdown(t.markdown, r, preferKernel, { inlineOnly: true })}` : ""}`
+        : this.renderMarkdown(t.markdown, r, preferKernel, { inlineOnly: true });
+      parts.push(
+        `<div class="docs-param-group"><span class="docs-param-keyword">@${esc(t.tag)}</span><span>${tagBody}</span></div>`,
+      );
+    }
+    return parts.join("\n");
   }
 
   linkifyType(typeStr: string, r: string, preferKernel = false): string {
     const base = typeStr.replace(/[<[\s|&?].*$/, "");
     const href = this.symbolHref(base, r, preferKernel);
     return href
-      ? `<a href="${href}"><code>${esc(typeStr)}</code></a>`
+      ? `<a href="${esc(href)}"><code>${esc(typeStr)}</code></a>`
       : `<code>${esc(typeStr)}</code>`;
   }
 
@@ -332,19 +302,19 @@ export class RenderContext {
       ? `<div class="docs-sample-fail"><div class="docs-sample-fail-head"><strong>⚠ Sample failing</strong><code>${esc(sample.testFile)}:${sample.line}</code></div>${sample.error ? `<pre>${esc(sample.error)}</pre>` : ""}</div>`
       : "";
 
-    if (!sample.html) {
+    let html = "";
+    if (sample.hast) {
+      const rooted = rewriteKernelRootInHast(sample.hast, `${r}kernel/`);
+      const cleaned = stripSelfLinksInHast(rooted, currentSymbol);
+      html = toHtml(cleaned);
+    } else if (sample.html) {
+      html = sample.html.replaceAll("__KERNEL_ROOT__", `${r}kernel/`);
+    }
+
+    if (!html) {
       return `${failBanner}${this.codeBlock(sample.code, { r, preferKernel: true, currentSymbol })}`;
     }
 
-    let html = sample.html.replaceAll("__KERNEL_ROOT__", `${r}kernel/`);
-    if (currentSymbol) {
-      const escapedSym = currentSymbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const selfRe = new RegExp(
-        `<a class="twoslash-ref-link" href="[^"]*" data-k-sym="${escapedSym}">([\\s\\S]*?)</a>`,
-        "g",
-      );
-      html = html.replace(selfRe, "$1");
-    }
     const cleanCopy = sample.code.replace(/\s*\/\/\s*\[!code\s+[^\]]+\]/g, "");
     return `${failBanner}<div class="docs-code docs-twoslash" data-copy-code="${esc(cleanCopy)}">${COPY_BTN}${html}</div>`;
   }
@@ -356,32 +326,27 @@ export class RenderContext {
     ownerTypeName: string | null = null,
     currentSymbol: string | null = null,
   ): string {
-    const rawName = m.name || m.sig.split(/[(\s:<]/)[0] || "member";
+    const rawName = m.name || "member";
     const id = slugOf(rawName);
-    const parts = parseSigParts(m.sig);
     const sample = this.lookupVerifiedSample(ownerTypeName, rawName);
 
-    const paramRows = parts.params
-      .map((p) => {
-        const idx = p.indexOf(":");
-        if (idx === -1) {
-          return `<div class="docs-param-group"><span class="docs-param-keyword">@param</span><span class="docs-param-name">${esc(p)}</span></div>`;
-        }
-        const pName = p.slice(0, idx).trim();
-        const pType = p.slice(idx + 1).trim();
-        return `<div class="docs-param-group"><span class="docs-param-keyword">@param</span><span class="docs-param-name">${esc(pName)}</span><code class="docs-param-type">${this.hl(pType, r, preferKernel, currentSymbol)}</code></div>`;
-      })
+    const paramRows = m.params
+      .map(
+        (p) =>
+          `<div class="docs-param-group"><span class="docs-param-keyword">@param</span><span class="docs-param-name">${esc(p.name)}${p.optional ? "?" : ""}</span><code class="docs-param-type">${this.hl(p.type, r, preferKernel, currentSymbol)}</code></div>`,
+      )
       .join("");
 
     const retRow =
-      parts.isMethod && parts.ret
-        ? `<div class="docs-return-type"><span class="docs-param-keyword">@returns</span><code>${this.hl(parts.ret, r, preferKernel, currentSymbol)}</code></div>`
+      m.kind === "method" && m.returnType
+        ? `<div class="docs-return-type"><span class="docs-param-keyword">@returns</span><code>${this.hl(m.returnType, r, preferKernel, currentSymbol)}</code></div>`
         : "";
 
-    const docHtml = m.docBlocks.length
-      ? `<div class="docs-function-definition">${this.renderDocBlocks(m.docBlocks, r, preferKernel)}</div>`
+    const renderedDoc = this.renderParsedDoc(m.doc, r, preferKernel);
+    const docHtml = renderedDoc
+      ? `<div class="docs-function-definition">${renderedDoc}</div>`
       : sample?.doc
-        ? `<div class="docs-function-definition"><p>${this.renderInlineDoc(sample.doc, r, preferKernel)}</p></div>`
+        ? `<div class="docs-function-definition">${this.renderMarkdown(sample.doc, r, preferKernel)}</div>`
         : "";
 
     const sampleHtml = sample
@@ -450,7 +415,7 @@ export class RenderContext {
     const slotKeys = Object.keys(node.contributes);
     if (slotKeys.length) {
       parts.push(
-        `<div class="docs-param-group"><span class="docs-param-keyword">@contributes</span><span class="docs-param-name">slots</span>${slotKeys.map((sk) => `<a href="${r}contributions/index.html#${slugOf(sk)}"><code>${esc(sk)}</code></a>`).join(" ")}</div>`,
+        `<div class="docs-param-group"><span class="docs-param-keyword">@contributes</span><span class="docs-param-name">slots</span>${slotKeys.map((sk) => `<a href="${esc(`${r}contributions/index.html#${slugOf(sk)}`)}"><code>${esc(sk)}</code></a>`).join(" ")}</div>`,
       );
     }
     return parts.join("");
@@ -506,7 +471,9 @@ export class RenderContext {
 
     if (!exportedBy.length && !providedBy.length && !consumedBy.length) return "";
     const chips = (list: ReadonlyArray<{ name: string; href: string }>) =>
-      list.map((x) => `<a class="docs-wiring-chip" href="${x.href}">${esc(x.name)}</a>`).join("");
+      list
+        .map((x) => `<a class="docs-wiring-chip" href="${esc(x.href)}">${esc(x.name)}</a>`)
+        .join("");
 
     return `<section class="docs-wiring-box" id="wiring">
   <div class="docs-wiring-head">
@@ -514,7 +481,7 @@ export class RenderContext {
     <span class="docs-wiring-sub">Static AST wiring across @Module / @Provide / @Use</span>
   </div>
   <div class="docs-wiring-grid">
-    ${exportedBy.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">@Module</span><span class="docs-wiring-role">exported by</span><div class="docs-wiring-chips">${exportedBy.map((m) => `<a class="docs-wiring-chip" href="${r}modules/${m.slug}/">${esc(m.name)}</a>`).join("")}</div></div>` : ""}
+    ${exportedBy.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">@Module</span><span class="docs-wiring-role">exported by</span><div class="docs-wiring-chips">${exportedBy.map((m) => `<a class="docs-wiring-chip" href="${esc(`${r}modules/${m.slug}/`)}">${esc(m.name)}</a>`).join("")}</div></div>` : ""}
     ${providedBy.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">@Provide</span><span class="docs-wiring-role">provided by</span><div class="docs-wiring-chips">${chips(providedBy)}</div></div>` : ""}
     ${consumedBy.length ? `<div class="docs-wiring-row"><span class="docs-param-keyword">@Use</span><span class="docs-wiring-role">consumed by (${consumedBy.length})</span><div class="docs-wiring-chips">${chips(consumedBy)}</div></div>` : ""}
   </div>
@@ -686,43 +653,4 @@ export class RenderContext {
 <script src="${r}assets/app.js?v=${this.assetVer}" defer></script>
 </body></html>`;
   }
-}
-
-function parseSigParts(sig: string): {
-  name: string;
-  params: string[];
-  ret: string;
-  isMethod: boolean;
-} {
-  const m = sig.match(/^([A-Za-z0-9_$]+)(\??)\s*(?:<[^>]+>)?\s*\(([\s\S]*)\)\s*:\s*([\s\S]+)$/);
-  if (!m) {
-    const f = sig.match(/^(?:readonly\s+)?([A-Za-z0-9_$]+)(\??)\s*:\s*([\s\S]+)$/);
-    if (f) {
-      return {
-        name: `${f[1] ?? ""}${f[2] ?? ""}`,
-        params: [],
-        ret: (f[3] ?? "").trim(),
-        isMethod: false,
-      };
-    }
-    return { name: sig.split(/[(\s:<]/)[0] || "member", params: [], ret: "", isMethod: false };
-  }
-  const rawParams = (m[3] ?? "").trim();
-  const params: string[] = [];
-  if (rawParams) {
-    let depth = 0;
-    let cur = "";
-    for (const ch of rawParams) {
-      if (ch === "<" || ch === "(" || ch === "{" || ch === "[") depth++;
-      else if (ch === ">" || ch === ")" || ch === "}" || ch === "]") depth--;
-      if (ch === "," && depth === 0) {
-        params.push(cur.trim());
-        cur = "";
-      } else {
-        cur += ch;
-      }
-    }
-    if (cur.trim()) params.push(cur.trim());
-  }
-  return { name: `${m[1] ?? ""}${m[2] ?? ""}`, params, ret: (m[4] ?? "").trim(), isMethod: true };
 }

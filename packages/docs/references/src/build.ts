@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { computeSamplesSourceHash } from "./doc-samples.js";
 import { extractAll } from "./extract.js";
+import { CodeHighlighter } from "./highlight.js";
 import { slugOf } from "./jsdoc.js";
 import { kernelBadgeMeta, RenderContext } from "./render/context.js";
 import { createKernelRenderer } from "./render/kernel.js";
@@ -288,124 +289,134 @@ function buildStyleBundle(): string {
   return [baseCss, twoslashCss, refsCss].filter(Boolean).join("\n");
 }
 
-export function buildSite(
+export async function buildSite(
   repoDir = REPO,
   outDir = OUT,
   opts: { allowUnverified?: boolean } = {},
-): { pageCount: number; outDir: string } {
+): Promise<{ pageCount: number; outDir: string }> {
   const resolvedRepo = path.resolve(repoDir);
   const resolvedOut = path.resolve(outDir);
-  if (isSymlink(resolvedOut)) {
-    throw new Error(`Refusing to build into symlinked output root: ${resolvedOut}`);
-  }
-  fs.mkdirSync(resolvedOut, { recursive: true });
-  const canonicalOut = fs.realpathSync(resolvedOut);
-  const refsOutDir = path.join(canonicalOut, "references");
-  assertSafeCleanDir(canonicalOut, refsOutDir, resolvedRepo);
 
-  const data = extractAll(resolvedRepo);
-  const verifiedSamples = loadVerifiedSamples(
-    resolvedRepo,
-    opts.allowUnverified ?? ALLOW_UNVERIFIED,
-  );
-  const styleBundle = buildStyleBundle();
-  const appBundle = buildClientBundle(buildSearchIndex(data));
-  const assetVer = createHash("sha256")
-    .update(styleBundle)
-    .update(appBundle)
-    .digest("hex")
-    .slice(0, 10);
+  // Initialize async Shiki highlighter BEFORE output path validation/cleanup so there is no TOCTOU await gap.
+  const highlighter = await CodeHighlighter.create();
+  try {
+    if (isSymlink(resolvedOut)) {
+      throw new Error(`Refusing to build into symlinked output root: ${resolvedOut}`);
+    }
+    fs.mkdirSync(resolvedOut, { recursive: true });
+    const canonicalOut = fs.realpathSync(resolvedOut);
+    const refsOutDir = path.join(canonicalOut, "references");
+    assertSafeCleanDir(canonicalOut, refsOutDir, resolvedRepo);
 
-  const ctx = new RenderContext(data, verifiedSamples, assetVer);
-  const kernel = createKernelRenderer(ctx);
-  const pages = createPagesRenderer(ctx);
+    const data = extractAll(resolvedRepo);
+    const verifiedSamples = loadVerifiedSamples(
+      resolvedRepo,
+      opts.allowUnverified ?? ALLOW_UNVERIFIED,
+    );
+    const styleBundle = buildStyleBundle();
+    const appBundle = buildClientBundle(buildSearchIndex(data));
+    const assetVer = createHash("sha256")
+      .update(styleBundle)
+      .update(appBundle)
+      .digest("hex")
+      .slice(0, 10);
 
-  fs.rmSync(refsOutDir, { recursive: true, force: true });
-  fs.mkdirSync(path.join(refsOutDir, "assets"), { recursive: true });
-  writeFileAtomically(
-    canonicalOut,
-    path.join(refsOutDir, OWNED_MARKER),
-    `generatedBy=@prismshadow/penguin-references\ngitSha=${ctx.gitSha}\n`,
-  );
+    const ctx = new RenderContext(data, verifiedSamples, assetVer, highlighter);
+    const kernel = createKernelRenderer(ctx);
+    const pages = createPagesRenderer(ctx);
 
-  const logoPath = path.join(resolvedRepo, "packages/web/public/penguin-logo.svg");
-  if (fs.existsSync(logoPath)) {
+    // Revalidate ownership & symlink containment immediately before destructive cleanup (zero intervening await)
+    assertSafeCleanDir(canonicalOut, refsOutDir, resolvedRepo);
+    fs.rmSync(refsOutDir, { recursive: true, force: true });
+    fs.mkdirSync(path.join(refsOutDir, "assets"), { recursive: true });
     writeFileAtomically(
       canonicalOut,
-      path.join(refsOutDir, "assets/penguin-logo.svg"),
-      fs.readFileSync(logoPath),
+      path.join(refsOutDir, OWNED_MARKER),
+      `generatedBy=@prismshadow/penguin-references\ngitSha=${ctx.gitSha}\n`,
     );
-  } else {
-    console.warn(`Warning: logo not found at ${logoPath}`);
-  }
 
-  let pageCount = 0;
-  const emittedLowerPaths = new Set<string>();
-  const write = (relPath: string, content: string): void => {
-    const normalized = relPath.replace(/\\/g, "/");
-    if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-      throw new Error(`Invalid relative output path: ${normalized}`);
+    const logoPath = path.join(resolvedRepo, "packages/web/public/penguin-logo.svg");
+    if (fs.existsSync(logoPath)) {
+      writeFileAtomically(
+        canonicalOut,
+        path.join(refsOutDir, "assets/penguin-logo.svg"),
+        fs.readFileSync(logoPath),
+      );
+    } else {
+      console.warn(`Warning: logo not found at ${logoPath}`);
     }
-    const lower = normalized.toLowerCase();
-    if (emittedLowerPaths.has(lower)) {
-      throw new Error(`Case-insensitive static path collision: ${normalized}`);
+
+    let pageCount = 0;
+    const emittedLowerPaths = new Set<string>();
+    const write = (relPath: string, content: string): void => {
+      const normalized = relPath.replace(/\\/g, "/");
+      if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
+        throw new Error(`Invalid relative output path: ${normalized}`);
+      }
+      const lower = normalized.toLowerCase();
+      if (emittedLowerPaths.has(lower)) {
+        throw new Error(`Case-insensitive static path collision: ${normalized}`);
+      }
+      emittedLowerPaths.add(lower);
+      const fullPath = path.resolve(canonicalOut, normalized);
+      if (!isPathInsideOrEqual(canonicalOut, fullPath) || fullPath === canonicalOut) {
+        throw new Error(`Refusing to write outside output root (${canonicalOut}): ${normalized}`);
+      }
+      writeFileAtomically(canonicalOut, fullPath, content);
+      if (normalized.endsWith(".html")) pageCount++;
+    };
+
+    write("index.html", ROOT_INDEX_HTML);
+    write("references/index.html", pages.landing());
+    write("references/assets/style.css", styleBundle);
+    write("references/assets/app.js", appBundle);
+
+    // @prismshadow/penguin-core/kernel showcase
+    write("references/kernel/index.html", kernel.kernelOverviewPage());
+    for (const k of data.kernel.exports) {
+      write(`references/kernel/${k.slug}/index.html`, kernel.kernelSymbolPage(k));
     }
-    emittedLowerPaths.add(lower);
-    const fullPath = path.resolve(canonicalOut, normalized);
-    if (!isPathInsideOrEqual(canonicalOut, fullPath) || fullPath === canonicalOut) {
-      throw new Error(`Refusing to write outside output root (${canonicalOut}): ${normalized}`);
+
+    // Modules & Components
+    write("references/modules/index.html", pages.modulesIndex());
+    for (const m of data.modules) {
+      write(`references/modules/${m.slug}/index.html`, pages.modulePage(m));
     }
-    writeFileAtomically(canonicalOut, fullPath, content);
-    if (normalized.endsWith(".html")) pageCount++;
-  };
+    for (const c of data.components) {
+      write(`references/${c.href}index.html`, pages.componentPage(c));
+    }
 
-  write("index.html", ROOT_INDEX_HTML);
-  write("references/index.html", pages.landing());
-  write("references/assets/style.css", styleBundle);
-  write("references/assets/app.js", appBundle);
+    // Interfaces
+    write("references/interfaces/index.html", pages.ifacesIndex());
+    for (const it of data.ifaces) {
+      write(`references/interfaces/${it.slug}/index.html`, pages.ifacePage(it));
+    }
 
-  // @prismshadow/penguin-core/kernel showcase
-  write("references/kernel/index.html", kernel.kernelOverviewPage());
-  for (const k of data.kernel.exports) {
-    write(`references/kernel/${k.slug}/index.html`, kernel.kernelSymbolPage(k));
+    // External APIs (HTTP & CLI)
+    write("references/apis/index.html", pages.apiIndex());
+    for (const g of data.httpContribs) {
+      write(`references/apis/http/${g.slug}/index.html`, pages.httpPage(g));
+    }
+    for (const c of data.cliCommands) {
+      write(`references/apis/cli/${c.slug}/index.html`, pages.cliPage(c));
+    }
+
+    // Contribution Slots
+    write("references/contributions/index.html", pages.contributionsPage());
+
+    console.log(
+      `Generated ${pageCount} HTML pages from ${ctx.gitSha} (${data.git.date.slice(0, 10)})`,
+    );
+    console.log(
+      `Kernel: ${data.kernel.exports.length} | Modules: ${data.modules.length} | Components: ${data.components.length} | Interfaces: ${data.ifaces.length} | HTTP: ${data.httpContribs.length} | CLI: ${data.cliCommands.length} | Slots: ${data.slots.length}`,
+    );
+    console.log(`Output: ${canonicalOut}`);
+    return { pageCount, outDir: canonicalOut };
+  } finally {
+    highlighter.dispose();
   }
-
-  // Modules & Components
-  write("references/modules/index.html", pages.modulesIndex());
-  for (const m of data.modules)
-    write(`references/modules/${m.slug}/index.html`, pages.modulePage(m));
-  for (const c of data.components) {
-    write(`references/${c.href}index.html`, pages.componentPage(c));
-  }
-
-  // Interfaces
-  write("references/interfaces/index.html", pages.ifacesIndex());
-  for (const it of data.ifaces) {
-    write(`references/interfaces/${it.slug}/index.html`, pages.ifacePage(it));
-  }
-
-  // External APIs (HTTP & CLI)
-  write("references/apis/index.html", pages.apiIndex());
-  for (const g of data.httpContribs) {
-    write(`references/apis/http/${g.slug}/index.html`, pages.httpPage(g));
-  }
-  for (const c of data.cliCommands) {
-    write(`references/apis/cli/${c.slug}/index.html`, pages.cliPage(c));
-  }
-
-  // Contribution Slots
-  write("references/contributions/index.html", pages.contributionsPage());
-
-  console.log(
-    `Generated ${pageCount} HTML pages from ${ctx.gitSha} (${data.git.date.slice(0, 10)})`,
-  );
-  console.log(
-    `Kernel: ${data.kernel.exports.length} | Modules: ${data.modules.length} | Components: ${data.components.length} | Interfaces: ${data.ifaces.length} | HTTP: ${data.httpContribs.length} | CLI: ${data.cliCommands.length} | Slots: ${data.slots.length}`,
-  );
-  console.log(`Output: ${canonicalOut}`);
-  return { pageCount, outDir: canonicalOut };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  buildSite();
+  await buildSite();
 }
