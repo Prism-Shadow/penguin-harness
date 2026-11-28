@@ -26,6 +26,7 @@ import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
 import { WEB_APP_CSP } from "../../library/http/src/page-csp";
 import { penguinManifest } from "./scripts/penguin-manifest";
+import { penguinSharedRuntime } from "./scripts/plugin-shared-runtime";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -69,6 +70,8 @@ export function devProxy(env: Record<string, string | undefined> = process.env) 
       // this the proxy answers the handshake itself and the terminal never connects.
       ws: true,
     },
+    "/assets/modules.json": { target, changeOrigin: false },
+    "/assets/modules": { target, changeOrigin: false },
     [MACHINE_API_PATH]: { target, changeOrigin: false },
   };
 }
@@ -97,6 +100,7 @@ export default defineConfig({
   plugins: [
     penguinManifest(),
     penguinUi({ workbenchRuntime: true }),
+    penguinSharedRuntime(),
     react(),
     tailwindcss(),
     katexWoff2Only(),

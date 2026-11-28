@@ -56,13 +56,22 @@ describe("the dev server's proxy table", () => {
       "/server/Oge9N-anHqSz0x3E/api/sessions/s1/events?lastEventId=7",
       "/server/Oge9N-anHqSz0x3E/api",
       "/api/projects/default_project/machines",
+      "/assets/modules.json",
+      "/assets/modules/@penguinharness/pet/0123456789abcdef/web/index.js",
     ]) {
       expect(proxiedBy(table, url), url).toBe("http://127.0.0.1:27480");
     }
   });
 
   it("leaves the page's own paths to the SPA", () => {
-    for (const url of ["/server", "/servers/list", "/server/Oge9N-anHqSz0x3E", "/machines"]) {
+    for (const url of [
+      "/server",
+      "/servers/list",
+      "/server/Oge9N-anHqSz0x3E",
+      "/machines",
+      "/plugins",
+      "/plugins/installed",
+    ]) {
       expect(proxiedBy(table, url), url).toBeNull();
     }
   });
