@@ -388,8 +388,8 @@ describe("style hooks", () => {
 
   // Hooks are applied in markup; a .ts module that names one (a catalog entry) is data, not a host.
   // The web app is where the hosts live now, so its markup is checked alongside the package's.
-  const markup = [...filesOf("ui"), ...filesOf("web"), ...filesOf("library-web")].filter(
-    (f) => f.name.endsWith(".tsx"),
+  const markup = [...filesOf("ui"), ...filesOf("web"), ...filesOf("library-web")].filter((f) =>
+    f.name.endsWith(".tsx"),
   );
 
   it("find markup to check", () => {
