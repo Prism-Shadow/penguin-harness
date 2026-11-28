@@ -3351,6 +3351,8 @@ export const en: Strings = {
         failedRecommendTitle: "Download failed — configure plugin download sources",
         failedRecommendBody:
           "The default download source may be slow or unreachable on this network. Open Plugin sources to configure mirrors (such as gh-proxy.com or npmmirror) manually, or ask an Agent to help configure it.",
+        runningNote:
+          "Downloading and installing in order — keep this window open until the batch finishes.",
         retryFailed: (count: number) => `Retry failed (${count})`,
         selectMode: "Batch download",
         exitSelectMode: "Done selecting",

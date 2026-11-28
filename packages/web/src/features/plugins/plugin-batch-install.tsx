@@ -77,7 +77,7 @@ export function batchOverallPercent(
     if (st === undefined || st.status === "pending") continue;
     if (st.status === "done") {
       sum += 1;
-    } else if (st.status === "running" || st.status === "failed") {
+    } else if (st.status === "running") {
       sum += currentItemFraction(st.stage, st.progress);
     }
   }
@@ -306,7 +306,7 @@ export function PluginBatchInstallModal({
       title={heading}
       onClose={handleClose}
     >
-      <div className="space-y-4" data-testid="batch-plugin-install-modal">
+      <div className="max-h-[78vh] space-y-4 overflow-y-auto pr-0.5" data-testid="batch-plugin-install-modal">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-subtle text-accent">
             <GlyphIcon
@@ -371,7 +371,7 @@ export function PluginBatchInstallModal({
 
         {/* List of all plugins in this modal, with per-plugin why & live status */}
         <ul
-          className="max-h-64 divide-y divide-line overflow-y-auto rounded-lg border border-line"
+          className="max-h-48 divide-y divide-line overflow-y-auto rounded-lg border border-line"
           data-testid="batch-install-list"
         >
           {items.map((item) => {
@@ -448,7 +448,7 @@ export function PluginBatchInstallModal({
         )}
 
         {phase === "running" && (
-          <p className="text-xs text-fg-muted">{words.noCancel}</p>
+          <p className="text-xs text-fg-muted">{B.runningNote}</p>
         )}
 
         {/* Failure recovery: recommend configuring plugin download manually OR with an Agent */}
