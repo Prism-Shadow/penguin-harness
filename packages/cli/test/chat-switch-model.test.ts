@@ -340,4 +340,13 @@ describe("chat --resume with model flags", () => {
       process.exitCode = prevExitCode;
     }
   });
+
+  it("renders a resumed history's in-place Trace handoff as the switch line even without leading session_meta", async () => {
+    const sid = "session-2026-08-25-11-00-00-beef0001";
+    const existing = server.addSession({ sessionId: sid });
+    server.history = [userText(buildModelSwitchMessage({ sessionId: sid, tracePath: TRACE_FILE }))];
+    const out = await driveChat(["/exit"], ["--resume", existing.sessionId]);
+    expect(out).toContain(t.switchModelHandedOver(TRACE_FILE));
+    expect(out).not.toContain("> [model_switch_from]");
+  });
 });
