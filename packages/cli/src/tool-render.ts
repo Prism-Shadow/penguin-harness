@@ -161,13 +161,15 @@ const FILE_TOOL_NAMES = new Set(["read_file", "edit_file", "write_file"]);
 
 /**
  * Shortens a path for one-line display: at most one parent directory plus the filename
- * (`…/parent/file.ts`); paths already within that shape are shown as-is. The full path
- * stays in the argument JSON (and the expanded web card).
+ * (`…/parent/file.ts`, or `…\parent\file.ts` for backslash paths); paths already within
+ * that shape are shown as-is. The full path stays in the argument JSON (and the expanded
+ * web card).
  */
 export function shortenPath(p: string): string {
-  const segments = p.split("/").filter((s) => s.length > 0);
+  const separator = p.includes("/") ? "/" : "\\";
+  const segments = p.split(/[\\/]+/).filter((s) => s.length > 0);
   if (segments.length <= 2) return p;
-  return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  return `…${separator}${segments[segments.length - 2]}${separator}${segments[segments.length - 1]}`;
 }
 
 /** How a tool call is previewed while its arguments stream (see the module header). */
