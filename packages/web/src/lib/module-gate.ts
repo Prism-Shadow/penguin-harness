@@ -20,6 +20,7 @@
 import { createElement, useSyncExternalStore, type ComponentType } from "react";
 
 let gates: ReadonlyMap<string, readonly string[]> = new Map();
+let runtimeGates: ReadonlyMap<string, readonly string[]> = new Map();
 let running: ReadonlySet<string> | null = null;
 let version = 0;
 const listeners = new Set<() => void>();
@@ -32,6 +33,12 @@ function notify(): void {
 /** WebAppModule's side: each contributing web module's declared server modules. */
 export function setServerModuleGates(next: ReadonlyMap<string, readonly string[]>): void {
   gates = next;
+  notify();
+}
+
+/** External runtime web modules' declared server modules, merged alongside static gates. */
+export function setRuntimeServerModuleGates(next: ReadonlyMap<string, readonly string[]>): void {
+  runtimeGates = next;
   notify();
 }
 
@@ -49,17 +56,17 @@ export function setRunningServerModules(modules: readonly string[] | null | unde
 
 /** Whether the web module named `from` declared a server module at all (fixed once booted). */
 export function isGated(from: string): boolean {
-  return (gates.get(from)?.length ?? 0) > 0;
+  return ((gates.get(from) ?? runtimeGates.get(from))?.length ?? 0) > 0;
 }
 
 /** Every server module some web module declared: what a host standing in for the server runs. */
 export function declaredServerModules(): string[] {
-  return [...new Set([...gates.values()].flat())];
+  return [...new Set([...gates.values(), ...runtimeGates.values()].flat())];
 }
 
 /** Whether the contributions of the web module named `from` are drawn now. */
 export function contributionShown(from: string): boolean {
-  const needs = gates.get(from);
+  const needs = gates.get(from) ?? runtimeGates.get(from);
   if (needs === undefined || needs.length === 0) return true;
   const now = running;
   return now !== null && needs.every((module) => now.has(module));
