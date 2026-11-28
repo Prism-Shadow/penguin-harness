@@ -5,7 +5,7 @@
  * the draft cache has to carry goal mode for a demo that is a goal.
  */
 import { describe, expect, it } from "vitest";
-import { libraryQuickStart } from "../src/features/plugins/plugin-card";
+import { libraryQuickStart, onboardingWorkbench } from "../src/features/plugins/plugin-card";
 import { draftFromUnknown } from "../src/features/chat/draft-cache";
 
 const skill = (name: string) => ({ name, description: "", version: "2026.08.01.1" });
@@ -28,5 +28,36 @@ describe("draftFromUnknown", () => {
   it("keeps goal mode only as a literal true", () => {
     expect(draftFromUnknown({ text: "x", goal: true })).toEqual({ text: "x", goal: true });
     expect(draftFromUnknown({ text: "x", goal: "yes" })).toEqual({ text: "x" });
+  });
+});
+
+describe("onboardingWorkbench", () => {
+  it("never matches by workbench name substring when card.onboarding is undeclared", () => {
+    expect(
+      onboardingWorkbench({
+        workbenches: [{ name: "pet-onboarding", version: "0.0.1" }],
+      }),
+    ).toBeNull();
+  });
+
+  it("picks only the exact workbench named by card.onboarding even when multiple names contain onboarding", () => {
+    expect(
+      onboardingWorkbench({
+        workbenches: [
+          { name: "alpha-onboarding", version: "0.0.1" },
+          { name: "beta-onboarding", version: "0.0.1" },
+        ],
+        onboarding: "beta-onboarding",
+      }),
+    ).toBe("beta-onboarding");
+  });
+
+  it("returns null when card.onboarding names a workbench the package does not ship", () => {
+    expect(
+      onboardingWorkbench({
+        workbenches: [{ name: "pet-onboarding", version: "0.0.1" }],
+        onboarding: "other",
+      }),
+    ).toBeNull();
   });
 });

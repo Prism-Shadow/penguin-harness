@@ -223,6 +223,7 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       ? { icon: iconRef(libraryIconRoute(plugin.name), plugin.icon) }
       : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
+    ...(plugin.onboarding !== undefined ? { onboarding: plugin.onboarding } : {}),
     ...(plugin.composerMode ? { composerMode: true as const } : {}),
     ...(plugin.composerCommand ? { composerCommand: plugin.composerCommand } : {}),
     ...(plugin.defaultInstall ? { defaultInstall: true as const } : {}),

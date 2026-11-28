@@ -2698,6 +2698,8 @@ export interface PluginItem {
   icon?: IconRef;
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
+  /** The workbench the Plugins page opens after installing on an Agent (the card's `onboarding`); absent = no auto-open. */
+  onboarding?: string;
   /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
   composerMode?: true;
   /** Optional slash name contributed by this composer mode. */
@@ -4914,6 +4916,8 @@ export type StartMetricData = {
 /** A start-page count as GET /api/contributions answers it. */
 export type StartMetricContribution = WebContribution & StartMetricData;
 
+/** A running external plugin that ships a built `./web` bundle the SPA imports at runtime. */
+
 export interface ContributionsResponse {
   pages: WebPageContribution[];
   fileRenderers: WebFileRendererContribution[];
@@ -4929,6 +4933,7 @@ export interface ContributionsResponse {
   modules?: string[];
   /** The start page's contributed counts; this server always sends the list, an older one none. */
   startMetrics?: StartMetricContribution[];
+  /** Built `./web` bundles of active external plugins for the SPA to import at runtime. */
 }
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */

@@ -74,6 +74,8 @@ export interface PluginCard {
   /** Optional slash name for this composer mode, without the leading slash. */
   composerCommand?: string;
   quickStart?: QuickStart;
+  /** Optional name of one workbench shipped by this package to open after installing on an Agent. */
+  onboarding?: string;
   /** Links to the paper or the upstream implementation, which the landing site lists. */
   references?: string[];
 }

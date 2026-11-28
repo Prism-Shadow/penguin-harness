@@ -691,7 +691,15 @@ describe("packages the operator installed on the server", () => {
     });
     const bare = libraryPlugin("bare")!;
     expect(bare).toMatchObject({ name: "bare", version: "0.1.0", description: "" });
-    for (const key of ["title", "shortDescription", "category", "icon", "quickStart", "hooks"]) {
+    for (const key of [
+      "title",
+      "shortDescription",
+      "category",
+      "icon",
+      "quickStart",
+      "onboarding",
+      "hooks",
+    ]) {
       expect(bare, key).not.toHaveProperty(key);
     }
     expect(bare.skills.map((s) => s.name)).toEqual(["bare"]);
@@ -712,6 +720,7 @@ describe("packages the operator installed on the server", () => {
           category: ["office-productivity"],
           title: "Notes",
           quickStart: { prompt: "Take a note.", skills: ["notes", "elsewhere"] },
+          onboarding: "missing-wb",
         },
       }),
     });
@@ -720,7 +729,9 @@ describe("packages the operator installed on the server", () => {
     expect(plugin).not.toHaveProperty("category");
     expect(plugin.quickStart).toEqual({ prompt: "Take a note.", skills: ["notes"] });
     expect(logged(warn)).toContain(".category must be a string; ignored");
+    expect(plugin).not.toHaveProperty("onboarding");
     expect(logged(warn)).toContain("names skills the package does not ship (elsewhere)");
+    expect(logged(warn)).toContain("names a workbench the package does not ship (missing-wb)");
   });
 
   it("lists the skills of a package whose hook package has no dated version, and no hook package", async () => {

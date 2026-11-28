@@ -180,6 +180,19 @@ export function libraryQuickStart(
     : { prompt: S.skills.quickInvokeText(skill.name), skills: [skill.name] };
 }
 
+/**
+ * A library plugin's onboarding workbench: only the one explicitly declared by its card's
+ * `onboarding` field (and present in its shipped workbenches); null when undeclared.
+ */
+export function onboardingWorkbench(
+  plugin: Pick<PluginItem, "workbenches" | "onboarding">,
+): string | null {
+  if (plugin.onboarding === undefined) return null;
+  return (plugin.workbenches ?? []).some((w) => w.name === plugin.onboarding)
+    ? plugin.onboarding
+    : null;
+}
+
 /** Where a row's package downloads as a zip — a library plugin's, or a server module's on this server — or null when its package is not here. */
 export function pluginArchiveUrl(row: PluginRow): string | null {
   if (row.library !== undefined) return api.libraryPluginArchiveUrl(row.library.name);
@@ -418,6 +431,17 @@ export function PluginCard(props: PluginCardProps) {
   const addTo = async (key: string, item: PluginItem) => {
     if (await props.onToggleInstall(key, item, true)) {
       setAddedKeys((keys) => (keys.includes(key) ? keys : [...keys, key]));
+      const onboarding = onboardingWorkbench(item);
+      const target = targetOf(key);
+      if (
+        onboarding !== null &&
+        props.onOpenApp !== undefined &&
+        target !== undefined &&
+        target.machine?.live !== false
+      ) {
+        closeInstall();
+        props.onOpenApp(locatedAppKey(target.agent.agentId, onboarding, target.machine?.machineId));
+      }
     }
   };
 
