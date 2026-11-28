@@ -16,7 +16,9 @@
  * assertion from `@playwright/test` works unchanged inside a unit.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { moduleMetaOf } from "@prismshadow/penguin-core/kernel";
 import type { ModuleClass, Plugin } from "@prismshadow/penguin-core/plugin";
@@ -48,6 +50,10 @@ export interface LaunchOptions {
    * web app's locale chain. Defaults to "en".
    */
   lang?: "en" | "zh";
+  /** Explicit Electron executable path. Defaults to resolving `electron` from `<root>/packages/desktop`. */
+  executablePath?: string;
+  /** Startup timeout in milliseconds (window open + server port discovery). Defaults to 60_000. */
+  timeoutMs?: number;
 }
 
 export interface TestPluginOptions extends LaunchOptions {
@@ -92,16 +98,87 @@ export interface HarnessInstance {
 /** Find the current git repository root, or null when the caller is not inside one. */
 export function gitRoot(from: string = process.cwd()): string | null {
   const out = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: from, encoding: "utf8" });
-  return out.status === 0 ? out.stdout.trim() : null;
+  return out.status === 0 ? path.resolve(out.stdout.trim()) : null;
 }
 
-/** The data roots an instance gets: `<base>/penguin` (PENGUIN_HOME) and `<base>/chrome`. */
+/** The data roots an instance gets: `<base>/penguin` (PENGUIN_HOME), `<base>/chrome`, and `<base>/user-data`. */
 export function instanceDirs(
   root: string,
   dataDir?: string,
-): { penguinHome: string; chromeDir: string } {
+): { penguinHome: string; chromeDir: string; userDataDir: string } {
   const base = dataDir ?? path.join(root, ".data", "penguin-testing-electron");
-  return { penguinHome: path.join(base, "penguin"), chromeDir: path.join(base, "chrome") };
+  return {
+    penguinHome: path.join(base, "penguin"),
+    chromeDir: path.join(base, "chrome"),
+    userDataDir: path.join(base, "user-data"),
+  };
+}
+
+function resolveElectronExecutable(root: string): string | undefined {
+  try {
+    const desktopRequire = createRequire(path.join(root, "packages", "desktop", "package.json"));
+    const resolved: unknown = desktopRequire("electron");
+    return typeof resolved === "string" ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+function readLiveLockPort(penguinHome: string): number | null {
+  try {
+    const lock = JSON.parse(readFileSync(path.join(penguinHome, "server.lock"), "utf8")) as {
+      pid?: unknown;
+      port?: unknown;
+    };
+    if (
+      typeof lock.port === "number" &&
+      Number.isInteger(lock.port) &&
+      lock.port > 0 &&
+      lock.port <= 65535 &&
+      typeof lock.pid === "number" &&
+      isPidAlive(lock.pid)
+    ) {
+      return lock.port;
+    }
+  } catch {
+    // lock not written yet
+  }
+  return null;
+}
+
+function platformDevPortFiles(userDataDir: string): string[] {
+  const files = [path.join(userDataDir, "server-port")];
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
+    files.push(path.join(appData, "PenguinHarness-Dev", "server-port"));
+  } else if (process.platform === "darwin") {
+    files.push(
+      path.join(
+        os.homedir(),
+        "Library",
+        "Application Support",
+        "PenguinHarness-Dev",
+        "server-port",
+      ),
+    );
+  } else {
+    const configHome = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
+    files.push(
+      path.join(configHome, "PenguinHarness-Dev", "server-port"),
+      path.join(configHome, "PenguinHarness", "server-port"),
+    );
+  }
+  return files;
 }
 
 /**
@@ -116,15 +193,19 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
   const root = options.root ?? gitRoot();
   if (!root) throw new Error("launchHarness: no harness root given and no git root found");
 
-  const { penguinHome, chromeDir } = instanceDirs(root, options.dataDir);
+  const { penguinHome, chromeDir, userDataDir } = instanceDirs(root, options.dataDir);
   mkdirSync(penguinHome, { recursive: true });
   mkdirSync(chromeDir, { recursive: true });
+  mkdirSync(userDataDir, { recursive: true });
 
+  const startupTimeoutMs = options.timeoutMs ?? 60_000;
+  const executablePath = options.executablePath ?? resolveElectronExecutable(root);
   const { _electron } = await import("@playwright/test");
   const adminPassword = "penguin-testing-electron";
   const app = await _electron.launch({
     cwd: root,
-    args: [path.join(root, "packages/desktop")],
+    ...(executablePath !== undefined ? { executablePath } : {}),
+    args: [path.join(root, "packages", "desktop"), `--user-data-dir=${userDataDir}`],
     env: {
       ...process.env,
       PENGUIN_HOME: penguinHome,
@@ -136,19 +217,26 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
     },
   });
 
-  try {
-    const window = await app.firstWindow();
+  let closedEarly = false;
+  app.on("close", () => {
+    closedEarly = true;
+  });
 
-    // The instance's HTTP endpoint. The desktop shell announces its embedded server's
-    // port in its userData directory (server-port), not under PENGUIN_HOME; userData
-    // follows the app name, which the dev profile suffixes.
+  try {
+    const window = await app.firstWindow({ timeout: startupTimeoutMs });
+
+    // Prefer this throwaway instance's own `<penguinHome>/server.lock` (cross-platform,
+    // PID-verified, works in both spawn and attach modes, and never picks up another
+    // running desktop shell). Fall back to the platform dev `server-port` file.
     const port = await (async () => {
-      const { readFileSync } = await import("node:fs");
-      const candidates = [
-        path.join(process.env.HOME ?? "", ".config", "PenguinHarness-Dev", "server-port"),
-        path.join(process.env.HOME ?? "", ".config", "PenguinHarness", "server-port"),
-      ];
-      for (let i = 0; i < 100; i++) {
+      const candidates = platformDevPortFiles(userDataDir);
+      const deadline = Date.now() + startupTimeoutMs;
+      while (Date.now() < deadline) {
+        if (closedEarly) {
+          throw new Error("launchHarness: Electron exited before announcing its server port");
+        }
+        const lockPort = readLiveLockPort(penguinHome);
+        if (lockPort !== null) return lockPort;
         for (const file of candidates) {
           try {
             const value = readFileSync(file, "utf8").trim();
@@ -157,9 +245,11 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
             // not written yet
           }
         }
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
-      throw new Error("launchHarness: the instance never announced its port");
+      throw new Error(
+        `launchHarness: the instance never announced its port within ${startupTimeoutMs}ms`,
+      );
     })();
     const base = `http://localhost:${port}`;
 
@@ -169,7 +259,7 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
       body: JSON.stringify({ userId: "admin", password: adminPassword }),
     });
     if (!loginResponse.ok || !loginResponse.headers.get("set-cookie")) {
-      throw new Error("launchHarness: admin login failed");
+      throw new Error(`launchHarness: admin login failed (${loginResponse.status})`);
     }
     const authHeaders: Record<string, string> = {
       cookie: loginResponse.headers.get("set-cookie")!.split(";")[0]!,
@@ -190,6 +280,11 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
         `launchHarness: pinning the UI language to '${lang}' failed (${prefsPut.status})`,
       );
     }
+    // Wait until the initial one-shot `/api/auth/claim?token=...` redirect has settled before
+    // reloading, so reload does not replay an already-spent claim token.
+    await window
+      .waitForURL((u) => !u.pathname.includes("/api/auth/claim"), { timeout: 15_000 })
+      .catch(() => undefined);
     await window.reload().catch(() => undefined);
 
     // A project to install plugins into: the first project on the instance, or one the
@@ -276,11 +371,16 @@ export async function precheckPluginPackage(pluginDir: string): Promise<{ name: 
  * in place, no packaging, no copying. `force` lets a name the build ships be replaced for
  * this throwaway instance; the build's own copy returns when the link is removed.
  */
-export async function installPlugin(
+/**
+ * Link a local plugin package directory into the instance's plugin prefix without activating
+ * its server modules or installing it on any Agent. Lets an E2E test drive the real Plugins UI
+ * install flow from the "available" state.
+ */
+export async function linkPlugin(
   instance: HarnessInstance,
   pluginDir: string,
   options: { force?: boolean } = {},
-): Promise<string> {
+): Promise<{ name: string; plugins: Array<{ specifier: string; everywhere?: boolean }> }> {
   await precheckPluginPackage(pluginDir);
   const name = await pluginNameOf(pluginDir);
   const linked = await fetch(
@@ -298,22 +398,43 @@ export async function installPlugin(
   if (!linked.ok) {
     const detail = await linked.text().catch(() => "");
     throw new Error(
-      `installPlugin: the instance refused ${pluginDir} (${linked.status}): ${detail.slice(0, 400)}`,
+      `linkPlugin: the instance refused ${pluginDir} (${linked.status}): ${detail.slice(0, 400)}`,
     );
   }
+  const linkedBody = (await linked.json().catch(() => ({ plugins: [] }))) as {
+    plugins?: Array<{ specifier: string; everywhere?: boolean }>;
+  };
+  return { name, plugins: linkedBody.plugins ?? [] };
+}
 
-  // The link only puts the directory in the prefix; a Project asking for the name is
-  // what loads it (the route's own contract). Ask by name — the specifier resolves to
-  // the linked directory on this instance, so nothing downloads.
+export async function installPlugin(
+  instance: HarnessInstance,
+  pluginDir: string,
+  options: { force?: boolean } = {},
+): Promise<string> {
+  const { name, plugins } = await linkPlugin(instance, pluginDir, options);
+  const linked = { json: async () => ({ plugins }) };
+
+  // The link only puts the directory in the prefix; a Project listing the name is what
+  // loads it. Use PUT (rewrite the Project's shared plugin list from packages already on
+  // disk) rather than POST, because POST runs npm against the registry for any non-shipped
+  // specifier and fails with 400 plugin_not_published on local/unpublished plugins.
+  const linkedBody = (await linked.json().catch(() => ({ plugins: [] }))) as {
+    plugins?: Array<{ specifier: string; everywhere?: boolean }>;
+  };
+  const current = (linkedBody.plugins ?? [])
+    .filter((p) => p.everywhere === true)
+    .map((p) => p.specifier);
+  const next = current.includes(name) ? current : [...current, name];
   const asked = await fetch(`${instance.base}/api/projects/${instance.project}/plugins/installed`, {
-    method: "POST",
+    method: "PUT",
     headers: { ...instance.authHeaders, "content-type": "application/json" },
-    body: JSON.stringify({ specifier: name }),
+    body: JSON.stringify({ plugins: next }),
   });
   if (!asked.ok) {
     const detail = await asked.text().catch(() => "");
     throw new Error(
-      `installPlugin: asking the instance for ${name} failed (${asked.status}): ${detail.slice(0, 400)}`,
+      `installPlugin: listing linked plugin ${name} on project ${instance.project} failed (${asked.status}): ${detail.slice(0, 400)}`,
     );
   }
   return name;
@@ -369,6 +490,28 @@ export async function waitForActive(
  * uninstalls, and a name the build ships resolves to the build's own copy again.
  */
 export async function removePlugin(instance: HarnessInstance, name: string): Promise<void> {
+  // Unlist from the Project's shared table via PUT first so DELETE sees the linked package
+  // is no longer referenced by any Project and actually removes the prefix link.
+  const listed = await fetch(
+    `${instance.base}/api/projects/${instance.project}/plugins/installed`,
+    { headers: instance.authHeaders },
+  )
+    .then((r) =>
+      r.ok
+        ? (r.json() as Promise<{ plugins?: Array<{ specifier: string; everywhere?: boolean }> }>)
+        : null,
+    )
+    .catch(() => null);
+  if (listed?.plugins) {
+    const kept = listed.plugins
+      .filter((p) => p.everywhere === true && p.specifier !== name)
+      .map((p) => p.specifier);
+    await fetch(`${instance.base}/api/projects/${instance.project}/plugins/installed`, {
+      method: "PUT",
+      headers: { ...instance.authHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ plugins: kept }),
+    }).catch(() => undefined);
+  }
   await fetch(
     `${instance.base}/api/projects/${instance.project}/plugins/installed?specifier=${encodeURIComponent(name)}`,
     { method: "DELETE", headers: instance.authHeaders },
@@ -395,11 +538,18 @@ export async function openSettings(
   const window = instance.window;
   // The sidebar's account row is the only button on the page that opens a menu; its
   // accessible name is the account's ("admin" — the seeded admin this instance runs).
-  const accountButton = window.getByRole("button", { name: "admin" });
-  if ((await accountButton.count()) === 0) {
+  const accountButton = window.getByRole("button", { name: "admin" }).first();
+  await accountButton.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {
     throw new Error("openSettings: the sidebar's account button was not found");
+  });
+  // A fresh throwaway instance with no model API keys raises the "Connect a model provider
+  // first" onboarding dialog whose backdrop scrim intercepts clicks on the sidebar.
+  const laterButton = window.getByRole("button", { name: /^(Later|稍后)$/ }).first();
+  if (await laterButton.isVisible().catch(() => false)) {
+    await laterButton.click();
+    await laterButton.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => undefined);
   }
-  await accountButton.first().click();
+  await accountButton.click();
   const settingsRow = window.getByRole("menuitem", { name: "Settings" });
   await settingsRow.click();
   const dialog = window.getByRole("dialog", { name: "Settings" });
@@ -414,7 +564,7 @@ export async function openSettings(
 }
 
 /** The Settings dialog's page titles the helper can open on (the "en" UI strings). */
-const SECTION_TITLES = { plugins: "Plugins" } as const;
+const SECTION_TITLES = { plugins: /^(Plugin sources|Plugins)\b/ } as const;
 
 /**
  * Collect the units: the modules the caller handed over, filtered to those that declare
