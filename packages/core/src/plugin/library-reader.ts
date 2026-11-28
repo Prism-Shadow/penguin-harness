@@ -144,6 +144,8 @@ export interface LibraryPlugin {
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`, optional). */
   quickStart?: QuickStart;
+  /** The workbench the Plugins page opens after installing on an Agent (the card's `onboarding`, optional). */
+  onboarding?: string;
   /**
    * Whether the package also ships server modules (./kinds.ts): a hybrid plugin, whose install on
    * an Agent also asks for its modules to run on the Agent's server (PRFC-0031).
@@ -441,6 +443,13 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
       quickStart = known.length > 0 ? { ...rest, skills: known } : rest;
     }
   }
+  let onboarding = card.onboarding;
+  if (onboarding !== undefined && !workbenches.some((w) => w.name === onboarding)) {
+    warnings.push(
+      `the card's onboarding names a workbench the package does not ship (${onboarding}); ignored`,
+    );
+    onboarding = undefined;
+  }
   if (warnings.length > 0) {
     if (strict) throw new Error(`${dir}: ${warnings.join("; ")}`);
     for (const warning of warnings) warnOnce(`[plugins] ${root.packageName}: ${warning}`);
@@ -478,6 +487,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
+    ...(onboarding !== undefined ? { onboarding } : {}),
     // From the table already read and the entry's existence: no extra read of any Skill.
     modules: shipsServerModules(dir, table),
   };

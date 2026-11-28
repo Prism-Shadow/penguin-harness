@@ -198,3 +198,32 @@ it("reports a restored source version for plugin update checks", async () => {
   await fs.writeFile(file, JSON.stringify(pkg));
   expect((await listInstalledWorkbenches(root, project, agent))[0]?.version).toBe("2026.10.01.1");
 });
+
+it("reads card.onboarding when it names a shipped workbench and drops unknown ones", async () => {
+  const okPkg = path.join(root, "multi-wb");
+  await writeFiles(okPkg, {
+    ...pluginPackage(
+      { name: "@penguinharness/multi-wb", description: "Two workbenches." },
+      { card: { onboarding: "setup-b" }, workbenches: ["setup-a", "setup-b"] },
+    ),
+    ...Object.fromEntries(
+      Object.entries(SUPPORT_APP).map(([rel, text]) => [`workbenches/setup-a/${rel}`, text]),
+    ),
+    ...Object.fromEntries(
+      Object.entries(SUPPORT_APP).map(([rel, text]) => [`workbenches/setup-b/${rel}`, text]),
+    ),
+  });
+  expect(readLibraryPackage(okPkg).onboarding).toBe("setup-b");
+
+  const badPkg = path.join(root, "bad-onboarding");
+  await writeFiles(badPkg, {
+    ...pluginPackage(
+      { name: "@penguinharness/bad-onboarding", description: "Bad onboarding." },
+      { card: { onboarding: "nope" }, workbenches: ["setup-a"] },
+    ),
+    ...Object.fromEntries(
+      Object.entries(SUPPORT_APP).map(([rel, text]) => [`workbenches/setup-a/${rel}`, text]),
+    ),
+  });
+  expect(readLibraryPackage(badPkg).onboarding).toBeUndefined();
+});

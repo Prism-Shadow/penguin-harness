@@ -153,6 +153,7 @@ function readCard(table: PluginTable, warnings: string[]): LibraryContributions[
     "shortDescription",
     "shortDescriptionZh",
     "category",
+    "onboarding",
   ] as const) {
     const value = text(entry[key], `${at}.${key}`, warnings);
     if (value !== undefined) card[key] = value;
