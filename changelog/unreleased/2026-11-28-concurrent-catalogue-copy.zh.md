@@ -2,6 +2,7 @@
 
 - **Date:** 2026-11-28
 - **Type:** fix
+- **PR:** [#1943](https://github.com/Prism-Shadow/penguin-harness/pull/1943)
 - **Scope:** `core`
 
 [English](2026-11-28-concurrent-catalogue-copy.md)
