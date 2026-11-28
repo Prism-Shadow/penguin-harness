@@ -50,7 +50,7 @@ import {
 } from "../src/features/agents/api-tab";
 
 import { AgentApiMark } from "../src/features/agents/agents-page";
-import { AgentApiServerOffConfirm } from "../src/features/settings/agent-api-section";
+import { AgentApiServerOffConfirm } from "@prismshadow/penguin-library-setting/web/agent-api-section";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { readMarkup, seenText } from "./helpers/markup";

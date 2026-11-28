@@ -6,7 +6,11 @@
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
     "paths": {
-      "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"]
+      "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"],
+      "@prismshadow/penguin-library-messaging/web/*": ["../../library/messaging/src/web/*"],
+      "@prismshadow/penguin-library-observability/web/*": ["../../library/observability/src/web/*"],
+      "@prismshadow/penguin-library-plugin/web/*": ["../../library/plugin/src/web/*"],
+      "@prismshadow/penguin-library-setting/web/*": ["../../library/setting/src/web/*"]
     }
   },
   "include": ["src", "test", "scripts", "vite.config.ts", "vitest.config.ts"]

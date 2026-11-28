@@ -1,0 +1,60 @@
+export { StdioDisclosure, McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
+
+export {
+  agentInstallable,
+  agentModuleMark,
+  changedParts,
+  installNeedsConfirm,
+  pluginMcpState,
+  stdioServers,
+} from "./plugin-status";
+export type { AgentInstalls, AgentModuleMark } from "./plugin-status";
+
+export { agentInstalls, installsKey, installsOf } from "./agent-installs";
+
+export {
+  askModuleOnAgent,
+  installOnAgent,
+  toastModuleAsked,
+  toastWriteError,
+  uninstallFromAgent,
+} from "./agent-plugin-writes";
+export type { AgentTarget } from "./agent-plugin-writes";
+
+export {
+  LIBRARY_KEY,
+  MARKET_KEY,
+  pluginLibrary,
+  pluginMarket,
+  useLocalPluginIndex,
+} from "./plugin-reads";
+
+export { artOf, isSelected } from "./plugin-market";
+
+export { PluginDetailModal } from "./plugin-detail";
+
+export {
+  ModuleStatusMark,
+  PluginStatusMark,
+  PluginTag,
+  pluginTags,
+  rowBuiltin,
+  rowIcon,
+  rowInstalledOnServer,
+  rowShortDescription,
+  rowTitle,
+  rowVersion,
+} from "./plugin-marks";
+
+export { PluginUpdateParts } from "./plugin-update-parts";
+
+export { pluginCategories, pluginRows, rowMatches } from "./plugin-groups";
+export type { PluginRow } from "./plugin-groups";
+
+export { agentPluginGroups, hasParts } from "./agent-plugin-groups";
+
+export type { AgentPluginGroup, AgentPluginGroups, AgentPluginStatus } from "./agent-plugin-groups";
+
+export { PackageUpdateDialog, packageUpdate, type PackageUpdate } from "./plugin-package-update";
+
+export { PluginsModule } from "./module";

@@ -24,7 +24,7 @@ import {
   isPluginLink,
   isRepoSubpathLink,
   readReplaceQuestion,
-} from "../src/features/plugins/plugin-import-prompt";
+} from "@prismshadow/penguin-library-plugin/web/plugin-import-prompt";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

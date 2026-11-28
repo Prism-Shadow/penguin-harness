@@ -4,7 +4,6 @@
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
 cycle: features/agents -> features/ai-create
 cycle: features/agents -> features/chat
-cycle: features/agents -> features/plugins
 cycle: features/agents -> features/schedules
 cycle: features/ai-create -> features/chat
 cycle: features/chat -> features/agents
@@ -14,14 +13,10 @@ cycle: features/chat -> features/models
 cycle: features/chat -> features/schedules
 cycle: features/company -> features/chat
 cycle: features/company -> features/models
-cycle: features/company -> features/plugins
 cycle: features/company -> features/traces
 cycle: features/dock -> features/terminal
 cycle: features/models -> features/ai-create
 cycle: features/models -> features/chat
-cycle: features/plugins -> features/agents
-cycle: features/plugins -> features/ai-create
-cycle: features/plugins -> features/chat
 cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/models
 cycle: features/terminal -> features/dock
@@ -29,7 +24,6 @@ cycle: features/traces -> features/chat
 features/chat/machine-away.ts -> features/machines/machines-view.ts
 features/chat/model-switch.ts -> features/models/connection.ts
 features/models/models-page.tsx -> features/chat/draft-cache.ts
-features/plugins/plugin-card.tsx -> features/agents/archive-download.ts
 features/terminal/terminal-panel.tsx -> features/dock/dock-state.ts
 features/terminal/terminal-panel.tsx -> features/dock/dock-terminal.ts
 features/terminal/terminal-panel.tsx -> features/dock/panel-registry.ts

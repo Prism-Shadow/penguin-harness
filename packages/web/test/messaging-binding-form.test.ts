@@ -23,8 +23,8 @@ import {
   formTestable,
   formToPut,
   formToTest,
-} from "../src/features/messaging/messaging-binding-form";
-import { FEISHU_DEFAULT_DOMAIN } from "../src/features/messaging/channels/feishu/form";
+} from "@prismshadow/penguin-library-messaging/web/messaging-binding-form";
+import { FEISHU_DEFAULT_DOMAIN } from "@prismshadow/penguin-library-messaging/web/channels/feishu/form";
 
 const STORED_FEISHU: FeishuBindingInfo = {
   channel: "feishu",

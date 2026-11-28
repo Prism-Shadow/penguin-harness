@@ -10,7 +10,10 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import type { MessagingBindingsResponse } from "@prismshadow/penguin-server/api";
-import { cachedBinding, rememberBinding } from "../src/features/messaging/messaging-binding-cache";
+import {
+  cachedBinding,
+  rememberBinding,
+} from "@prismshadow/penguin-library-messaging/web/messaging-binding-cache";
 import { blockedStorage, stubLocalStorage, type MemoryStorage } from "./helpers/storage";
 
 const answer = (enabled: boolean): MessagingBindingsResponse => ({

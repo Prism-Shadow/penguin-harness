@@ -9,7 +9,7 @@ import {
   recorderRelease,
   recorderStart,
   recorderStep,
-} from "../src/lib/shortcuts/recorder";
+} from "@prismshadow/penguin-library-setting/web/lib/shortcuts/recorder";
 import type { KeyLike } from "../src/lib/shortcuts/types";
 
 function key(overrides: Partial<KeyLike> & { code: string }): KeyLike {

@@ -27,7 +27,7 @@ import { createElement as h, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { PluginCard } from "../src/features/settings/plugin-config-card";
+import { PluginCard } from "@prismshadow/penguin-library-setting/web/plugin-config-card";
 import { button, click, hasButton, mount, unmountAll } from "./helpers/dom";
 import { stubFetch } from "./helpers/fetch";
 

@@ -10,12 +10,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { drawnFields } from "../src/features/settings/plugin-config-draft";
-import { rowHelp } from "../src/features/settings/plugin-config-field-cell";
-import { ConfigHeading } from "../src/features/settings/plugin-config-heading";
-import { rowActions } from "../src/features/settings/plugin-config-row-menu";
-import { ConfigTable } from "../src/features/settings/plugin-config-table";
-import { PinToggle } from "../src/features/settings/plugin-config-table-cells";
+import { drawnFields } from "@prismshadow/penguin-library-setting/web/plugin-config-draft";
+import { rowHelp } from "@prismshadow/penguin-library-setting/web/plugin-config-field-cell";
+import { ConfigHeading } from "@prismshadow/penguin-library-setting/web/plugin-config-heading";
+import { rowActions } from "@prismshadow/penguin-library-setting/web/plugin-config-row-menu";
+import { ConfigTable } from "@prismshadow/penguin-library-setting/web/plugin-config-table";
+import { PinToggle } from "@prismshadow/penguin-library-setting/web/plugin-config-table-cells";
 
 const ENTRY: PluginConfigEntry = {
   name: "sandbox",

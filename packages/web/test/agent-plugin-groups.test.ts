@@ -1,6 +1,6 @@
 /**
  * An Agent's plugins, and which plugin each of its parts belongs to, as the Agent settings
- * Plugins tab lists them (features/plugins/agent-plugin-groups.ts).
+ * Plugins tab lists them (library/plugin/src/web/agent-plugin-groups.ts).
  *
  * - Given a library plugin, its Skills (by name), its hook package (by the plugin's name), its MCP
  *   entries (by their `plugin`) and its workbenches (by their receipts) are listed under it; a
@@ -23,7 +23,7 @@ import type {
   PluginItem,
   WorkbenchInfo,
 } from "@prismshadow/penguin-server/api";
-import { agentPluginGroups } from "../src/features/plugins/agent-plugin-groups";
+import { agentPluginGroups } from "@prismshadow/penguin-library-plugin/web/agent-plugin-groups";
 
 const skill = (name: string) => ({ name, description: "", version: "1" });
 const hook = (name: string) => ({ name, description: "", version: "1", events: ["stop"] });

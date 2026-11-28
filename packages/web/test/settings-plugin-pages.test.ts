@@ -32,8 +32,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { SettingsDialog } from "../src/features/settings/settings-dialog";
-import { setContributedSections } from "../src/features/settings/contributed-sections";
+import { SettingsDialog } from "@prismshadow/penguin-library-setting/web/settings-dialog";
+import { setContributedSections } from "@prismshadow/penguin-library-setting/web/contributed-sections";
 import { AuthProvider } from "../src/state/auth";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";

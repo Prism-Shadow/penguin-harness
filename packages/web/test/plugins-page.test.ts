@@ -1,6 +1,6 @@
 /**
  * The Plugins page's pure decisions: its rows, how they are grouped and searched, and the
- * update-everything plan (features/plugins/plugin-groups.ts, plugins-page.tsx).
+ * update-everything plan (library/plugin/src/web/plugin-groups.ts, plugins-page.tsx).
  *
  * - All machines: every module is listed, and a machine-only one says where it runs. This
  *   server: what it is asked for, a shared module not removable from its table. Another
@@ -40,12 +40,15 @@ import {
   storePluginsGroupBy,
   type PluginRow,
   type PluginView,
-} from "../src/features/plugins/plugin-groups";
-import { pluginStatus, type PluginStatus } from "../src/features/plugins/plugin-status";
-import { pluginUpdatePlan } from "../src/features/plugins/plugins-page";
+} from "@prismshadow/penguin-library-plugin/web/plugin-groups";
+import {
+  pluginStatus,
+  type PluginStatus,
+} from "@prismshadow/penguin-library-plugin/web/plugin-status";
+import { pluginUpdatePlan } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { tabRows } from "../src/features/plugins/plugin-market";
+import { tabRows } from "@prismshadow/penguin-library-plugin/web/plugin-market";
 
 beforeEach(() => {
   setActiveStrings(en);

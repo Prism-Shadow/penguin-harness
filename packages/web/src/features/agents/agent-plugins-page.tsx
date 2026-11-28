@@ -8,14 +8,14 @@
  * while the search box holds anything):
  *
  * - **Installed**: every plugin the Agent carries a part of — whole, behind the library,
- *   missing a part, or gone from the library (features/plugins/agent-plugin-groups.ts).
+ *   missing a part, or gone from the library (library/plugin/src/web/agent-plugin-groups.ts).
  * - **Available**: the library's plugins the Agent carries nothing of and could take — those that
  *   ship a Skill, a hook package, an MCP server or a workbench; a package of server modules alone
  *   is the Plugins page's.
  *
  * A plugin the Agent carries that also ships server modules reads how its module stands on the
  * Agent's server, from the same answer as the Agent's lists (`modules`), with what the viewer can
- * do about it (features/plugins/plugin-status.ts `agentModuleMark`): on its row while the module
+ * do about it (library/plugin/src/web/plugin-status.ts `agentModuleMark`): on its row while the module
  * does not run there, and always on its detail's line. An available plugin says nothing of it:
  * its install is what brings the module along.
  *
@@ -48,7 +48,7 @@ import {
   type PluginRow,
   packageUpdate,
   useLocalPluginIndex,
-} from "../plugins";
+} from "@prismshadow/penguin-library-plugin/web";
 import { agentPluginTitle, useAgentPluginActions } from "./agent-plugin-actions";
 import { AgentPluginRow, type AgentModule } from "./agent-plugin-row";
 import { AgentPluginDetail } from "./agent-plugin-detail";

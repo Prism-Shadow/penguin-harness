@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The plugin market's 「新建空白 Agent」 (features/plugins/blank-agent.tsx, in plugin-card.tsx's
+ * The plugin market's 「新建空白 Agent」 (library/plugin/src/web/blank-agent.tsx, in plugin-card.tsx's
  * manage-installs dialog): a new Agent made for one plugin through the Agents page's Create agent
  * dialog, opened over the list.
  *
@@ -19,7 +19,7 @@ import { createElement as h } from "react";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import {
   PROJECT_ID,
   agentServer,

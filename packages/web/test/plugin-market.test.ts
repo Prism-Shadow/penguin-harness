@@ -1,5 +1,5 @@
 /**
- * What the plugin market reads off its curation and the page's rows (features/plugins/
+ * What the plugin market reads off its curation and the page's rows (library/plugin/src/web/
  * plugin-market.ts).
  *
  * - Given two packages of one bare name from two scopes, each row gets its own package's art and
@@ -27,7 +27,7 @@ import type {
   PluginItem,
   PluginMarketResponse,
 } from "@prismshadow/penguin-server/api";
-import type { PluginGroup, PluginRow } from "../src/features/plugins/plugin-groups";
+import type { PluginGroup, PluginRow } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
 import {
   ALL_TAB,
   artOf,
@@ -40,7 +40,7 @@ import {
   storePluginsSort,
   tabRows,
   type PluginSort,
-} from "../src/features/plugins/plugin-market";
+} from "@prismshadow/penguin-library-plugin/web/plugin-market";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

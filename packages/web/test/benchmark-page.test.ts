@@ -17,9 +17,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { BenchmarkHeaderFacts } from "../src/features/benchmark/benchmark-detail-page";
-import { uploadBenchmarkArchive } from "../src/features/benchmark/benchmark-import-modal";
-import { BenchmarkCreateButtons } from "../src/features/benchmark/benchmark-page";
+import { BenchmarkHeaderFacts } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-detail-page";
+import { uploadBenchmarkArchive } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-import-modal";
+import { BenchmarkCreateButtons } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-page";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 

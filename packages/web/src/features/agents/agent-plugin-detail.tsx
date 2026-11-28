@@ -49,7 +49,7 @@ import {
   type AgentPluginGroup,
   type AgentTarget,
   type PluginRow,
-} from "../plugins";
+} from "@prismshadow/penguin-library-plugin/web";
 import type { AgentPluginActions } from "./agent-plugin-actions";
 import {
   AgentStatusMark,

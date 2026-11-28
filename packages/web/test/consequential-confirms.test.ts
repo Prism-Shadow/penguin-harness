@@ -36,7 +36,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/models/preset-sync.tsx", "runPresetSync"],
   ["plugins/browser-automation/src/web/browser-section.tsx", "revokeChrome"],
   ["features/chat/archived-session-stub.tsx", "remove"],
-  ["features/settings/archived-sessions-section.tsx", "deletePending"],
+  ["library/setting/src/web/archived-sessions-section.tsx", "deletePending"],
 ];
 
 const isOnConfirm = (node: ts.Node): node is ts.JsxAttribute =>

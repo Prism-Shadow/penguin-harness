@@ -1,5 +1,5 @@
 /**
- * linkSegments (src/lib/link-segments.ts): a description's web addresses become links, stopping
+ * linkSegments (library/plugin/src/web/lib/link-segments.ts): a description's web addresses become links, stopping
  * at brackets and trailing punctuation in either script, and the text around them is kept whole.
  *
  * - Given English or Chinese prose around an address, the address is the link and the brackets
@@ -8,7 +8,7 @@
  *   ends at its last ASCII character and the Chinese stays text.
  */
 import { describe, expect, it } from "vitest";
-import { linkSegments } from "../src/lib/link-segments";
+import { linkSegments } from "@prismshadow/penguin-library-plugin/web/lib/link-segments";
 
 describe("linkSegments", () => {
   it("cuts the addresses out of English and Chinese prose, brackets and full stops left as text", () => {

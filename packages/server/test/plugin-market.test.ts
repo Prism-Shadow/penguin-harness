@@ -49,7 +49,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { PluginMarketResponse } from "../src/api/types.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginMarketRoutes } from "../src/http/routes/plugin-market.js";
-import builtinMarket from "../src/plugin/builtin-market.json" with { type: "json" };
+import builtinMarket from "../../../library/plugin/src/builtin-market.json" with { type: "json" };
 import {
   MARKET_DOCUMENT_URL,
   embeddedMarketDocument,

@@ -11,7 +11,7 @@ import {
   dismissBackendPrompt,
   installInOrder,
   type PromptStorage,
-} from "../src/lib/sandbox-backend-prompt";
+} from "@prismshadow/penguin-library-setting/web/lib/sandbox-backend-prompt";
 
 function memoryStorage(): PromptStorage & { data: Map<string, string> } {
   const data = new Map<string, string>();

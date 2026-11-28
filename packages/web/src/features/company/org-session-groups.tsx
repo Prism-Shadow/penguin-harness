@@ -69,7 +69,7 @@ import {
 } from "../../components/ui/session-row-menu";
 
 import { Truncated } from "../../components/ui/truncated";
-import { MessagingBindingModal } from "../messaging";
+import { MessagingBindingModal } from "@prismshadow/penguin-library-messaging/web";
 import { orgKey } from "../../lib/company-nav";
 import { INVALID_ICON } from "./shared";
 import {

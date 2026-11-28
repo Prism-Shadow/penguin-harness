@@ -26,7 +26,7 @@ import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { PluginsTab } from "../src/features/agents/plugins-tab";
 import type { PluginsSubPage } from "../src/features/agents/plugins-subpages";
-import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
+import { ImportBenchmarkModal } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-import-modal";
 import {
   AGENT_ID,
   PROJECT_ID,

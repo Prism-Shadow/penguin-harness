@@ -14,7 +14,7 @@ import { createElement as h } from "react";
 import { closeReport, reportStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { SourceFailuresNotice } from "../src/features/plugins/source-failures-notice";
+import { SourceFailuresNotice } from "@prismshadow/penguin-library-plugin/web/source-failures-notice";
 import { button, click, mount, unmountAll } from "./helpers/dom";
 
 const SOURCE = "https://index.example/index.json";

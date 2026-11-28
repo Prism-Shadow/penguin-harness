@@ -1,10 +1,13 @@
 /**
- * Which machine the Plugins page views (features/plugins/viewed-machine.ts): the picked one
+ * Which machine the Plugins page views (library/plugin/src/web/viewed-machine.ts): the picked one
  * while the picker offers it, this server otherwise — so a machine that leaves the choices
  * does not hold the page on it once the picker is gone.
  */
 import { describe, expect, it } from "vitest";
-import { samePluginTarget, viewedMachine } from "../src/features/plugins/viewed-machine";
+import {
+  samePluginTarget,
+  viewedMachine,
+} from "@prismshadow/penguin-library-plugin/web/viewed-machine";
 
 const SELF = "self-id";
 const GPU = "gpu-id";

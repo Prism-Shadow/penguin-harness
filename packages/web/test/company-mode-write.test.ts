@@ -13,7 +13,7 @@ import type {
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
 } from "@prismshadow/penguin-server/api";
-import { writeCompanyMode } from "../src/features/settings/company-mode-write";
+import { writeCompanyMode } from "@prismshadow/penguin-library-setting/web/company-mode-write";
 
 const settings = (companyMode: boolean): ServerSettings => ({
   proxyForApp: true,

@@ -18,6 +18,11 @@
  * is written into its table as a copy under the host's own key — the copy the loader compares
  * with the running platform's table when it loads the plugin.
  *
+ * `--project-sources <dir>` (repeatable) names the own sources of an installed copy: a separate
+ * `--project` may sit under node_modules — the Web App hands one for each plugin installed
+ * there, whose sources the app's own program never reads — and the files under such a directory
+ * are projected although their paths run through node_modules.
+ *
  * Published with @prismshadow/penguin-core as the `penguin-gen-ifaces` bin, so a package
  * outside this repository builds its table the way the shipped plugins do; inside the repo,
  * scripts/gen-ifaces.mjs runs this file. It compiles with the `typescript` of the package
@@ -37,7 +42,9 @@
  * not committed: `pnpm typecheck`, the server's `build` and `test`, and deploy.mjs all
  * regenerate it; `--check` remains for a CI that wants to assert a committed copy). Keys are `<module>#<Export>`, where the
  * module is the package name for an interface class (its identity is its structure; the
- * key only has to agree between provider and consumer) and a component's own name.
+ * key only has to agree between provider and consumer) and a component's own name —
+ * unless the class pins its key (`@Interface("<module>#<Name>")`), which a moved
+ * interface carries so the keys its consumers' manifests already name stay stable.
  *
  * Projection rules — the generator REFUSES what it does not recognize rather than guess:
  *   data types (primitives, literals, unions, arrays, tuples, plain objects, records)
@@ -126,14 +133,28 @@ const sourceRoots = args.flatMap((a, i) =>
       ]
     : [],
 );
-/** A source file this run projects: not a declaration, not installed, and under --sources if given. */
+/** `--project-sources <dir>`: the directories whose source files are projected although they sit
+ * under node_modules — the own sources of an installed copy, handed beside its separate project. */
+const projectSourceRoots = args.flatMap((a, i) =>
+  a === "--project-sources"
+    ? [
+        `${path
+          .resolve(args[i + 1])
+          .split(path.sep)
+          .join("/")}/`,
+      ]
+    : [],
+);
+/** A source file this run projects: not a declaration, not installed — except a file under a
+ * `--project-sources` directory, the own sources of an installed copy — and under --sources if given. */
 const projectsFile = (sf) =>
   !sf.isDeclarationFile &&
-  !sf.fileName.includes("/node_modules/") &&
+  (!sf.fileName.includes("/node_modules/") ||
+    projectSourceRoots.some((root) => sf.fileName.startsWith(root))) &&
   (sourceRoots.length === 0 || sourceRoots.some((root) => sf.fileName.startsWith(root)));
 if (projects.length === 0 || outPath === null) {
   console.error(
-    "usage: gen-ifaces --project <tsconfig> [--project ...] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
+    "usage: gen-ifaces --project <tsconfig> [--project ...] [--project-sources <dir>] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
   );
   process.exit(2);
 }
@@ -510,6 +531,29 @@ for (const project of projects) {
     if (kind === "component")
       componentKeyBySymbol.set(sym, `${moduleNameOf(node.getSourceFile().fileName)}#${className}`);
   }
+  /** Explicit interface keys (`@Interface("<module>#<Name>")`), by class symbol. */
+  const ifaceKeyBySymbol = new Map();
+  for (const sf of program.getSourceFiles()) {
+    if (!projectsFile(sf)) continue;
+    const file = path.relative(process.cwd(), sf.fileName);
+    const visit = (node) => {
+      if (ts.isClassDeclaration(node) && node.name) {
+        const call = decoratorCall(node, "Interface");
+        if (call && call.arguments.length > 0) {
+          const arg = call.arguments[0];
+          if (!ts.isStringLiteralLike(arg))
+            errors.push(
+              `${file}: @Interface key must be a string literal (got '${arg.getText()}')`,
+            );
+          else if (!arg.text.includes("#"))
+            errors.push(`${file}: @Interface key must be '<module>#<Name>' (got '${arg.text}')`);
+          else ifaceKeyBySymbol.set(checker.getSymbolAtLocation(node.name), arg.text);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
   // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
   // Each element must be a module class of this package; anything else is refused. Only the
@@ -578,7 +622,9 @@ for (const project of projects) {
     if (keys.has(symbol)) return keys.get(symbol);
     const owner = exportingFile ?? decl.getSourceFile();
     const key =
-      componentKeyBySymbol.get(symbol) ?? `${moduleNameOf(owner.fileName)}#${symbol.getName()}`;
+      componentKeyBySymbol.get(symbol) ??
+      ifaceKeyBySymbol.get(symbol) ??
+      `${moduleNameOf(owner.fileName)}#${symbol.getName()}`;
     keys.set(symbol, key);
     pending.push({ symbol, decl, key });
     return key;
@@ -1219,7 +1265,7 @@ for (const project of projects) {
     ) {
       return keyOf(sym, decl);
     }
-    return `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
+    return ifaceKeyBySymbol.get(sym) ?? `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
   };
   /** The component a bare `@Use()` field is wired to: the one its type names, if any. */
   const componentOfType = (typeNode) => {

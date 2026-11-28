@@ -32,6 +32,10 @@
       "types": "./dist/auth.d.ts",
       "import": "./dist/auth.js"
     },
+    "./cookie-name": {
+      "types": "./dist/cookie-name.d.ts",
+      "import": "./dist/cookie-name.js"
+    },
     "./repos/auth-sessions": {
       "types": "./dist/repos/auth-sessions.d.ts",
       "import": "./dist/repos/auth-sessions.js"
@@ -51,6 +55,46 @@
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
+    },
+    "./api-token": {
+      "types": "./dist/api-token.d.ts",
+      "import": "./dist/api-token.js"
+    },
+    "./live-streams": {
+      "types": "./dist/live-streams.d.ts",
+      "import": "./dist/live-streams.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "import": "./dist/middleware.js"
+    },
+    "./password": {
+      "types": "./dist/password.d.ts",
+      "import": "./dist/password.js"
+    },
+    "./require-human": {
+      "types": "./dist/require-human.d.ts",
+      "import": "./dist/require-human.js"
+    },
+    "./runtime-state": {
+      "types": "./dist/runtime-state.d.ts",
+      "import": "./dist/runtime-state.js"
+    },
+    "./service": {
+      "types": "./dist/service.d.ts",
+      "import": "./dist/service.js"
+    },
+    "./auth-token": {
+      "types": "./dist/auth-token.d.ts",
+      "import": "./dist/auth-token.js"
+    },
+    "./initial-password": {
+      "types": "./dist/initial-password.d.ts",
+      "import": "./dist/initial-password.js"
+    },
+    "./reset-admin-password": {
+      "types": "./dist/reset-admin-password.d.ts",
+      "import": "./dist/reset-admin-password.js"
     }
   },
   "scripts": {
@@ -60,7 +104,11 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-library-db": "workspace:*"
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "hono": "^4.13.11",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-cli": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

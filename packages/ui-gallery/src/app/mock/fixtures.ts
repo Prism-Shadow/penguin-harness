@@ -84,7 +84,7 @@ import {
   shippedIcon,
 } from "./library-plugins";
 // The market's curation as this build embeds it: its paths are the gallery's static files.
-import builtinMarket from "../../../../server/src/plugin/builtin-market.json";
+import builtinMarket from "../../../../../library/plugin/src/builtin-market.json";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -129,9 +129,9 @@ interface MarketDocument {
   >;
 }
 
-/** The covers this build ships beside its curation (server/src/plugin/market-covers/<dir>/). */
+/** The covers this build ships beside its curation (library/plugin/src/market-covers/<dir>/). */
 const BUNDLED_PICTURES = import.meta.glob<string>(
-  "../../../../server/src/plugin/market-covers/**/*.{webp,png,jpg}",
+  "../../../../../library/plugin/src/market-covers/**/*.{webp,png,jpg}",
   { eager: true, query: "?url", import: "default" },
 );
 /**
@@ -148,7 +148,7 @@ const LOCAL_PICTURES = import.meta.glob<string>("../../../market-assets/**/*.{we
 /** A path of the document as a URL the gallery serves, or undefined when it has no such picture. */
 function pictureUrl(path: string): string | undefined {
   return (
-    BUNDLED_PICTURES[`../../../../server/src/plugin/market-covers/${path}`] ??
+    BUNDLED_PICTURES[`../../../../../library/plugin/src/market-covers/${path}`] ??
     LOCAL_PICTURES[`../../../market-assets/${path}`]
   );
 }

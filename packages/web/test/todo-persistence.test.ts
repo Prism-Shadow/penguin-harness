@@ -116,7 +116,8 @@ async function client() {
   const { MemoryRouter } = await import("react-router");
   const { ThemeProvider } = await import("../src/state/theme");
   const { ProjectProvider } = await import("../src/state/project");
-  const { UsagePage } = await import("../src/features/usage/usage-page");
+  const { UsagePage } =
+    await import("@prismshadow/penguin-library-observability/web/usage/usage-page");
   const { useUpdateBadges } = await import("../src/lib/use-update-badges");
   const { useTodoDismissals, dismissTodo } = await import("../src/lib/todo-dismissals");
   const { Toaster } = await import("@prismshadow/penguin-ui");

@@ -65,7 +65,20 @@ const WORKERS =
 export default defineConfig({
   // The browser suites that boot the App load the browser-automation plugin from its sources
   // (test/builtin-browser/plugin.ts), which reach this package through its published face; a
-  // package cannot resolve its own name, so the two subpaths point at their sources.
+  // package cannot resolve its own name, so the two subpaths point at their sources. The
+  // workspace packages point at their sources for a different reason: each ships to this
+  // package as an injected snapshot — a file: copy under .pnpm, not a symlink into its
+  // sources — so left to node resolution, their dist runs under the raw Node loader beside
+  // the run's module graph, and every workspace package they import is a second physical
+  // copy under .pnpm too. Shared state and identity then split in two: the plugin library
+  // host the setup file names (test/setup/library-host.ts) is invisible to that copy, the
+  // fixture libraries the tests push are invisible to the library the routes hold, and the
+  // error classes the routes catch never match the instances the library throws. Pointing
+  // the imports at the sources keeps the whole domain — the libraries, core, and hmr's
+  // manifest — on the run's one module graph, where the symlinked workspace packages
+  // already are. core's two non-mirroring subpaths are pinned to their files before the
+  // bare name: the entries match in order, and the bare name would otherwise swallow them
+  // into src/plugin-index and src/model-connection, which do not exist.
   resolve: {
     alias: {
       "@prismshadow/penguin-server/plugin": fileURLToPath(
@@ -73,6 +86,87 @@ export default defineConfig({
       ),
       "@prismshadow/penguin-server/api": fileURLToPath(
         new URL("./src/api/types.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-core/plugin-index": fileURLToPath(
+        new URL("../../packages/core/src/plugin/index-document.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-core/model-connection": fileURLToPath(
+        new URL("../../packages/core/src/state/model-connection.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-core": fileURLToPath(
+        new URL("../../packages/core/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-hmr": fileURLToPath(new URL("../../packages/hmr/src", import.meta.url)),
+      // The theme-pack and the UI package have non-mirroring subpaths too (entries before the
+      // bare names, for the same reason core's are); left to node resolution their snapshot
+      // copies would run beside the graph's own, splitting the ThemePackError the settings
+      // group's routes catch from the instance the validator throws.
+      "@prismshadow/penguin-ui/chat-markdown": fileURLToPath(
+        new URL("../../packages/ui/src/markdown/index.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-ui/pack-rules": fileURLToPath(
+        new URL("../../packages/ui/src/testing/pack-rules.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-ui": fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
+      "@prismshadow/penguin-theme-pack": fileURLToPath(
+        new URL("../../packages/theme-pack/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-agent": fileURLToPath(
+        new URL("../../library/agent/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-agent-api": fileURLToPath(
+        new URL("../../library/agent-api/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-auth": fileURLToPath(
+        new URL("../../library/auth/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-benchmark": fileURLToPath(
+        new URL("../../library/benchmark/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-cli": fileURLToPath(
+        new URL("../../library/cli/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-db": fileURLToPath(
+        new URL("../../library/db/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-http": fileURLToPath(
+        new URL("../../library/http/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-machine": fileURLToPath(
+        new URL("../../library/machine/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-messaging": fileURLToPath(
+        new URL("../../library/messaging/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-model": fileURLToPath(
+        new URL("../../library/model/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-observability": fileURLToPath(
+        new URL("../../library/observability/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-organization": fileURLToPath(
+        new URL("../../library/organization/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-plugin": fileURLToPath(
+        new URL("../../library/plugin/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-project": fileURLToPath(
+        new URL("../../library/project/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-session": fileURLToPath(
+        new URL("../../library/session/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-setting": fileURLToPath(
+        new URL("../../library/setting/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-trace": fileURLToPath(
+        new URL("../../library/trace/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-workbench": fileURLToPath(
+        new URL("../../library/workbench/src", import.meta.url),
+      ),
+      "@prismshadow/penguin-library-workspace": fileURLToPath(
+        new URL("../../library/workspace/src", import.meta.url),
       ),
     },
   },

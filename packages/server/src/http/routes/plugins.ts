@@ -79,6 +79,8 @@ import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
+import { pluginUninstallWorkbenches } from "../../plugin/platform-ports.js";
+import type { PluginUninstallWorkbenches } from "@prismshadow/penguin-library-plugin/ports";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
@@ -93,7 +95,7 @@ import {
   mergeIndexes,
   withoutIcon,
 } from "../../plugin/registry.js";
-import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { indexMirrorRules } from "@prismshadow/penguin-library-plugin/mirror-settings";
 import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
 import type {
   CachedRegistry,
@@ -123,7 +125,7 @@ export interface PluginsRouteDeps {
   manager: ManagerIface;
   library: PluginLibrary;
   /** An uninstall removes the plugin's workbenches the way a single removal does. */
-  workbenches: Pick<Workbenches, "remove">;
+  workbenches: PluginUninstallWorkbenches;
   /** A plugin's server modules, brought along by an install (PRFC-0031); absent in tests that build these routes alone. */
   modules?: PluginModules;
 }
@@ -414,7 +416,7 @@ export class PluginRoutes {
       agentConfigService: this.agentConfig,
       manager: this.manager,
       library: this.library,
-      workbenches: this.workbenches,
+      workbenches: pluginUninstallWorkbenches(this.workbenches),
       modules: this.pluginModules,
     };
     this.libraryRoutes = pluginLibraryRoutes(this.library);

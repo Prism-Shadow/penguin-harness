@@ -74,7 +74,7 @@ import {
   installsKey,
   pluginLibrary,
   type AgentPluginGroups,
-} from "../plugins";
+} from "@prismshadow/penguin-library-plugin/web";
 import { agentPluginTitle } from "./agent-plugin-actions";
 import { AgentPluginsPage } from "./agent-plugins-page";
 import { HookImportDialog, useHookRows } from "./agent-hooks";

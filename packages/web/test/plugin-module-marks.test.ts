@@ -1,5 +1,5 @@
 /**
- * How a plugin's server module reads where it does not run (features/plugins/plugin-status.ts):
+ * How a plugin's server module reads where it does not run (library/plugin/src/web/plugin-status.ts):
  * the mark on an Agent's plugin row with the action the viewer can take, and the Plugins page
  * card's status while an ask for it stands.
  *
@@ -21,7 +21,7 @@ import {
   agentModuleMark,
   pluginStatus,
   type ModuleViewer,
-} from "../src/features/plugins/plugin-status";
+} from "@prismshadow/penguin-library-plugin/web/plugin-status";
 
 const mod = (over: Partial<PluginModuleStatus> = {}): PluginModuleStatus => ({
   plugin: "charts",

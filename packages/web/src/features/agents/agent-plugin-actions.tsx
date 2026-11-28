@@ -42,7 +42,7 @@ import {
   type AgentTarget,
   PackageUpdateDialog,
   type PackageUpdate,
-} from "../plugins";
+} from "@prismshadow/penguin-library-plugin/web";
 import { toastFailure } from "../../lib/toast-api-error";
 import { toldFailure } from "../../lib/failure";
 

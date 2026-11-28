@@ -49,6 +49,7 @@ import {
 
 import {
   pluginWebEntries,
+  pluginWebModuleSource,
   separateProjects,
   writePluginWebModules,
 } from "../scripts/gen-web-table.mjs";
@@ -81,7 +82,7 @@ import {
   contributedSections,
   setContributedSections,
   shownSections,
-} from "../src/features/settings/contributed-sections";
+} from "@prismshadow/penguin-library-setting/web/contributed-sections";
 import { linkActionRows, setLinkActions } from "../src/features/chat/link-actions";
 import { handOverSession } from "../src/features/chat/session-handover";
 import { seen } from "./fixtures/web-plugin/src/web/module";
@@ -179,6 +180,68 @@ describe("the generated list of plugin web halves", () => {
     expect(entries.map((e) => e.name)).toEqual(["@penguinharness/board", "installed-board"]);
     expect(entries[0]!.tsconfig).toBe(join(root, "plugins", "board", "tsconfig.web.json"));
     expect(separateProjects(entries).map((e) => e.name)).toEqual(["installed-board"]);
+  });
+
+  it("collects a library web half into no list, and an installed copy of it through its own project", () => {
+    const root = mkdtempSync(join(tmpdir(), "web-library-"));
+    dirs.push(root);
+    /** A library package with a web half, its tsconfig.web.json beside it. */
+    const library = (dir: string, name: string) => {
+      mkdirSync(join(dir, "src", "web"), { recursive: true });
+      writeFileSync(join(dir, "tsconfig.web.json"), "{}");
+      writeFileSync(join(dir, "src", "web", "index.ts"), "export default { modules: [] };\n");
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name, exports: { "./web": "./src/web/index.ts" } }),
+      );
+    };
+    // The workspace library lives under library/ and is linked into the app's node_modules.
+    library(join(root, "library", "setting"), "@prismshadow/penguin-library-setting");
+    const web = join(root, "packages", "web");
+    mkdirSync(join(web, "node_modules", "@prismshadow"), { recursive: true });
+    symlinkSync(
+      join(root, "library", "setting"),
+      join(web, "node_modules", "@prismshadow", "penguin-library-setting"),
+      "junction",
+    );
+    // The other one exists only as a copy under node_modules, as pnpm injects a workspace
+    // package it decided not to link.
+    library(
+      join(web, "node_modules", ".injected-messaging"),
+      "@prismshadow/penguin-library-messaging",
+    );
+    symlinkSync(
+      join(web, "node_modules", ".injected-messaging"),
+      join(web, "node_modules", "@prismshadow", "penguin-library-messaging"),
+      "junction",
+    );
+    writeFileSync(
+      join(web, "package.json"),
+      JSON.stringify({
+        name: "web",
+        dependencies: {
+          "@prismshadow/penguin-library-setting": "workspace:*",
+          "@prismshadow/penguin-library-messaging": "workspace:*",
+        },
+      }),
+    );
+
+    const entries = pluginWebEntries(web, { pluginsDir: join(root, "plugins") });
+    expect(entries.map((e) => e.name)).toEqual([
+      "@prismshadow/penguin-library-setting",
+      "@prismshadow/penguin-library-messaging",
+    ]);
+    expect(entries.map((e) => e.library)).toEqual([true, true]);
+    expect(entries[0]!.tsconfig).toBe(join(root, "library", "setting", "tsconfig.web.json"));
+    // The linked library is read with the app's program; the copy through its own project.
+    expect(separateProjects(entries).map((e) => e.name)).toEqual([
+      "@prismshadow/penguin-library-messaging",
+    ]);
+    expect(separateProjects(entries)[0]!.tsconfig).toBe(
+      join(web, "node_modules", ".injected-messaging", "tsconfig.web.json"),
+    );
+    // And no library half joins the generated list.
+    expect(pluginWebModuleSource(entries)).not.toContain("penguin-library");
   });
 
   it("refuses a listed dependency that is not installed, naming it", () => {

@@ -51,8 +51,8 @@ import { createCompanyStore } from "../src/features/company/company-state";
 import { useMemoryListing } from "../src/features/chat/use-memory-listing";
 import { useMachineAgents } from "../src/lib/machine-agent-lists";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { UsagePage } from "../src/features/usage/usage-page";
-import { BenchmarkDetailPage } from "../src/features/benchmark/benchmark-detail-page";
+import { UsagePage } from "@prismshadow/penguin-library-observability/web/usage/usage-page";
+import { BenchmarkDetailPage } from "@prismshadow/penguin-library-observability/web/benchmark/benchmark-detail-page";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import {
   AGENT_ID,

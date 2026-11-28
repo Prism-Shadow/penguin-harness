@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The plugin market's tabs and the detail's address (features/plugins/plugins-page.tsx), on the
+ * The plugin market's tabs and the detail's address (library/plugin/src/web/plugins-page.tsx), on the
  * real page over the fake server. The market is grouped by contents here, so its tabs are All,
  * Skills and Hooks.
  *
@@ -19,7 +19,7 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";

@@ -1,5 +1,5 @@
 /**
- * The plugin market across machines (features/plugins/market-rows.ts): which rows the page
+ * The plugin market across machines (library/plugin/src/web/market-rows.ts): which rows the page
  * shows for the header's choice, and where each row's actions go.
  *
  * A machine's server modules:
@@ -45,9 +45,9 @@ import {
   rowCurrentTarget,
   rowTargets,
   type MachineMarketData,
-} from "../src/features/plugins/market-rows";
-import type { InstallTarget } from "../src/features/plugins/plugin-card";
-import type { PluginRow } from "../src/features/plugins/plugin-groups";
+} from "@prismshadow/penguin-library-plugin/web/market-rows";
+import type { InstallTarget } from "@prismshadow/penguin-library-plugin/web/plugin-card";
+import type { PluginRow } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

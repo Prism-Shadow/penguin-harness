@@ -2,7 +2,7 @@ import { mainPanelDefinition as mainAgents } from "../src/features/chat/main-age
 import { mainPanelDefinition as mainMemory } from "../src/features/chat/main-memory-panel";
 import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/main-dock-panel";
 import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
-import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
+import { mainPanelDefinition as mainMessaging } from "@prismshadow/penguin-library-messaging/web/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
 import { TerminalModule } from "../src/features/terminal/module";
@@ -86,11 +86,11 @@ import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
 import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
-import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
+import { ShortcutRuntime } from "@prismshadow/penguin-library-setting/web/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
 import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/src/web/browser-events";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
-import { SettingsLayer } from "../src/features/settings/settings-layer";
+import { SettingsLayer } from "@prismshadow/penguin-library-setting/web/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
@@ -103,7 +103,7 @@ import {
   companyMode,
   companySwitcher,
 } from "../src/features/company/sidebar-mode";
-import { messagingRowAction } from "../src/features/messaging/session-row-action";
+import { messagingRowAction } from "@prismshadow/penguin-library-messaging/web/session-row-action";
 import { scheduledRowMark } from "../src/features/schedules/session-row-mark";
 import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";

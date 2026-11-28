@@ -1,0 +1,256 @@
+{
+  "name": "@prismshadow/penguin-library-plugin",
+  "version": "0.2.18",
+  "description": "The plugin domain: the plugin library, its install and uninstall paths, the market and registry readers, and the plugin host loader. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/plugin"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "src/web",
+    "tsconfig.web.json"
+  ],
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./builtin": {
+      "types": "./dist/builtin.d.ts",
+      "import": "./dist/builtin.js"
+    },
+    "./checkout-root": {
+      "types": "./dist/checkout-root.d.ts",
+      "import": "./dist/checkout-root.js"
+    },
+    "./cli-command-caller": {
+      "types": "./dist/cli-command-caller.d.ts",
+      "import": "./dist/cli-command-caller.js"
+    },
+    "./cli-commands": {
+      "types": "./dist/cli-commands.d.ts",
+      "import": "./dist/cli-commands.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./config-page": {
+      "types": "./dist/config-page.d.ts",
+      "import": "./dist/config-page.js"
+    },
+    "./direct-install": {
+      "types": "./dist/direct-install.d.ts",
+      "import": "./dist/direct-install.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
+    },
+    "./icon-response": {
+      "types": "./dist/icon-response.d.ts",
+      "import": "./dist/icon-response.js"
+    },
+    "./iface-check": {
+      "types": "./dist/iface-check.d.ts",
+      "import": "./dist/iface-check.js"
+    },
+    "./index-config": {
+      "types": "./dist/index-config.d.ts",
+      "import": "./dist/index-config.js"
+    },
+    "./install": {
+      "types": "./dist/install.d.ts",
+      "import": "./dist/install.js"
+    },
+    "./library-host": {
+      "types": "./dist/library-host.d.ts",
+      "import": "./dist/library-host.js"
+    },
+    "./library-module": {
+      "types": "./dist/library-module.d.ts",
+      "import": "./dist/library-module.js"
+    },
+    "./loader": {
+      "types": "./dist/loader.d.ts",
+      "import": "./dist/loader.js"
+    },
+    "./market": {
+      "types": "./dist/market.d.ts",
+      "import": "./dist/market.js"
+    },
+    "./market-covers": {
+      "types": "./dist/market-covers.d.ts",
+      "import": "./dist/market-covers.js"
+    },
+    "./market-pictures": {
+      "types": "./dist/market-pictures.d.ts",
+      "import": "./dist/market-pictures.js"
+    },
+    "./mechanisms": {
+      "types": "./dist/mechanisms.d.ts",
+      "import": "./dist/mechanisms.js"
+    },
+    "./mirror-settings": {
+      "types": "./dist/mirror-settings.d.ts",
+      "import": "./dist/mirror-settings.js"
+    },
+    "./module-rule": {
+      "types": "./dist/module-rule.d.ts",
+      "import": "./dist/module-rule.js"
+    },
+    "./npm-requirement": {
+      "types": "./dist/npm-requirement.d.ts",
+      "import": "./dist/npm-requirement.js"
+    },
+    "./offline-archives": {
+      "types": "./dist/offline-archives.d.ts",
+      "import": "./dist/offline-archives.js"
+    },
+    "./packages": {
+      "types": "./dist/packages.d.ts",
+      "import": "./dist/packages.js"
+    },
+    "./packlist": {
+      "types": "./dist/packlist.d.ts",
+      "import": "./dist/packlist.js"
+    },
+    "./plugin-archive": {
+      "types": "./dist/plugin-archive.d.ts",
+      "import": "./dist/plugin-archive.js"
+    },
+    "./plugin-library": {
+      "types": "./dist/plugin-library.d.ts",
+      "import": "./dist/plugin-library.js"
+    },
+    "./plugin-modules": {
+      "types": "./dist/plugin-modules.d.ts",
+      "import": "./dist/plugin-modules.js"
+    },
+    "./plugin-server-uninstall": {
+      "types": "./dist/plugin-server-uninstall.d.ts",
+      "import": "./dist/plugin-server-uninstall.js"
+    },
+    "./plugin-tables": {
+      "types": "./dist/plugin-tables.d.ts",
+      "import": "./dist/plugin-tables.js"
+    },
+    "./plugin-uninstall": {
+      "types": "./dist/plugin-uninstall.d.ts",
+      "import": "./dist/plugin-uninstall.js"
+    },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./prefix-place": {
+      "types": "./dist/prefix-place.d.ts",
+      "import": "./dist/prefix-place.js"
+    },
+    "./preinstall": {
+      "types": "./dist/preinstall.d.ts",
+      "import": "./dist/preinstall.js"
+    },
+    "./preinstall-once": {
+      "types": "./dist/preinstall-once.d.ts",
+      "import": "./dist/preinstall-once.js"
+    },
+    "./registry": {
+      "types": "./dist/registry.d.ts",
+      "import": "./dist/registry.js"
+    },
+    "./registry-fetch": {
+      "types": "./dist/registry-fetch.d.ts",
+      "import": "./dist/registry-fetch.js"
+    },
+    "./source": {
+      "types": "./dist/source.d.ts",
+      "import": "./dist/source.js"
+    },
+    "./source-settings": {
+      "types": "./dist/source-settings.d.ts",
+      "import": "./dist/source-settings.js"
+    },
+    "./status-report": {
+      "types": "./dist/status-report.d.ts",
+      "import": "./dist/status-report.js"
+    },
+    "./system-app-modules": {
+      "types": "./dist/system-app-modules.d.ts",
+      "import": "./dist/system-app-modules.js"
+    },
+    "./tarball": {
+      "types": "./dist/tarball.d.ts",
+      "import": "./dist/tarball.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./typescript": {
+      "types": "./dist/typescript.d.ts",
+      "import": "./dist/typescript.js"
+    },
+    "./unsatisfied": {
+      "types": "./dist/unsatisfied.d.ts",
+      "import": "./dist/unsatisfied.js"
+    },
+    "./version-pick": {
+      "types": "./dist/version-pick.d.ts",
+      "import": "./dist/version-pick.js"
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*",
+    "./workspace-prefix": {
+      "types": "./dist/workspace-prefix.d.ts",
+      "import": "./dist/workspace-prefix.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-hmr": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-machine": "workspace:*",
+    "@prismshadow/penguin-library-messaging": "workspace:*",
+    "@prismshadow/penguin-library-project": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "commander": "^13.0.0",
+    "fflate": "^0.8.3",
+    "hono": "^4.13.11",
+    "minimatch": "^10.2.6",
+    "safe-regex": "^2.1.1",
+    "smol-toml": "^1.9.1",
+    "tar": "^7.5.21",
+    "which": "^5.0.0"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "@types/react": "^19.1.0",
+    "@types/which": "^3.0.4",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}

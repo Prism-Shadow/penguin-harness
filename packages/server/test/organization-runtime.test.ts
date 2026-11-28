@@ -37,6 +37,9 @@ import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
+import { SEMANTIC_ID_RULES } from "../src/services/semantic-id.js";
+import { suggestSemanticId } from "../src/services/semantic-id-suggest.js";
+import { isNewSemanticId } from "../src/services/ids.js";
 import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import type { ServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
@@ -259,6 +262,18 @@ describe("organization runtime", () => {
       companyModeEnabled: () => companyMode,
       now: () => nowMs,
       log: () => {},
+      // The semantic-id vocabulary is the server's own; bound exactly as the boot binds it
+      // (src/runtime/organization/module.ts), with the test's completion queue feeding it.
+      semanticId: {
+        suggest: ({ projectId, name, kind, taken, completeOnce, recordFailure }) =>
+          suggestSemanticId({ completeOnce, recordFailure }, projectId, {
+            name,
+            kind,
+            rule: SEMANTIC_ID_RULES[kind],
+            taken,
+          }),
+        acceptsNew: isNewSemanticId,
+      },
     };
     scheduler = new OrganizationScheduler(deps, { intervalMs: 1_000_000 });
     service = new OrganizationService(deps, scheduler);

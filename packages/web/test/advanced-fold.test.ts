@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AdvancedFold } from "../src/features/settings/advanced-fold";
+import { AdvancedFold } from "@prismshadow/penguin-library-setting/web/advanced-fold";
 
 const render = (defaultOpen?: boolean) =>
   renderToStaticMarkup(

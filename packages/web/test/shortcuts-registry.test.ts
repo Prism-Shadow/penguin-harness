@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { isBindableChord, parseChord } from "../src/lib/shortcuts/chord";
-import { findConflicts } from "../src/lib/shortcuts/conflicts";
+import { findConflicts } from "@prismshadow/penguin-library-setting/web/lib/shortcuts/conflicts";
 import { SHORTCUT_COMMANDS, commandById, defaultChord } from "../src/lib/shortcuts/registry";
 import { browserReserved } from "../src/lib/shortcuts/reserved";
 import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";

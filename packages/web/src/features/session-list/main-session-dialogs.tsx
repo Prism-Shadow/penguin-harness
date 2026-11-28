@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { workspaceLabel } from "../../lib/session-grouping";
-import { MessagingBindingModal } from "../messaging";
+import { MessagingBindingModal } from "@prismshadow/penguin-library-messaging/web";
 import { draftSessionTitle } from "../chat";
 import type { MainSidebarState } from "./main-sidebar-controller";
 

@@ -21,7 +21,7 @@ import type { ChatDrafts } from "../src/features/chat";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { CompanyProvider } from "../src/features/company/company-state";
 import { MainSidebarBadgesModule } from "../src/features/models/main-sidebar-badges.module";
-import { UsagePage } from "../src/features/usage/usage-page";
+import { UsagePage } from "@prismshadow/penguin-library-observability/web/usage/usage-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { ThemeProvider } from "../src/state/theme";

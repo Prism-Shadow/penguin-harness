@@ -4,7 +4,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { parseChord } from "../src/lib/shortcuts/chord";
-import { conflictsOf, findConflicts } from "../src/lib/shortcuts/conflicts";
+import {
+  conflictsOf,
+  findConflicts,
+} from "@prismshadow/penguin-library-setting/web/lib/shortcuts/conflicts";
 import { SHORTCUT_COMMANDS } from "../src/lib/shortcuts/registry";
 import {
   browserCommon,

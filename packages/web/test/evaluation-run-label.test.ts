@@ -12,7 +12,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RunLabel, harborTrialName } from "../src/features/benchmark/evaluation-detail-modal";
+import {
+  RunLabel,
+  harborTrialName,
+} from "@prismshadow/penguin-library-observability/web/benchmark/evaluation-detail-modal";
 import { S } from "../src/lib/strings";
 
 describe("a run's label in the evaluation dialog", () => {

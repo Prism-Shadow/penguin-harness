@@ -2,6 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
+      "@prismshadow/penguin-library-cli/server-lock": ["../cli/src/server-lock.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-library-http/app-env": ["../http/src/app-env.ts"],
+      "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
+      "@prismshadow/penguin-library-http/media-type": ["../http/src/media-type.ts"],
+      "@prismshadow/penguin-library-http/public-origin": ["../http/src/public-origin.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
       "@prismshadow/penguin-library-db/database": ["../db/src/database.ts"],
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],

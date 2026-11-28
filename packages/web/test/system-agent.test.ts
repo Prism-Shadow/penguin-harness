@@ -29,7 +29,7 @@ import { en } from "../src/lib/strings-en";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { AGENTS_GROUP_BY_KEY } from "../src/features/agents/agent-groups";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { PluginsPage } from "@prismshadow/penguin-library-plugin/web/plugins-page";
 import {
   AGENT_ID,
   PROJECT_ID,

@@ -109,7 +109,7 @@ import {
   ProjectRuns,
   ShippedBuiltinBenchmarkSeeds,
 } from "./services/project-service.js";
-import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
+import { AuthServiceProvider, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
@@ -158,13 +158,13 @@ import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { AdminPluginRoutes } from "./http/routes/admin-plugins.js";
 import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
-import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
+import { PluginMirrorSettings } from "@prismshadow/penguin-library-plugin/mirror-settings";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SystemAppModule } from "./plugin/system-app-modules.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
 import { PluginModules } from "./mechanisms/plugins.js";
-import { PluginModulesService } from "./services/plugin-modules.js";
+import { PluginModulesServiceProvider } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
@@ -344,7 +344,7 @@ export class RuntimeModule {}
     AuthSessionsRepo,
     ScryptHasher,
     LiveStreamRegistry,
-    AuthService,
+    AuthServiceProvider,
     AdminService,
     AdminRoutes,
     MeRoutes,
@@ -640,7 +640,7 @@ export class ThemesModule {}
   children: [
     PluginModuleRequestsRepo,
     PluginModulePreinstallsRepo,
-    PluginModulesService,
+    PluginModulesServiceProvider,
     PluginModuleRoutes,
     SystemAppModule,
   ],

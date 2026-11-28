@@ -68,7 +68,7 @@ import {
   type PickableItem,
 } from "../skills";
 
-import { StdioDisclosure, stdioServers } from "../plugins";
+import { StdioDisclosure, stdioServers } from "@prismshadow/penguin-library-plugin/web";
 import { failureNode } from "../../lib/failure";
 
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */

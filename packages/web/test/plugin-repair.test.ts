@@ -1,5 +1,5 @@
 /**
- * "Fix with AI" on a plugin the running build cannot fully run (features/plugins/plugin-repair.tsx).
+ * "Fix with AI" on a plugin the running build cannot fully run (library/plugin/src/web/plugin-repair.tsx).
  *
  * - The chat it opens is in the temporary Workspace, with the default Agent, and its text is
  *   the repair prompt: the plugin, what became of it, and the platform's reason verbatim.
@@ -13,10 +13,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { aiChatRouteState, buildAiDraft } from "../src/features/ai-create/ai-bridge";
-import { repairChatRequest } from "../src/features/plugins/plugin-repair";
-import { PluginCard } from "../src/features/plugins/plugin-card";
-import type { ModulePart } from "../src/features/plugins/plugin-groups";
-import { moduleStatus } from "../src/features/plugins/plugin-status";
+import { repairChatRequest } from "@prismshadow/penguin-library-plugin/web/plugin-repair";
+import { PluginCard } from "@prismshadow/penguin-library-plugin/web/plugin-card";
+import type { ModulePart } from "@prismshadow/penguin-library-plugin/web/plugin-groups";
+import { moduleStatus } from "@prismshadow/penguin-library-plugin/web/plugin-status";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";

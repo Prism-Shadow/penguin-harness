@@ -29,9 +29,9 @@ import {
   enablePrerequisite,
   type MessagingBindingEditorState,
   type MessagingChannelFacts,
-} from "../src/features/messaging/messaging-binding-editor";
-import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
-import { telegramTestNotices } from "../src/features/messaging/channels/telegram/test-notices";
+} from "@prismshadow/penguin-library-messaging/web/messaging-binding-editor";
+import { emptyMessagingForm } from "@prismshadow/penguin-library-messaging/web/messaging-binding-form";
+import { telegramTestNotices } from "@prismshadow/penguin-library-messaging/web/channels/telegram/test-notices";
 import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { uiStringsOf } from "../src/lib/ui-strings";

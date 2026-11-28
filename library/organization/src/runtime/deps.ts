@@ -1,0 +1,259 @@
+/**
+ * What the organization runtime needs from the rest of the server, as narrow interfaces:
+ * the session manager (run state and task start), session creation, the Agent lifecycle,
+ * usage pricing, the file store and the caches. app.ts binds the real services; tests bind
+ * doubles — the same shape the schedule scheduler uses.
+ */
+import type {
+  ApprovalMode,
+  SessionStatus,
+  SessionIndex,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  Members,
+  ProjectConfigStore,
+  Projects,
+  UtilityCompletion,
+} from "@prismshadow/penguin-library-project";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
+import type { OrgCache } from "../organization.js";
+import type { OrgStore } from "../store.js";
+import type { ErrorSink } from "@prismshadow/penguin-library-observability";
+import type { SemanticIdKind, SemanticIdSuggestResponse } from "../types.js";
+
+/**
+ * Who acts on a plugin's server module: a signed-in user, and whether that user is the
+ * administrator. The server's plugin machinery names the same shape; this package declares
+ * the narrow reading it needs and the server's own satisfies it.
+ */
+export interface ModuleActor {
+  userId: string;
+  isAdmin: boolean;
+}
+
+/** The session manager as the runtime sees it: is a session busy, and start a Task on it. */
+export interface OrgTaskRunner {
+  statusOf(sessionId: string): SessionStatus;
+  startTask(
+    sessionId: string,
+    input: AmspRecord[],
+    opts?: { queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued?: boolean }>;
+}
+
+/**
+ * What company mode needs of the session runtime beyond a Task runner: the runtime eviction a
+ * plugin update performs (the same one the plugins route does), and the subscription to a
+ * Session's model moving (an in-session switch). Declared here, at the consumer, and satisfied
+ * by the wider session manager ({@link OrgRuns} implements it).
+ */
+export interface OrgRunsShape extends OrgTaskRunner {
+  invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
+  onModelChanged(
+    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
+  ): () => void;
+}
+
+/** Session creation (desk and ticket sessions are ordinary sessions of the employee's Agent). */
+export interface OrgSessionCreator {
+  createSession(args: {
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    approvalMode?: ApprovalMode;
+    /**
+     * Always "org" here — the runtime opens no other kind of session, and the marker is
+     * what keeps a desk or ticket session out of development mode's list once the
+     * organization is gone. Required rather than optional so a new call site cannot
+     * forget it.
+     */
+    client: "org";
+    /**
+     * Always "company": what kind of conversation a desk or ticket session is, recorded in its
+     * session_meta. It keeps the Session out of every category of the session list, so it is
+     * listed only in company mode's own views. Required for the same reason as `client`.
+     */
+    source: "company";
+  }): Promise<{ sessionId: string; workspace: string }>;
+}
+
+/**
+ * The library plugins an employee is hired with, and the ones every reconcile pass keeps at
+ * the library's version. It lives here rather than beside the hiring code because both the
+ * hire and the pass reach it through the `agents` gateway below, and a module of interfaces
+ * can be imported from anywhere in the runtime without a cycle.
+ */
+export const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"] as const;
+
+/**
+ * The plugins a hire is created with: the pair above, then whatever the caller asked for on
+ * top, in the order given and without repeats. The extra names add rather than replace —
+ * an employee hired without `agent-company` has no `company-employee` skill to follow, which
+ * is exactly what the brief written at hire time tells it to do, and the pass that keeps
+ * plugins current deliberately installs nothing an employee does not already carry, so
+ * nothing would ever repair it.
+ */
+export function employeePlugins(extra: readonly string[] | undefined): string[] {
+  const out: string[] = [...DEFAULT_EMPLOYEE_PLUGINS];
+  for (const name of extra ?? []) if (!out.includes(name)) out.push(name);
+  return out;
+}
+
+/** The Agent lifecycle pieces hiring, creation and keeping an employee's plugins current need. */
+export interface OrgAgentGateway {
+  exists(projectId: string, agentId: string): Promise<boolean>;
+  /** Creates an Agent with company mode as its author (`author: company`). */
+  create(
+    projectId: string,
+    agentId: string,
+    name: string | undefined,
+    description: string | undefined,
+    plugins: readonly string[],
+  ): Promise<void>;
+  /** The Agent's display name (system_config.yaml), falling back to the id. */
+  displayName(projectId: string, agentId: string): Promise<string>;
+  /** Replaces the Agent's AGENTS.md (the employee brief written at hire time). */
+  writeAgentsMd(projectId: string, agentId: string, content: string): Promise<void>;
+  /**
+   * Where one library plugin stands on this Agent: the version it carries (null when it
+   * carries none of the plugin) against the version the library offers (null when the library
+   * has no such plugin). What the reconcile pass compares to decide whether an employee's
+   * company plugins have fallen behind.
+   */
+  pluginVersion(
+    projectId: string,
+    agentId: string,
+    plugin: string,
+  ): Promise<{ installed: string | null; library: string | null }>;
+  /** Reinstalls one library plugin over the Agent's copy — the whole-plugin update the Agents page performs. */
+  updatePlugin(projectId: string, agentId: string, plugin: string): Promise<void>;
+  /**
+   * Brings the server modules of an Agent's plugins along (PRFC-0031), as `actor` would — null is
+   * the system, which enables built-in modules only and never asks. It may re-assemble the App,
+   * so a flow calls it last, when nothing else it does needs this generation. Absent in tests
+   * that build the deps by hand.
+   */
+  ensureModules?(
+    projectId: string,
+    agentId: string,
+    plugins: readonly string[],
+    actor: ModuleActor | null,
+  ): Promise<void>;
+}
+
+/** Cost attribution by session (UsageService.costBySession / dailyCostForSessions). */
+export interface OrgUsageGateway {
+  costBySession(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<{ bySession: Map<string, number>; unpriced: boolean }>;
+  dailyCostForSessions(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<Array<{ date: string; cost: number }>>;
+}
+
+export interface OrgDeps {
+  root: string;
+  store: OrgStore;
+  cache: OrgCache;
+  projects: Projects;
+  members: Members;
+  sessions: SessionIndex;
+  runner: OrgTaskRunner;
+  sessionCreator: OrgSessionCreator;
+  agents: OrgAgentGateway;
+  projectConfig: ProjectConfigStore;
+  /**
+   * One short completion on the Project's default model, for the utility asks that are not a
+   * Session's work — today the semantic id a display name is translated into. A failure comes
+   * back as `{ ok: false }` with the reason rather than as a bare "no answer", so the caller
+   * can both record it and tell the user which way the ask fell through; every caller still
+   * carries an answer that works without the model. Optional so a test binds a double or nothing.
+   */
+  completeOnce?: (projectId: string, prompt: string) => Promise<UtilityCompletion>;
+  /**
+   * The semantic-id vocabulary the id dialogs share with the development routes (the server's
+   * semantic-id service): the shared proposal for a display name, and whether a hand-typed id
+   * may be created. Declared here, at the consumer; the server's assembly binds its own
+   * machinery, tests bind the same shape.
+   */
+  semanticId: {
+    suggest(args: {
+      projectId: string;
+      name: string;
+      kind: SemanticIdKind;
+      taken: readonly string[];
+      completeOnce?:
+        ((projectId: string, prompt: string) => Promise<UtilityCompletion>) | undefined;
+      recordFailure: (projectId: string, detail: string) => void;
+    }): Promise<SemanticIdSuggestResponse>;
+    acceptsNew(id: string): boolean;
+  };
+  usage: OrgUsageGateway;
+  /**
+   * The channel of a Session's ENABLED messaging binding, or null when none is enabled — the
+   * same reading behind `SessionInfo.messagingChannel`, so the company sidebar's desk row can
+   * carry the development row's mark without the development list holding the desk.
+   */
+  messagingChannel: (sessionId: string) => MessagingChannel | null;
+  errors: ErrorSink;
+  /** Company-mode notifications go to the Project's owner and members (app.ts binds the user channels). */
+  notifyProject: (projectId: string, event: ServerEvent) => void;
+  /** The admin master switch, read per pass so a change applies without a restart. */
+  companyModeEnabled: () => boolean;
+  now?: () => number;
+  log?: (line: string) => void;
+}
+
+/** What company mode needs of the session runtime — declared at the consumer (Go style). */
+@Interface()
+export abstract class OrgRuns {
+  abstract statusOf(sessionId: string): SessionStatus;
+  abstract startTask(
+    sessionId: string,
+    input: AmspRecord[],
+    opts?: { queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued?: boolean }>;
+  /** The runtime eviction a plugin update performs (the same one the plugins route does). */
+  abstract invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
+  abstract onModelChanged(
+    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
+  ): () => void;
+}
+
+@Interface()
+export abstract class OrgSessions {
+  abstract createSession(args: {
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    approvalMode?: ApprovalMode;
+    /**
+     * Always "org" here — the runtime opens no other kind of session, and the marker is
+     * what keeps a desk or ticket session out of development mode's list once the
+     * organization is gone. Required rather than optional so a new call site cannot
+     * forget it.
+     */
+    client: "org";
+    /**
+     * Always "company": what kind of conversation a desk or ticket session is, recorded in its
+     * session_meta. It keeps the Session out of every category of the session list, so it is
+     * listed only in company mode's own views. Required for the same reason as `client`.
+     */
+    source: "company";
+  }): Promise<{ sessionId: string; workspace: string }>;
+}

@@ -20,7 +20,7 @@ import {
   WeChatScanConnect,
   wechatScanStep,
   type WeChatScanTally,
-} from "../src/features/messaging/wechat-scan-connect";
+} from "@prismshadow/penguin-library-messaging/web/wechat-scan-connect";
 
 import { S } from "../src/lib/strings";
 

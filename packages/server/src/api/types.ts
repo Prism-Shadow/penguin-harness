@@ -157,15 +157,176 @@ import type {
   SessionBackgroundTasks,
 } from "@prismshadow/penguin-library-session";
 import type { MessagingChannel } from "@prismshadow/penguin-library-messaging/vocabulary";
-import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
+  Employment,
+  UnreadableChart,
   OrgCalendarOutcome,
   OrgChannelMessage,
   OrgChannelNotice,
   OrgChannelNoticeKind,
   OrgTicketChange,
   OrgTriggerKind,
-} from "@prismshadow/penguin-library-organization";
+} from "@prismshadow/penguin-library-organization/types";
+import type { AgentDeletionInfo } from "@prismshadow/penguin-library-agent/types";
+import type {
+  AgentAuthor,
+  AgentMcpServerItem,
+  HookItem,
+  PluginConfigEntry,
+  PluginModuleStatus,
+  SkillMetadataItem,
+  UnsatisfiedPlugin,
+} from "@prismshadow/penguin-library-plugin/types";
+
+// Company mode and the Agent deletions: the DTOs moved to their domain packages, re-exported
+// so every import path here keeps resolving (services+routes restack S20).
+/**
+ * The plugin domain's DTO contract moved to the plugin library package; these are the
+ * same names, re-exported from there (the server→library direction is the allowed one).
+ */
+export type {
+  AgentMcpServerItem,
+  McpTransport,
+  HookItem,
+  IconRef,
+  MarketPopularity,
+  PluginArt,
+  MarketImage,
+  MarketShot,
+  PluginCliCommandOutputFile,
+  PluginCliCommandRunRequest,
+  PluginCliCommandInputFile,
+  PluginCliCommandRunResponse,
+  PluginCliCommandsResponse,
+  PluginCliCommandInfo,
+  PluginConfigBackend,
+  PluginIndexEntry,
+  PluginIndexChannel,
+  PluginConfigEntry,
+  PluginConfiguration,
+  PluginConfigField,
+  PluginConfigOption,
+  PluginConfigTableColumn,
+  PluginConfigTableRow,
+  PluginConfigRowChoice,
+  PluginConfigNewRow,
+  PluginConfigColumnGroup,
+  PluginConfigPinColumn,
+  PluginConfigNotice,
+  PluginConfigActionDecl,
+  PluginConfigUnavailableDecl,
+  PluginStatusReport,
+  PluginStatusSummary,
+  PluginStatusVersion,
+  PluginStatusCheck,
+  PluginHolder,
+  PluginHoldersResponse,
+  PluginItem,
+  SkillMetadataItem,
+  QuickStartItem,
+  TaskCreateRequest,
+  TaskInputPart,
+  AgentCreateRequest,
+  AgentAuthor,
+  PluginMcpServerItem,
+  PluginSetupKeyItem,
+  PluginMarketResponse,
+  PluginModuleAction,
+  PluginModuleRequest,
+  PluginModuleState,
+  PluginModuleRequestsResponse,
+  PluginModuleStatus,
+  PluginModuleRequestView,
+  PluginServerUninstallResponse,
+  PluginUninstallResponse,
+  UnsatisfiedPlugin,
+  PluginLibraryResponse,
+  PluginGroupItem,
+  PluginFilesResponse,
+  PluginInstallRequest,
+  AgentPluginsInstallResponse,
+  PluginModuleAskRequest,
+  PluginModuleAskResponse,
+  PluginModuleDecideRequest,
+  PluginIndexResponse,
+  PluginReadmeResponse,
+  PluginConfigActionResponse,
+} from "@prismshadow/penguin-library-plugin/types";
+
+export type {
+  OrgApprovalMode,
+  OrgBudgetAlert,
+  OrgCalendarItem,
+  OrgCalendarResponse,
+  OrgCalendarUpsertRequest,
+  OrgCalendarWriteResponse,
+  OrgChannelCreateRequest,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMember,
+  OrgChannelMemberRequest,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
+  OrgChannelPatchRequest,
+  OrgChannelReadRequest,
+  OrgChannelsResponse,
+  OrgChartResponse,
+  OrgDeskItem,
+  OrgDeskResponse,
+  OrgEmployeeItem,
+  OrgEmployeePatchRequest,
+  OrgEmployeeState,
+  OrgFinanceEmployee,
+  OrgFinanceResponse,
+  OrgFinanceTicket,
+  OrgHandbookFile,
+  OrgHandbookFileResponse,
+  OrgHandbookFileWriteRequest,
+  OrgHandbookFilesResponse,
+  OrgHandbookResponse,
+  OrgHireRequest,
+  OrgInbox,
+  OrgLanguage,
+  OrgSessionsResponse,
+  OrgSpendSummary,
+  OrgStatus,
+  OrgTicketAttachRequest,
+  OrgTicketBlockRequest,
+  OrgTicketCreateRequest,
+  OrgTicketDetail,
+  OrgTicketHistoryAction,
+  OrgTicketHistoryEntry,
+  OrgTicketItem,
+  OrgTicketMoveRequest,
+  OrgTicketPriority,
+  OrgTicketProgressRequest,
+  OrgTicketSessionItem,
+  OrgTicketStartRequest,
+  OrgTicketStartResponse,
+  OrgTicketStatus,
+  OrgTicketUpdateRequest,
+  OrgTicketsResponse,
+  OrganizationCreateRequest,
+  OrganizationDeleteResponse,
+  OrganizationDetail,
+  OrganizationPatchRequest,
+  OrganizationSettings,
+  OrganizationSummary,
+  OrganizationsResponse,
+  SemanticIdKind,
+  SemanticIdSuggestReason,
+  SemanticIdSuggestRequest,
+  SemanticIdSuggestResponse,
+  Employment,
+  UnreadableChart,
+} from "@prismshadow/penguin-library-organization/types";
+export { TICKET_SLUG_PATTERN } from "@prismshadow/penguin-library-organization/types";
+export type {
+  AgentDeletionInfo,
+  AgentDeleteResponse,
+  AgentDeletionResponse,
+} from "@prismshadow/penguin-library-agent/types";
+import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
   BrowserBackend,
   BrowserExtensionRecord,
@@ -1178,13 +1339,6 @@ export interface PluginUpdateRef {
   version: string;
 }
 
-/**
- * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
- * agent working in a Session (`agent`), or company mode creating an organization's CEO or a new
- * hire (`company`). A config without the field, or with any other value, reads as `user`.
- */
-export type AgentAuthor = "user" | "agent" | "company";
-
 export interface AgentSummary {
   agentId: string;
   name?: string;
@@ -1254,16 +1408,6 @@ export interface AgentSummary {
   avatarRev?: string;
 }
 
-/** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
-export interface Employment {
-  orgId: string;
-  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
-  orgName: string;
-  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
-  title: string;
-  status: OrgStatus;
-}
-
 export interface AgentsResponse {
   agents: AgentSummary[];
   /**
@@ -1274,88 +1418,9 @@ export interface AgentsResponse {
   unreadableCharts?: UnreadableChart[];
 }
 
-/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
-export interface UnreadableChart {
-  orgId: string;
-  /** Its display name (`org_config.toml`), the id when the config does not parse. */
-  orgName: string;
-}
-
-export interface AgentCreateRequest {
-  /** Semantic id, specified by the creator: `^[a-z][a-z0-9_-]{1,63}$`, unique within the Project, immutable after creation. */
-  agentId: string;
-  /** Display name; defaults to agentId. */
-  name?: string;
-  description?: string;
-  /**
-   * Who is creating the Agent; omitted = `user`. The Web App's dialog sends `user`, the CLI
-   * sends `agent` when it runs inside a Session. Written into the new Agent's config. (An
-   * imported Agent keeps the `author` its package carries: the import moves an Agent.)
-   */
-  author?: AgentAuthor;
-  /**
-   * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
-   * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
-   * otherwise, before anything is created). The library's default-install plugins join them
-   * unless `defaultPlugins` is false.
-   */
-  plugins?: string[];
-  /**
-   * Whether the library's default-install plugins (those whose card sets `defaultInstall`)
-   * join `plugins`; omitted = true. A client that sends the complete list it
-   * showed the user, as the Web App's create dialog does, sends false with it.
-   */
-  defaultPlugins?: boolean;
-  /**
-   * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
-   * absolute path the user picked and `directorySkills` are the names to install from it, read
-   * back from `.agents/skills` / `.claude/skills` at creation time. Both are required together,
-   * and every name must still be there (404 `unknown_skill` otherwise, before anything is
-   * created) — the client sends names, never Skill content.
-   */
-  skillsDirectory?: string;
-  directorySkills?: string[];
-}
-
 export interface AgentCreateResponse {
   agent: AgentSummary;
 }
-
-/**
- * Where a deleted Agent's files stand. The Agent itself is gone the moment DELETE answers: its
- * folder was moved out of the Project's agents directory in one rename, and every list and route
- * stopped seeing it. What follows is the removal of that folder's contents in the background,
- * which this reports.
- */
-export interface AgentDeletionInfo {
-  /** Names this deletion (GET /api/projects/:projectId/agent-deletions/:deletionId). */
-  deletionId: string;
-  agentId: string;
-  /**
-   * `counting`: the folder is walked to learn how many entries it holds (`total` grows);
-   * `removing`: they are removed (`removed` grows towards `total`); `done`: nothing is left;
-   * `failed`: some entries could not be removed (`error` says why). What is left is tried again
-   * when the server next starts.
-   */
-  phase: "counting" | "removing" | "done" | "failed";
-  /** Entries found: so far while counting, then in all. Files and folders alike. */
-  total: number;
-  /** Entries removed so far. */
-  removed: number;
-  /** The first error the removal met, as the operating system worded it (`failed` only). */
-  error?: string;
-}
-
-/** DELETE /api/projects/:projectId/agents/:agentId (202). */
-export interface AgentDeleteResponse {
-  deletion: AgentDeletionInfo;
-}
-
-/** GET /api/projects/:projectId/agent-deletions/:deletionId. */
-export interface AgentDeletionResponse {
-  deletion: AgentDeletionInfo;
-}
-
 /**
  * POST …/config/mcp-test result: reachability of one MCP Server entry. Its `${KEY}` references
  * are filled in from the Agent's vault only when the entry is saved on the Agent exactly as
@@ -2045,81 +2110,6 @@ export interface SessionPatchRequest {
 // Task run, approval, interruption, compaction
 // ---------------------------------------------------------------------------
 
-/**
- * A single Prompt's input parts: text, image (data: / http(s) URL), or an uploaded file.
- * Docs: /docs/server-api § "Session-Level Endpoints".
- */
-export type TaskInputPart =
-  | { type: "text"; text: string }
-  /**
-   * An image that rides the conversation inline, as a base64 `data:` URL or an http(s) URL.
-   * A data URL is capped at 20MB (413 `image_too_large`) — a fixed limit that does NOT follow
-   * the admin-settable attachment cap, because an inline image is written into the Trace and
-   * read back on every history page and every resume.
-   */
-  | { type: "image_url"; imageUrl: string }
-  /**
-   * File attachment (the composer's "+" menu): `dataUrl` is a base64 `data:` URL of the
-   * file's bytes, capped per file and per message by the admin-settable upload limits
-   * (defaults 100MB / 120MB; 413 `file_too_large` / `payload_too_large` / `too_many_files`,
-   * and the request as a whole still has to fit the body cap those limits derive). The
-   * server writes it into the Session scratchpad under a sanitized name and appends an
-   * `[attached file: <path>]` line to the message text — the bytes never enter the
-   * conversation, the model opens the file by path. `fileName` is the original name (no path
-   * separators, no `..`).
-   */
-  | { type: "file"; fileName: string; dataUrl: string };
-
-export interface TaskCreateRequest {
-  input: TaskInputPart[];
-  /**
-   * Queue instead of 409 when a Task/compaction is already in progress: the input is held
-   * server-side and auto-starts as an ordinary next task once the session returns to idle
-   * (in queue order, one at a time). The response then carries `queued: true`.
-   */
-  queueIfBusy?: boolean;
-  /**
-   * Interrupt, then send: when a Task/compaction is in progress, the input goes to the head of
-   * the follow-up queue (behind any earlier interrupt still waiting; the queue's one cap
-   * applies) and the run is aborted the way POST /abort aborts it, so this input is the first
-   * thing to start once the run settles; the response then carries `queued: true`. The abort
-   * leaves its carry-over, which core sends ahead of this input, so the message lands right
-   * after the turn it cut. Undelivered steering meets the abort as it meets a Stop: it is
-   * handed back to the composer. An idle Session just starts the Task. Exclusive with
-   * `queueIfBusy` and `goal` (400).
-   */
-  interrupt?: boolean;
-  /**
-   * Steer instead of 409 when a Task is in progress: decided under the Session lock, so one
-   * request suffices whatever the Session is doing. Idle starts the Task; a running Task takes
-   * the input as steering, as POST /steer gives it (the steering mirror, recall and hand-back
-   * apply), and the response carries `steered: true`; a compaction, which has no Task to
-   * steer, or a run already settling, which takes no more steering, queues it as
-   * `queueIfBusy` does (`queued: true`). Exclusive with `interrupt` and `goal` (400).
-   */
-  steerIfBusy?: boolean;
-  /**
-   * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
-   * blocks and the like are stripped from the recorded objective; the round-1 message keeps
-   * them) and the Session's installed `goal` hook package drives round after round until the
-   * goal reaches a terminal state. `budget` is the token budget (uncached input + output);
-   * omitted or -1 = unlimited. Requires the goal plugin installed on the Agent — 409
-   * `goal_plugin_not_installed` otherwise; a start hook that fails (its script errs or times
-   * out, or the sandbox refuses to run it) is 409 `goal_start_failed` with the reason.
-   */
-  goal?: { budget?: number };
-  /**
-   * Hook packages installed on the Agent whose `trigger: "host"` `user_prompt` command this
-   * Task runs (the composer's switches, see `PluginItem.composerMode`): each one's `context`
-   * follows the user's message, stamped `sender: "harness"`, in the order named. Run when the
-   * request is accepted, so a queued or interrupting input waits with its contexts; a steered
-   * input takes none. A package that is not installed, or declares no such command, is 409
-   * `prompt_hook_not_installed`; one whose command fails is 409 `prompt_hook_failed` with the
-   * reason; nothing is started or queued either way. Exclusive with `goal` (400).
-   */
-  promptHooks?: string[];
-}
-
 /** Goal-mode run state, read from the Session's GOAL.json — the goal plugin's file (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
 export interface GoalStateView {
   objective: string;
@@ -2614,361 +2604,6 @@ export type {
 // Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------
 
-/**
- * An icon, as a listing sends one: where this server serves the image, and how to draw it. An
- * icon never travels as markup. `url` is a path on this server that carries the image's content
- * revision (`?rev=`), so it is cached for good; it serves SVG, PNG, JPEG, WebP, GIF or AVIF under
- * the type its bytes say, sandboxed (`Content-Security-Policy: …; sandbox`, `nosniff`). Draw it
- * with `<img>`, or — when `tint` is set — as a CSS mask filled with the text colour.
- */
-export interface IconRef {
-  url: string;
-  /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
-  tint: boolean;
-}
-
-export interface SkillMetadataItem {
-  /** Skill directory name (the identity key for install / uninstall / Prompt addressing). */
-  name: string;
-  description: string;
-  /** Short description for frontend display (frontmatter short_description, optional; falls back to description if missing). */
-  shortDescription?: string;
-  shortDescriptionZh?: string;
-  /**
-   * The `icon.<ext>` in the skill's directory: the plugin's icon for a library install (written
-   * beside SKILL.md at install time), a custom one for a user-authored skill. Served at
-   * `GET …/agents/:a/skills/:name/icon` (a directory Skill's at `GET …/dir-skills/icon`). Only
-   * installed and directory lists carry it — the library listing's skills share their plugin's
-   * icon, which the plugin item carries once. Absent, the frontend draws the book glyph.
-   */
-  icon?: IconRef;
-  /** The skill's own dated version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
-  version: string;
-}
-
-/** One installed hook package (`agent_state/hooks/<name>/`): its manifest, without the scripts. */
-export interface HookItem {
-  /** Hook package name — the plugin that shipped it (the identity uninstall addresses it by). */
-  name: string;
-  description: string;
-  descriptionZh?: string;
-  /** Version (`YYYY.MM.DD.N`; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the manifest carries none. */
-  version: string;
-  /** The hook points the package answers at, e.g. `["stop"]`. */
-  events: string[];
-  /** The plugin's icon, written beside the manifest at install time and served at `GET …/agents/:a/hooks/:name/icon`; absent when there is none (the frontend draws the hook glyph). */
-  icon?: IconRef;
-}
-
-/**
- * One library plugin as the listing describes it: its package.json's npm fields and its card
- * contribution, plus what it ships (skill bodies and scripts are never sent).
- * Every field but the identity, the version and the contents is optional: a field the package
- * does not carry is missing here, and the page says so rather than inventing one.
- */
-export interface PluginItem {
-  name: string;
-  /** Display name (the card's `title`, `titleZh`); absent → the page shows `name`. */
-  title?: string;
-  titleZh?: string;
-  /** English one-liner (package.json `description`); "" when the package carries none. */
-  description: string;
-  descriptionZh?: string;
-  shortDescription?: string;
-  shortDescriptionZh?: string;
-  /** The plugin's npm version (its package.json, following the release) — what the card shows. Installed copies are compared part by part instead: each skill's `version`, and {@link hookVersion}. */
-  version: string;
-  /** The npm package the plugin is, e.g. `@penguinharness/a2ui` — what Delete and a server module's row name it by. */
-  package: string;
-  /** Where the plugin comes from: `builtin` — a package this build ships; `installed` — one an admin installed on the server (by name, link or zip). */
-  source: "builtin" | "installed";
-  /** The package's npm `author` (a name), `license`, `homepage` and `repository` URL, for the detail dialog. */
-  author?: string;
-  license?: string;
-  homepage?: string;
-  repository?: string;
-  /** The plugin's skills (metadata only), each with its own dated `version`. */
-  skills: SkillMetadataItem[];
-  workbenches?: Array<{ name: string; version: string }>;
-  /** The hook points the plugin's hook package answers at (`[]` without one). */
-  hooks: string[];
-  /** The hook package's own dated version (its hooks contribution's `version`, `YYYY.MM.DD.N`); absent without a hook package. */
-  hookVersion?: string;
-  /** The plugin's icon (`icon.<ext>` at the package root, or the card's `icon` — every built-in plugin ships one; one that will not do is never sent), served at `GET /api/plugins/:plugin/icon`, the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
-  icon?: IconRef;
-  /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
-  quickStart?: QuickStartItem;
-  /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
-  composerMode?: true;
-  /** Optional slash name contributed by this composer mode. */
-  composerCommand?: string;
-  /** The card's `defaultInstall`: every new Agent gets the plugin (see `AgentCreateRequest.defaultPlugins`); absent on a server that predates the field, and for a plugin an admin installed. */
-  defaultInstall?: true;
-  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
-  mcpServers: PluginMcpServerItem[];
-  /**
-   * The package also ships server modules (a hybrid plugin): installing it on an Agent also asks
-   * for its modules to run on the Agent's server (PRFC-0031). Absent from a server older than
-   * that, read as false.
-   */
-  modules?: boolean;
-}
-
-/** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
-export type McpTransport = "stdio" | "http" | "sse";
-
-/** One vault key a plugin's MCP server needs before it can connect: declared in the manifest, or only referenced (then the key is all there is to show). */
-export interface PluginSetupKeyItem {
-  key: string;
-  label?: string;
-  labelZh?: string;
-  /** Where to get the value (a URL), or one sentence. */
-  help?: string;
-}
-
-/** A plugin's MCP server as the library lists it: identity and target only — no header, env or oauth value. */
-export interface PluginMcpServerItem {
-  name: string;
-  transport: McpTransport;
-  /** The URL (http/sse), or `command args…` (stdio), as written: `${PLUGIN_ROOT}` and `${KEY}` references unresolved. */
-  target: string;
-  /** Every vault key the server's config references, declared ones first. */
-  setup: PluginSetupKeyItem[];
-  /** The server offers OAuth sign-in (`config.oauth`). */
-  oauth: boolean;
-  /** It needs that sign-in — OAuth and no `Authorization` header of its own — which this version cannot do: an Agent skips it. */
-  signIn: boolean;
-}
-
-/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
-export interface QuickStartItem {
-  prompt: string;
-  promptZh?: string;
-  /** Skills to pre-select (a library plugin's own). */
-  skills?: string[];
-  /** Open the draft in goal mode. */
-  goal?: boolean;
-}
-
-export interface PluginGroupItem {
-  id: string;
-  title: string;
-  /** Chinese category title (optional; the UI displays it per language). */
-  titleZh?: string;
-  plugins: PluginItem[];
-}
-
-/** GET /api/plugins: the library by category (any logged-in user). */
-export interface PluginLibraryResponse {
-  groups: PluginGroupItem[];
-}
-
-/**
- * GET /api/plugins/:plugin/files: everything a library plugin ships, for the detail view's file
- * browser — each skill's installable SKILL.md and auxiliary files under `skills/<name>/`, the
- * hook package's scripts under `hooks/` — keyed by path relative to the plugin directory. The
- * manifest and the icon are not among them: the listing already carries both.
- */
-export interface PluginFilesResponse {
-  files: Record<string, string>;
-}
-
-/**
- * POST /api/projects/:p/agents/:a/plugins: install library plugins by name — each one's skills
- * and hook package; already-installed ones are overwritten with library content (i.e. updated).
- * Every name must be in the library (404 `unknown_plugin`, nothing written). 201 returns the
- * refreshed installed lists.
- */
-export interface PluginInstallRequest {
-  names: string[];
-  /**
-   * Install the Agent part only and leave every plugin table alone (PRFC-0031): what the Web App
-   * sends to a machine, whose plugin list the hub owns. `modules` still says how each module
-   * stands there. A server older than this ignores the field.
-   */
-  skipModules?: boolean;
-}
-
-export interface AgentPluginsInstallResponse {
-  workbenches?: Array<{ name: string; plugin: string; version: string }>;
-  skills: SkillMetadataItem[];
-  hooks: HookItem[];
-  /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */
-  mcpServers: AgentMcpServerItem[];
-  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
-  modules?: PluginModuleStatus[];
-  /** POST only: what this install did about each installed plugin's server module; a plugin it left alone is not listed. Absent from a server older than PRFC-0031. */
-  moduleActions?: PluginModuleAction[];
-}
-
-/** How a library plugin's server module stands on this server (PRFC-0031). */
-export type PluginModuleState =
-  /** Loaded in this server's module tree. */
-  | "running"
-  /** Loaded, and this build cannot run it, or runs it without part of itself (`reason`). */
-  | "unsatisfied"
-  /** Some Project lists it for this server and the load failed (`reason`). */
-  | "failed"
-  /** Listed for this server, neither loaded nor failed: waiting for a restart. */
-  | "restart"
-  /** No Project lists it for this server. */
-  | "off";
-
-/** The standing ask to run a module on this server, as a Project member sees it. */
-export interface PluginModuleRequestView {
-  /** `pending`: waiting for the administrator; `declined`: the administrator stopped it, and installs do not bring it back. */
-  status: "pending" | "declined";
-  /** Whether the caller made it. */
-  mine: boolean;
-  requestedAt: string;
-}
-
-/** One library plugin that carries server modules, on this server and for this Project. */
-export interface PluginModuleStatus {
-  /** The library plugin's name: what `names` installs. */
-  plugin: string;
-  /** The npm package name: the specifier a plugin table lists. */
-  package: string;
-  /** Resolves from a prefix this build ships and only adds modules: the automatic path applies. */
-  builtin: boolean;
-  state: PluginModuleState;
-  /** Whether this Project lists it for this server (its shared table, or this server's own). */
-  listed: boolean;
-  /** Why, for `failed` and `unsatisfied`. */
-  reason?: string;
-  request?: PluginModuleRequestView;
-}
-
-/** What one install, or one explicit ask, did about a plugin's server module. */
-export interface PluginModuleAction {
-  plugin: string;
-  /**
-   * `enabled`: listed for this Project on this server, and running (or waiting for a restart);
-   * `requested`: an administrator is asked; `blocked`: the administrator stopped this module;
-   * `failed`: listed, and the module did not start (`reason`) — when the App would not boot with
-   * it, the listing was undone.
-   */
-  action: "enabled" | "requested" | "blocked" | "failed";
-  reason?: string;
-}
-
-/** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
-export interface PluginModuleAskRequest {
-  /** A library plugin's name: enable its server module, or ask for it. */
-  plugin?: string;
-  /**
-   * Instead of `plugin`: a package that is not on this server yet, asked for by a member's
-   * 「安装到 Agent」 (05 「插件库」 「安装模型」) — recorded as a request for the administrator,
-   * whose enable installs it on the server first. With the Agent the member was installing on.
-   */
-  package?: string;
-  agentId?: string;
-}
-
-/** The answer to an explicit ask: every module's state for this Project, and what the ask did. */
-export interface PluginModuleAskResponse {
-  modules: PluginModuleStatus[];
-  moduleActions: PluginModuleAction[];
-}
-
-/** One row of the ledger of module requests and decisions, for the administrator. */
-export interface PluginModuleRequest {
-  package: string;
-  plugin: string;
-  /** The Project whose table lists it, or will; null when that Project is gone, and for a preinstalled module's own row (PRFC-0030) — `preinstalled` tells the two apart. */
-  projectId: string | null;
-  /** That Project's display name (its id when it has none); null when there is none. */
-  projectName: string | null;
-  agentId: string | null;
-  /** The user who asked; "" when no person was behind it (company mode's reconcile, a preinstalled module's one-time listing). */
-  requestedBy: string;
-  /** That user's display name; null when it has none or the user is gone. */
-  requestedByName: string | null;
-  requestedAt: string;
-  /** null = pending. */
-  decision: "enabled" | "declined" | null;
-  decidedBy: string | null;
-  decidedAt: string | null;
-  /** How it was enabled: `builtin` (automatic), `admin` (the administrator's own act), `approval` (a member's request approved). */
-  via: "builtin" | "admin" | "approval" | null;
-  builtin: boolean;
-  /**
-   * A preinstalled module (PRFC-0030): every Project's rather than one's. Its row names no
-   * Project (`projectId` null without the Project being gone), and enabling it after a stop
-   * lists it in every Project. Absent from a server older than PRFC-0030.
-   */
-  preinstalled?: boolean;
-  /**
-   * A preinstalled module behind a system app of the App Center: it always runs. A stop of it,
-   * and any plugin-table write that would unlist it, answers 409 `system_app_module_locked`.
-   * Absent from a server older than that rule.
-   */
-  systemApp?: boolean;
-  state: PluginModuleState;
-  /**
-   * The package is on this server (installed, linked or shipped). False for a member's request of
-   * a package not here yet: enabling it means installing it on the server first.
-   */
-  onServer: boolean;
-}
-
-/** GET /api/admin/plugin-modules, and the answer to a decision (administrator only). */
-export interface PluginModuleRequestsResponse {
-  requests: PluginModuleRequest[];
-  /** How many rows wait for a decision. */
-  pending: number;
-  /**
-   * After stopping a module: the Projects whose shared table still lists it, so it keeps running
-   * here until it is removed from them on the Plugins page. Absent when nothing else lists it.
-   */
-  stillListedBy?: Array<{ projectId: string; projectName: string }>;
-}
-
-/** POST /api/admin/plugin-modules/decide (administrator only). `decline` on an enabled row stops the module on this server. */
-export interface PluginModuleDecideRequest {
-  package: string;
-  decision: "enable" | "decline";
-}
-
-/**
- * DELETE /api/projects/:p/agents/:a/plugins/:name: uninstall a whole plugin from the Agent, on
- * the server, in one request (owner only). Removed in order: the Workbenches whose install
- * receipt names the plugin, its `tools.mcpServers` entries (`plugin` field), its hook package
- * (`agent_state/hooks/<name>/`), and every Skill whose name the library plugin contributes (none
- * when the plugin has left the library). A part that fails is reported in `failed` and the rest
- * are still removed; nothing is rolled back. Nothing to remove is 404 `plugin_not_installed`.
- */
-export interface PluginUninstallResponse {
-  removed: {
-    skills: string[];
-    hooks: string[];
-    mcpServers: string[];
-    workbenches: string[];
-  };
-  failed?: Array<{
-    kind: "skill" | "hook" | "mcpServer" | "workbench";
-    name: string;
-    error: string;
-  }>;
-}
-
-/**
- * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
- * identity, target and what keeps it from connecting — never a header, env or oauth value.
- */
-export interface AgentMcpServerItem {
-  name: string;
-  transport: McpTransport;
-  /** The URL (http/sse), or `command args…` (stdio): `${PLUGIN_ROOT}` already resolved at install, `${KEY}` references left as written. */
-  target: string;
-  /** The plugin that installed it; absent for an entry the user added. */
-  plugin?: string;
-  /** `${KEY}` references of its config that the Agent's vault does not hold (names only); empty = nothing to set up. */
-  missingKeys: string[];
-  /** It needs an OAuth sign-in, which this version cannot do: skipped at connect time. */
-  signIn: boolean;
-}
-
 /** GET /api/projects/:p/agents/:a/mcp-servers: the Agent's MCP servers in config order; DELETE …/mcp-servers/:name removes one (204, 404 `unknown_mcp_server`). */
 export interface AgentMcpServersResponse {
   servers: AgentMcpServerItem[];
@@ -3146,195 +2781,6 @@ export interface WorkbenchEnabledRequest {
 // ---------------------------------------------------------------------------
 
 /**
- * One published version of a plugin — the index entry format every plugin registry
- * speaks (modeled on the typst/packages `index.json` schema: a flat array of
- * per-version entries; a plugin published at several versions appears once per
- * version). Listing and installing are two faces: an entry's `name` is the package
- * specifier a Project's plugin list names, and an entry that pins a release channel
- * can also be installed from that channel (plugin/install.ts).
- */
-export interface PluginIndexEntry {
-  /** A downloaded package on the machine serving this listing, compared with the index release. */
-  localInstall?: { version: string; libraryOnly: boolean; updateAvailable: boolean };
-  /** Package specifier — the string a Project's plugin list names. */
-  name: string;
-  /** Localized display names; the UI falls back to the package name. */
-  title?: string;
-  titleZh?: string;
-  /** Semantic version of this entry. */
-  version: string;
-  description: string;
-  /** Chinese description (optional; the UI picks per language, English without it). */
-  descriptionZh?: string;
-  /** One-line descriptions for the card (optional; the card falls back to `description`). */
-  shortDescription?: string;
-  shortDescriptionZh?: string;
-  /**
-   * The plugin's icon, served at `GET /api/plugins/registry/icon?name=…` (optional; the card
-   * draws the puzzle piece without it). The listing fills these display fields from the
-   * package's own card contribution (in its ifaces.json) and icon when the package is on this
-   * server, over whatever the index row says. An index document carries an icon as raw SVG text
-   * instead, and only the one embedded in this server is believed (plugin/registry.ts).
-   */
-  icon?: IconRef;
-  authors: string[];
-  /** SPDX license identifier. */
-  license: string;
-  /** Source repository URL. */
-  repository?: string;
-  homepage?: string;
-  /** Free-form searchable terms; the Web App renders them as chips (e.g. the target OS). */
-  keywords?: string[];
-  /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
-  categories?: string[];
-  /**
-   * For a sandbox backend: the platforms (`process.platform` names: `linux`, `darwin`, `win32`)
-   * it is a default backend for, as its package declares them on its `SandboxModule.providers`
-   * contribution. A server whose sandbox is turned on with no backend for its platform offers to
-   * install the embedded index's defaults for that platform, in index order; an entry without the
-   * field is the default for none.
-   */
-  sandboxDefaultFor?: string[];
-  /** Unix timestamp (seconds) of the entry's last update. */
-  updatedAt?: number;
-  /**
-   * The build carries an offline archive of this plugin (05 「插件库」 「安装从不卡住」): it installs
-   * with no registry, at this version, and this is what it carries — known before it is on this
-   * server. Absent for everything else, and on older servers.
-   */
-  offline?: { version: string; library: boolean; modules: boolean };
-  /**
-   * The hash this entry's release asset is pinned by, npm's `integrity` shape:
-   * `sha512-<base64>` of the tarball its channel serves. Present when the publisher
-   * ships the version through a channel; an entry without it lists but is not
-   * installable from a channel — there is nothing to verify the fetched bytes against.
-   */
-  integrity?: string;
-  /** Where this version's release asset can be fetched from. */
-  channels?: PluginIndexChannel[];
-}
-
-/** One place a version can be installed from. */
-export interface PluginIndexChannel {
-  /**
-   * The kind of source: `github` names a GitHub release asset tarball, the kind the
-   * install face fetches and verifies. Other kinds may join; the install face ignores
-   * the ones it does not fetch.
-   */
-  kind: string;
-  /**
-   * The https URL the asset is served at. Always present on a `github` channel; absent on an
-   * `npm` one, which names the npm registry rather than an address.
-   */
-  url?: string;
-}
-
-/** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
-export interface PluginIndexResponse {
-  plugins: PluginIndexEntry[];
-  /**
-   * Sources that could not be read, by `source` and reason. Present and empty when every
-   * source answered. A remote index that is down shortens the listing rather than emptying
-   * it, so the page needs to be able to say so instead of silently showing less.
-   */
-  failures: { source: string; error: string }[];
-  /**
-   * Sources the server was still reading when it answered, by `source`. Present and empty when
-   * every source answered. The listing does not wait long for a published index, so one on a slow
-   * or unreachable network is named here and its entries are missing; a later read lists them
-   * once they have arrived, or names the source under `failures` once it has failed.
-   */
-  pending: string[];
-}
-
-/**
- * One picture of the plugin market, named by the route this server serves it at
- * (`GET /api/plugins/market/asset?path=…&rev=…`): the server fetches it from beside the market
- * document, checks its bytes are a WebP, PNG or JPEG picture and keeps a copy, so a page never
- * loads a picture from another host. A picture that cannot be had answers 404.
- */
-export interface MarketImage {
-  /** The full rendition. */
-  url: string;
-  /** The small rendition a card draws; absent, a card draws `url`. */
-  thumbUrl?: string;
-  /** The picture's dominant colour (`#rrggbb`): the field it fades in over. */
-  tone?: string;
-}
-
-/** A screenshot on a plugin's detail: a picture and what it shows. */
-export interface MarketShot extends MarketImage {
-  caption?: string;
-  captionZh?: string;
-}
-
-/** What the market document says a plugin looks like. Every part is optional. */
-export interface PluginArt {
-  cover?: MarketImage;
-  /**
-   * A raster icon, for a plugin whose package is not on this server (an index row has none of its
-   * own); once the package is here, the package's own icon is drawn instead.
-   */
-  icon?: { url: string };
-  screenshots?: MarketShot[];
-}
-
-/**
- * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
- * `installs` in all, `weekly` in the last seven days, by npm package name.
- *
- * PLACEHOLDER: no install count exists across deployments yet, so today's numbers are generated
- * with a fixed seed in the community repository's pipeline and published with
- * `source: "placeholder"`. Replace them with a real install-count API later: it publishes this
- * same shape with `source: "live"`, the switch a reader keys on.
- */
-export interface MarketPopularity {
-  source: "placeholder" | "live";
-  /** The day the numbers were produced (`YYYY-MM-DD`). */
-  generatedAt: string;
-  items: Record<string, { installs: number; weekly: number }>;
-}
-
-/**
- * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
- * may lead the selected carousel, and the art of the plugins that have any — keyed by npm package
- * name (a library plugin's `package`, an index entry's `name`). A name this server does not list
- * is simply not drawn. `source` says which document answered: the one shipped with this build, or
- * the published one (plugin/market.ts). Selection is an editorial choice, not a ranking; the only
- * numbers are the optional `popularity` block, placeholders until a real install-count API exists.
- */
-export interface PluginMarketResponse {
-  /** Package names allowed to lead the selected carousel, in turn order; each is also in `selected`. */
-  hero: string[];
-  /** Package names of the selected plugins, in display order. */
-  selected: string[];
-  art: Record<string, PluginArt>;
-  source: "embedded" | "published";
-  /**
-   * The document's install counts, as it carries them; absent when it carries none, or a block
-   * that does not read (the rest of the document still answers). Placeholder numbers today
-   * (`source: "placeholder"`), to be replaced by a real install-count API: see MarketPopularity.
-   */
-  popularity?: MarketPopularity;
-}
-
-/**
- * A plugin's long-form docs: the README.md at its package root, as npm ships it.
- * GET /api/plugins/registry/readme?name= answers for an index entry, with `readme` null when
- * the package is not on this server or has none; GET /api/plugins/:plugin/readme answers for a
- * library plugin, 404 when it ships none.
- */
-export interface PluginReadmeResponse {
-  name: string;
-  /** Markdown, rendered by the Web App. Null when this entry has no readme. */
-  readme: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Plugin-contributed languages
-// ---------------------------------------------------------------------------
-
-/**
  * One language a plugin contributes, as the listing reports it. The grammar itself is not
  * here: it is tens to hundreds of kilobytes, and only the languages a conversation actually
  * shows are worth fetching (`GET /api/languages/:id/grammar`).
@@ -3435,7 +2881,7 @@ export const DRAFT_SESSION_ID = "new";
  * desktop shell that mints its window's session. Shared so they all write the cookie the server
  * reads.
  */
-export const SESSION_COOKIE = "penguin_session";
+export { SESSION_COOKIE } from "@prismshadow/penguin-library-auth/cookie-name";
 
 /**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
@@ -4100,733 +3546,6 @@ export interface MachinesStopUsingRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Company mode: organizations (files are the truth; every DTO here is a projection)
-// ---------------------------------------------------------------------------
-
-/**
- * Organization status: `paused` stops every automatic trigger; humans can still talk to any
- * desk. These two values are the whole lifecycle — no route deletes an organization, so a
- * paused one keeps its conversations, employees, desks and tickets.
- */
-export type OrgStatus = "active" | "paused";
-/** Approval mode for desk and ticket sessions; unattended runs never get always-ask. */
-export type OrgApprovalMode = "allow-all" | "read-only" | "deny-all";
-/** The five kanban columns, each a directory under `tickets/<yyyy-mm>/`. */
-export type OrgTicketStatus = "proposed" | "in_progress" | "review" | "done" | "rejected";
-export type OrgTicketPriority = "P0" | "P1" | "P2";
-/** Live employee state: running when the desk or any ticket session has a Task in progress; paused when budget-paused. */
-export type OrgEmployeeState = "running" | "idle" | "paused";
-/** The ticket changes an employee is told about, listed in the body of its next calendar sweep. */
-
-/** What the last evaluation of a calendar event did. */
-
-/**
- * The organization's working language: the language its handbook, its CEO's initialization
- * run, every employee brief and every desk and ticket run are written in. Detected from the
- * mission at creation (CJK text → `zh`, anything else → `en`) unless the request names one.
- */
-export type OrgLanguage = "zh" | "en";
-
-/** The organization's settings as `org_config.toml` records them. */
-export interface OrganizationSettings {
-  name: string;
-  mission: string;
-  status: OrgStatus;
-  /** IANA timezone: budget periods (natural months) and chat day files follow it. */
-  timezone: string;
-  approvalMode: OrgApprovalMode;
-  /** Chat @-chain limit: a message whose hop reaches it records its mentions without triggering anyone. */
-  mentionChainLimit: number;
-  budgetWarnRatio: number;
-  budgetPauseRatio: number;
-  createdBy: string;
-  /** The shared workspace root when it is not the organization's own `workspace/` (absolute path). */
-  workspace?: string;
-  /** The model desks and ticket sessions run on when the employee names none; absent = the Project default. */
-  model?: { provider: string; modelId: string };
-  /** The working language (`language` in `org_config.toml`); absent on an organization written before the field existed, which reads as `en`. */
-  language?: OrgLanguage;
-}
-
-/** Period spend against the CEO's budget (= the whole organization). */
-export interface OrgSpendSummary {
-  /** `yyyy-mm` in the organization's timezone. */
-  period: string;
-  cost: number;
-  budget?: number;
-  /** cost / budget; absent without a budget. */
-  ratio?: number;
-}
-
-export interface OrganizationSummary {
-  projectId: string;
-  orgId: string;
-  name: string;
-  mission: string;
-  status: OrgStatus;
-  employeeCount: number;
-  runningCount: number;
-  pausedCount: number;
-  /** proposed + in_progress + review. */
-  openTickets: number;
-  blockedTickets: number;
-  createdBy: string;
-  spend: OrgSpendSummary;
-  /** Present when `org_config.toml` / `org_chart.yaml` fail validation: the organization is listed but every automatic trigger is held until it is fixed. */
-  invalid?: string;
-}
-
-export interface OrganizationsResponse {
-  organizations: OrganizationSummary[];
-}
-
-/**
- * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
- * Project's trash either way. With `?deleteAgents=1&agentIds=a,b` — the Agents the caller's
- * confirmation listed for deletion (`deleteAgents=1` without `agentIds` is a 400) — each of its
- * employees' Agents (its CEO included) that is listed there is then deleted for good, exactly as
- * `DELETE …/agents/:agentId` deletes one, unless it is built in, another organization of the
- * Project still employs it, or another organization's chart cannot be read. Every other
- * employee is kept with its reason. Without the flag the three lists are empty.
- */
-export interface OrganizationDeleteResponse {
-  orgId: string;
-  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
-  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
-  /**
-   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
-   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
-   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
-   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
-   */
-  keptAgents: Array<{
-    agentId: string;
-    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
-  }>;
-  /** The organizations whose chart could not be read, when an employee was kept for it. */
-  unreadableCharts?: UnreadableChart[];
-  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
-  failedAgents: Array<{ agentId: string; code: string; message: string }>;
-}
-
-export interface OrgEmployeeItem {
-  agentId: string;
-  /**
-   * What this employee goes by in the organization, unique across it: the chart's `name`, else
-   * the Agent's display name, else the id — with the id noted (`name (id)`) when the name is
-   * not this employee's alone. It is what every surface shows and what works after `@`.
-   */
-  name: string;
-  /** The `name` as written in the chart, for editing; absent when the entry has none. */
-  givenName?: string;
-  /**
-   * Present when the employee has an avatar: the content revision of the image served at
-   * `GET …/employees/:agentId/avatar` (append it as `?rev=` — the image is cached for good).
-   * Absent, surfaces draw the letter tile.
-   */
-  avatarRev?: string;
-  title: string;
-  /** null for the CEO (the root). */
-  reportsTo: string | null;
-  duties?: string;
-  /** As written in the chart: a sub-directory of the shared workspace (`.` = all of it) or an absolute path. */
-  workspace: string;
-  /** Where that resolves to; absent when the directory does not exist (the entry is then invalid). */
-  resolvedWorkspace?: string;
-  /** Monthly budget in USD for this employee plus all subordinates; absent = unbounded. */
-  budget?: number;
-  model?: { provider: string; modelId: string };
-  state: OrgEmployeeState;
-  /**
-   * The employee's current desk. Absent while the ledger names none, and while the Session
-   * it names no longer exists (deleted by hand, or with its Agent): a desk is listed only
-   * once it can be opened, and the reconcile pass re-opens a missing one when it can.
-   */
-  desk?: { sessionId: string; workspace: string; openedAt: string };
-  /** Period spend: own sessions, and cumulative (own + every subordinate). */
-  spend: { own: number; cumulative: number; ratio?: number };
-  /** Why the entry cannot be triggered (missing Agent, missing workspace directory). */
-  invalid?: string;
-  /**
-   * The entry's Agent no longer exists (`invalid` carries the sentence). Its desk cannot be
-   * opened; the entry stays until a person makes the employee leave, or until an Agent with
-   * the same id is created again (which is how a deleted CEO is restored).
-   */
-  agentMissing?: true;
-}
-
-export interface OrgChartResponse {
-  ceoAgentId: string;
-  employees: OrgEmployeeItem[];
-}
-
-export interface OrgCalendarItem {
-  agentId: string;
-  name: string;
-  title?: string;
-  prompt: string;
-  enabled: boolean;
-  startAt: string;
-  period?: string;
-  endAt?: string;
-  status: ScheduleStatus;
-  invalidReason?: string;
-  nextFireAt?: string;
-  lastFiredAt?: string;
-  /** What the most recent evaluation did (absent until the event has been evaluated once). */
-  lastOutcome?: OrgCalendarOutcome;
-  /** The organization or this employee is paused, so due slots are skipped, not fired. */
-  paused: boolean;
-}
-
-export interface OrgCalendarResponse {
-  events: OrgCalendarItem[];
-  invalidFiles: Array<{ agentId: string; name: string; error: string }>;
-}
-
-/**
- * One line of a ticket's operation history, kept in the file's frontmatter apart from the
- * progress prose: what was done, by whom (`agent:<id>` / `user:<id>` — an employee is recognised
- * from the Agent id its command subprocesses carry, a person otherwise), and when.
- */
-export type OrgTicketHistoryAction =
-  | "created"
-  | "assigned"
-  | "moved"
-  | "blocked"
-  | "unblocked"
-  | "progress"
-  | "session_started"
-  | "session_attached"
-  | "edited";
-
-export interface OrgTicketHistoryEntry {
-  at: string;
-  by: string;
-  action: OrgTicketHistoryAction;
-  /** The action's detail: the column moved to, the new owner, the block reason, the session id. */
-  note?: string;
-}
-
-/**
- * The ticket id's slug: lowercase letters in hyphen-joined words, no digits (the date prefix
- * already carries the numbers), chosen for meaning — derived from an ASCII title, proposed by
- * the Project's model for a title in another language, or passed explicitly.
- */
-export { TICKET_SLUG_PATTERN } from "../organization/ticket-id.js";
-
-export interface OrgTicketItem {
-  ticketId: string;
-  title: string;
-  status: OrgTicketStatus;
-  /** The ONE responsible principal (`agent:<id>` / `user:<id>`); who filed it is the history's `created` entry. */
-  owner: string;
-  parent?: string;
-  notify: string[];
-  priority: OrgTicketPriority;
-  due?: string;
-  /** Non-empty = blocked; the ticket stays in its column. */
-  blocked?: string;
-  blockedBy?: string;
-  /** Contributing session ids, in the order they were attached. */
-  sessions: string[];
-  /** Any contributing session has a Task in progress. */
-  running: boolean;
-  /** Period cost of the contributing sessions (a session attached to n tickets counts 1/n here). */
-  cost: number;
-  /** Header/column disagreement or a duplicate id: shown with a danger mark, left where it is. */
-  invalid?: string;
-}
-
-export interface OrgTicketSessionItem {
-  sessionId: string;
-  agentId: string;
-  title?: string;
-  status: SessionStatus;
-  lastActiveAt?: string;
-}
-
-export interface OrgTicketDetail extends OrgTicketItem {
-  goal: string;
-  acceptanceCriteria: string;
-  /** `## Progress` as plain sentences; who wrote one and when is the matching history entry. */
-  progress: string[];
-  result: string;
-  /** The operation history from the frontmatter, oldest first. */
-  history: OrgTicketHistoryEntry[];
-  /** The whole file, for the Markdown view and for clients that prefer to edit it as text. */
-  body: string;
-  children: string[];
-  /** Own cost plus every descendant's along `Parent`. */
-  rolledUpCost: number;
-  sessionItems: OrgTicketSessionItem[];
-}
-
-export interface OrgTicketsResponse {
-  columns: Record<OrgTicketStatus, OrgTicketItem[]>;
-  /** Files that failed to parse (skipped; also recorded as errors). */
-  invalidFiles: Array<{ path: string; error: string }>;
-}
-
-/**
- * One channel as the API reports it. The all-hands channel (`default_channel`,
- * `everyone: true`) exists for as long as the organization does and every employee and
- * Project member is in it; every other channel carries the membership its members edit.
- */
-export interface OrgChannelItem {
-  channelId: string;
-  /** As stored; the UI renders the all-hands channel's label itself. */
-  name: string;
-  /** "" when unset. */
-  purpose: string;
-  /** True only for `default_channel`: membership is implicit. */
-  everyone: boolean;
-  /** An archived channel is read-only and folded away. */
-  archived: boolean;
-  /** `user:<id>` / `agent:<id>` / `system`. */
-  createdBy: string;
-  /** ISO 8601 UTC. */
-  createdAt: string;
-  /** Implicit membership counted for the all-hands channel. */
-  memberCount: number;
-  /** Whether the caller (person or employee) is a member. */
-  isMember: boolean;
-  /** People only; 0 for an employee caller. */
-  unread: number;
-  /** People only; 0 for an employee caller. */
-  mentionsMe: number;
-  lastMessageAt: string | null;
-}
-
-export interface OrgChannelMember {
-  /** `agent:<id>` or `user:<id>`. */
-  principal: string;
-  name: string;
-  kind: "agent" | "user";
-}
-
-export interface OrgChannelDetail extends OrgChannelItem {
-  /** The all-hands channel resolves to every employee plus every Project member. */
-  members: OrgChannelMember[];
-}
-
-export interface OrgChannelsResponse {
-  /** `default_channel` first, then by name. */
-  channels: OrgChannelItem[];
-}
-
-export interface OrgChannelCreateRequest {
-  channelId: string;
-  name?: string;
-  purpose?: string;
-}
-
-export interface OrgChannelPatchRequest {
-  name?: string;
-  purpose?: string;
-  archived?: boolean;
-}
-
-export interface OrgChannelMemberRequest {
-  /** `agent:<id>` (an employee) or `user:<id>` (a Project member). */
-  principal: string;
-}
-
-export interface OrgChannelMessagesResponse {
-  /** The channel served. */
-  channelId: string;
-  /** The day file served (`yyyy-mm-dd` in the organization's timezone). */
-  date: string;
-  /** The days this channel has a file for, newest first, for paging back. */
-  days: string[];
-  messages: OrgChannelMessage[];
-  /** Messages of this channel after the caller's read cursor in it, across the recent days. */
-  unread: number;
-  /** Of those, the ones that mention the caller (or all). */
-  mentionsMe: number;
-  lastReadId?: string;
-}
-
-export interface OrgBudgetAlert {
-  agentId: string;
-  period: string;
-  warnedAt?: string;
-  pausedAt?: string;
-}
-
-export interface OrgFinanceEmployee {
-  agentId: string;
-  name: string;
-  title: string;
-  reportsTo: string | null;
-  own: number;
-  cumulative: number;
-  budget?: number;
-  ratio?: number;
-  warned: boolean;
-  paused: boolean;
-}
-
-export interface OrgFinanceTicket {
-  ticketId: string;
-  title: string;
-  status: OrgTicketStatus;
-  parent?: string;
-  cost: number;
-  rolledUp: number;
-}
-
-export interface OrgFinanceResponse {
-  period: string;
-  currency: "USD";
-  employees: OrgFinanceEmployee[];
-  tickets: OrgFinanceTicket[];
-  /** Daily cost of the organization's sessions over the period. */
-  daily: Array<{ date: string; cost: number }>;
-  alerts: OrgBudgetAlert[];
-  total: number;
-  /** Some usage ran on a model without pricing: tokens were counted, cost is a lower bound. */
-  unpriced: boolean;
-}
-
-export interface OrgDeskItem {
-  agentId: string;
-  name: string;
-  sessionId: string;
-  title?: string;
-  status: SessionStatus;
-  workspace: string;
-  lastActiveAt?: string;
-  /**
-   * Present when the desk session has an ENABLED messaging binding: its channel, read as
-   * `SessionInfo.messagingChannel` is (the company sidebar's desk row draws the same mark as a
-   * development row, and the development list never holds a desk).
-   */
-  messagingChannel?: MessagingChannel;
-}
-
-export interface OrgSessionsResponse {
-  /** One per employee whose current desk Session exists; a desk the ledger names but the server no longer has is left out. */
-  desks: OrgDeskItem[];
-  tickets: Array<{
-    ticketId: string;
-    title: string;
-    status: OrgTicketStatus;
-    sessions: OrgTicketSessionItem[];
-  }>;
-}
-
-export interface OrgDeskResponse {
-  agentId: string;
-  sessionId: string;
-  workspace: string;
-  openedAt: string;
-  /** True when this call created the desk session. */
-  created: boolean;
-}
-
-export interface OrganizationDetail extends OrganizationSummary {
-  settings: OrganizationSettings;
-  board: Record<OrgTicketStatus, number>;
-  /** Today's calendar events (organization timezone) with their outcomes. */
-  today: OrgCalendarItem[];
-  pending: {
-    /** Unread messages mentioning the caller (or all). */
-    mentions: number;
-    reviewTickets: OrgTicketItem[];
-    blockedByMe: OrgTicketItem[];
-  };
-  /** The last messages of the all-hands channel. */
-  recentMessages: OrgChannelMessage[];
-  alerts: OrgBudgetAlert[];
-  /** What the overview's inbox lists; absent only from a server older than the field. */
-  inbox?: OrgInbox;
-  /** The CEO's desk session once opened (creation opens it). */
-  ceoDeskSessionId?: string;
-}
-
-/**
- * The overview's inbox: the three things a person is waited on or told about — messages
- * that name them (or `@all`) in the all-hands channel, the tickets that are blocked (all of
- * them, whoever they wait on), and the tickets closed as done this period. Newest first in
- * each list; each capped at a page.
- */
-export interface OrgInbox {
-  mentions: OrgChannelMessage[];
-  blockedTickets: OrgTicketItem[];
-  doneTickets: Array<OrgTicketItem & { closedAt?: string }>;
-}
-
-export interface OrganizationCreateRequest {
-  /** Semantic id, unique within the Project; also the directory name. */
-  orgId: string;
-  name?: string;
-  mission: string;
-  timezone?: string;
-  /** An existing absolute directory to use as the shared workspace; default = the organization's own `workspace/`. */
-  workspace?: string;
-  /** The model for desks and ticket sessions (a configured pair); default = the Project default. */
-  model?: { provider: string; modelId: string };
-  /**
-   * The CEO's monthly budget in USD, written as the `budget` of its `org_chart.yaml` entry.
-   * Budgets are compared on the cumulative line, so the CEO's is the whole company's.
-   * Omitted = 100; 0 is a real (zero) budget, not "unbounded" — only clearing the field
-   * later (`PATCH …/employees/:agentId` with `budget: null`) leaves the CEO unbounded.
-   */
-  ceoBudget?: number;
-  /** The working language; omitted = detected from the mission. */
-  language?: OrgLanguage;
-}
-
-export interface OrganizationPatchRequest {
-  name?: string;
-  mission?: string;
-  status?: OrgStatus;
-  approvalMode?: OrgApprovalMode;
-  timezone?: string;
-  mentionChainLimit?: number;
-  budgetWarnRatio?: number;
-  budgetPauseRatio?: number;
-  /** null returns to the organization's own `workspace/`. */
-  workspace?: string | null;
-  /** null returns to the Project default. */
-  model?: { provider: string; modelId: string } | null;
-  language?: OrgLanguage;
-}
-
-/**
- * What a proposed semantic id names. Each kind has its own shape — organization and channel
- * ids carry a `co_` / `ch_` prefix, a non-admin's Project id its owner's `<username>-`, a
- * Benchmark id is kebab-case — and its own set of ids to avoid.
- */
-export type SemanticIdKind = "org" | "channel" | "project" | "agent" | "benchmark";
-
-/**
- * A semantic id proposed for a display name — every create dialog that names an object with a
- * semantic id (a Project, an Agent, a Benchmark, an organization, a channel) lets the user name
- * the thing first and derive the id from that name. The server asks the Project's default
- * model for a short English id in the kind's spelling (a Chinese name has no mechanical
- * transliteration), falling back to an ASCII slug of the name when the model is unavailable,
- * and to a dated placeholder when neither can name it. The request never fails for a name it
- * cannot translate: a dialog that asked for an id always gets one back.
- */
-export interface SemanticIdSuggestRequest {
-  /** The display name typed so far (or the mission / description, when nothing else names the thing). */
-  name: string;
-  /** What the id is for: decides the id's shape, the prompt's examples and the ids avoided. */
-  kind: SemanticIdKind;
-  /**
-   * Ids already in use in the target scope; the proposal avoids them. For a Project, an Agent or
-   * a Benchmark, the server also avoids, on its own, every id that kind's create route refuses
-   * as taken, a leftover folder no list shows included.
-   */
-  taken?: string[];
-}
-
-/**
- * Why a proposal fell all the way through to a placeholder — what the client tells the user to
- * explain the id it was just handed. `no_default_model`: the Project has no default model to
- * ask. `model_failed`: it was asked and the request failed (no credential, a rejection, a
- * timeout). `unusable_answer`: it answered twice and neither answer yielded an id.
- * `no_ascii`: no model was consulted at all and the name carries no ASCII to transliterate.
- */
-export type SemanticIdSuggestReason =
-  "no_default_model" | "model_failed" | "unusable_answer" | "no_ascii";
-
-export interface SemanticIdSuggestResponse {
-  /**
-   * An id the kind's create route accepts, not in `taken`: `^[a-z][a-z0-9_]{1,63}$` for most
-   * kinds, `<username>-<suffix>` for a non-admin's Project, kebab-case for a Benchmark.
-   */
-  id: string;
-  /** Who produced it: the model, the ASCII fallback, or the dated placeholder that names nothing. */
-  source: "model" | "fallback" | "placeholder";
-  /** Present only with `source: "placeholder"`: why the two real paths produced nothing. */
-  reason?: SemanticIdSuggestReason;
-}
-
-export interface OrgHireRequest {
-  /** Employ an existing Agent … */
-  agentId?: string;
-  /** … or create one (the two are exclusive). Plugins default to agent-company + agent-development. */
-  newAgent?: { agentId: string; name?: string; description?: string; plugins?: string[] };
-  /**
-   * What the organization calls the employee (any script, one line, no `@`, ≤ 64 characters).
-   * Omitted, a new Agent's `name` is used; with neither, the Agent's display name stands in.
-   */
-  name?: string;
-  title: string;
-  reportsTo: string;
-  workspace?: string;
-  budget?: number;
-  duties?: string;
-  model?: { provider: string; modelId: string };
-}
-
-export interface OrgEmployeePatchRequest {
-  /** null (or an empty string) clears the name: back to the Agent's display name. */
-  name?: string | null;
-  title?: string;
-  reportsTo?: string;
-  workspace?: string;
-  /** null clears the budget. */
-  budget?: number | null;
-  duties?: string;
-  /** null clears the model (back to the Project default). */
-  model?: { provider: string; modelId: string } | null;
-}
-
-export interface OrgCalendarUpsertRequest {
-  /** POST only: the employee the event belongs to. */
-  agentId?: string;
-  /** POST only: the file name. */
-  name?: string;
-  title?: string;
-  prompt: string;
-  enabled: boolean;
-  startAt: string;
-  period?: string;
-  endAt?: string;
-}
-
-/**
- * What a calendar write answers: the stored event, plus advisory `warnings` — one line each —
- * about the rota: another employee's recurring event on the same start minute, or the same
- * employee already holding a recurring event (desks that fire together compete for the same
- * budget minute and the same tickets). The write succeeds regardless; the CLI prints the
- * lines so the scheduling employee can stagger.
- */
-export interface OrgCalendarWriteResponse extends OrgCalendarItem {
-  warnings?: string[];
-}
-
-export interface OrgTicketCreateRequest {
-  title: string;
-  /** Overrides the slug derived from the title; lowercase English words joined by hyphens. */
-  slug?: string;
-  goal?: string;
-  acceptanceCriteria?: string;
-  /** The whole Markdown body instead of goal + acceptanceCriteria (the frontmatter is still generated). */
-  body?: string;
-  /**
-   * The responsible principal: an employee's `agent:<id>` (or bare Agent id) or a member's
-   * `user:<id>`. Default = the caller — the session's employee inside a desk or ticket
-   * session, else the token's or cookie's user.
-   */
-  owner?: string;
-  parent?: string;
-  notify?: string[];
-  priority?: OrgTicketPriority;
-  due?: string;
-}
-
-export interface OrgTicketUpdateRequest {
-  title?: string;
-  /** The new responsible principal; never null — a ticket always has an owner. */
-  owner?: string;
-  parent?: string | null;
-  notify?: string[];
-  priority?: OrgTicketPriority;
-  due?: string | null;
-  goal?: string;
-  acceptanceCriteria?: string;
-  result?: string;
-}
-
-export interface OrgTicketMoveRequest {
-  status: OrgTicketStatus;
-  /** Required when moving into rejected; recorded under Result. */
-  reason?: string;
-}
-
-export interface OrgTicketBlockRequest {
-  reason: string;
-  /** A ticket id or a principal. */
-  by?: string;
-}
-
-export interface OrgTicketProgressRequest {
-  text: string;
-  /**
-   * The calling session (CLI: PENGUIN_SESSION_ID); the session is booked as a contributing
-   * session and the history entry is attributed to its employee. Honoured only for a request
-   * carrying the local API token — the control environment's credential; a signed-in user's
-   * write is attributed to the user.
-   */
-  sessionId?: string;
-  /**
-   * The calling employee's Agent id (CLI: PENGUIN_AGENT_ID from the control environment), the
-   * identity a write is recorded under; it wins over the session's employee, is honoured only
-   * with the local API token, like sessionId, and is ignored — the write falls back to the
-   * session's employee, then to the person — when it names no employee.
-   */
-  agentId?: string;
-}
-
-export interface OrgTicketStartRequest {
-  /** The employee the ticket session runs as (CLI: PENGUIN_AGENT_ID); defaults to the ticket owner. */
-  agentId?: string;
-  message?: string;
-  /** Another directory inside the shared workspace; defaults to the employee's desk workspace. */
-  workspace?: string;
-}
-
-export interface OrgTicketStartResponse {
-  sessionId: string;
-}
-
-export interface OrgTicketAttachRequest {
-  sessionId: string;
-}
-
-export interface OrgChannelMessageSendRequest {
-  text: string;
-  refs?: { ticket?: string; session?: string; replyTo?: string };
-  /**
-   * The calling session (CLI: PENGUIN_SESSION_ID): the message is sent as its Agent and
-   * inherits its hop. Honoured only for a request carrying the local API token — the control
-   * environment's credential; a signed-in user's message is sent as the user, at hop 0.
-   */
-  sessionId?: string;
-}
-
-export interface OrgChannelReadRequest {
-  /** Mark everything up to this message id as read. */
-  upTo: string;
-}
-
-/** The handbook index (`handbook/README.md`), the file every work run reads first. */
-export interface OrgHandbookResponse {
-  content: string;
-}
-
-/** One file of the organization handbook (`handbook/`, the company's knowledge base); `path` is relative to that directory. */
-export interface OrgHandbookFile {
-  path: string;
-  size: number;
-  updatedAt: string;
-}
-
-export interface OrgHandbookFilesResponse {
-  /**
-   * The handbook directory's absolute path on this server: the Web App browses it with the Files
-   * panel's own directory-addressed routes, which take the same Project access these do.
-   */
-  dir: string;
-  /** The index first, then the other documents by path. */
-  files: OrgHandbookFile[];
-}
-
-export interface OrgHandbookFileResponse {
-  path: string;
-  content: string;
-}
-
-export interface OrgHandbookFileWriteRequest {
-  content: string;
-}
-
-// ---------------------------------------------------------------------------
 // Web contributions (GET /api/contributions)
 // ---------------------------------------------------------------------------
 
@@ -4931,453 +3650,6 @@ export interface ContributionsResponse {
   startMetrics?: StartMetricContribution[];
 }
 
-/** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */
-export interface PluginCliCommandInfo {
-  /** The plugin package that contributes it — what `penguin exec` names. */
-  package: string;
-  /** `a.b.c`: the argv segments it answers (`penguin a b c ARGS`). */
-  key: string;
-  /** Its one-line summary, per language. */
-  summary: { en: string; zh: string };
-  /**
-   * Who may run it: the administrator only, or any member of the caller's Project. This server
-   * always says; a client reads an absent one (a server from before member commands) as `admin`.
-   */
-  access?: "admin" | "member";
-  /**
-   * The local files it exchanges: `read`, the options whose value is a file the terminal sends;
-   * `write`, the option naming the directory the terminal saves returned files into.
-   */
-  files?: { read?: string[]; write?: string };
-}
-
-/** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
-export interface PluginCliCommandsResponse {
-  commands: PluginCliCommandInfo[];
-}
-
-/** POST /api/cli/commands/run: runs argv against one plugin's commands on the server. */
-export interface PluginCliCommandRunRequest {
-  /** The plugin package, as the listing names it. */
-  package: string;
-  /** The arguments, as they would follow the program name. */
-  args: string[];
-  /** The language the caller resolved, for the summaries and the command's own text. */
-  language: "en" | "zh";
-  /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
-  prog: string;
-  /** The caller's Project (an Agent's `PENGUIN_PROJECT_ID`); a member command needs one. */
-  projectId?: string;
-  /** The caller's Session (an Agent's `PENGUIN_SESSION_ID`): a Session of `projectId`. */
-  sessionId?: string;
-  /** The local files the terminal read for the command's `files.read` options. */
-  files?: PluginCliCommandInputFile[];
-}
-
-/** One file the terminal sends with a run. */
-export interface PluginCliCommandInputFile {
-  /** The option's value as typed: what the command looks the file up by. */
-  value: string;
-  /** The file's own name, no directory. */
-  name: string;
-  /** Its bytes, base64. */
-  data: string;
-}
-
-/** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
-export interface PluginCliCommandOutputFile {
-  /** A plain file name, no directory. */
-  name: string;
-  mimeType?: string;
-  /** Its bytes, base64. */
-  data: string;
-}
-
-/** What one run printed, its exit code, and the files it handed back. */
-export interface PluginCliCommandRunResponse {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  files?: PluginCliCommandOutputFile[];
-}
-
-/**
- * One field of a settings group a module declares (its `PluginConfigProvider.groups`
- * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
- * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
- * `list` is a list of strings, drawn one per line; `table` is a fixed set of `rows`, each a
- * value per one of its `columns`, drawn as a table.
- */
-export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
-  title: string;
-  titleZh?: string;
-  /** What the field means: disclosed behind a "?" beside its title. */
-  description?: string;
-  descriptionZh?: string;
-  /**
-   * The shape a value must take ("one absolute path per line"): shown under the field at all
-   * times, since it is read while typing.
-   */
-  hint?: string;
-  hintZh?: string;
-  placeholder?: string;
-  /** The value a package with nothing stored reads; also what an empty field falls back to. */
-  default?: string | number | boolean | string[];
-  /**
-   * Drawn in the card's Advanced fold, collapsed by default, rather than among the basic
-   * fields. Presentation only: it is stored, validated and read like any other field.
-   */
-  advanced?: boolean;
-  /**
-   * A security setting — who may use the plugin, what it may reach: drawn under the plugin
-   * page's "Security" heading with a shield. Presentation only, like `advanced`.
-   */
-  security?: boolean;
-  /** A save that would leave this field empty is refused. */
-  required?: boolean;
-  /** `enum` only: the values it may take, in display order. */
-  options?: PluginConfigOption[];
-  /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
-  maxItems?: number;
-  /**
-   * `list` only: how one entry is drawn and chosen. Options present — the entries are picked
-   * from a fixed set (a mirror id, say); absent — an entry is a free-text line. Presentation
-   * and page interaction only: storage is a string array either way.
-   */
-  items?: { options?: PluginConfigOption[] };
-  /** `number` only: the smallest and largest value a save may store. */
-  minimum?: number;
-  maximum?: number;
-  /** `string` / `list` only: a regular expression every value (every line) must match. */
-  pattern?: string;
-  /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
-  patternErrorMessage?: string;
-  /**
-   * `table` only: its columns, in display order, and its rows, in display order. The table
-   * has no `default`: the rows' declared cells are its defaults, and what is stored is only
-   * the cells that differ from them — `{ [row id]: { [column]: value } }`.
-   */
-  columns?: PluginConfigTableColumn[];
-  rows?: PluginConfigTableRow[];
-  /**
-   * `table` only: a single choice of one row — the sandbox's default preset. The choice is
-   * stored in `field`, an `enum` field of the same group whose options are the row ids (plus,
-   * in an `extensible` table, the ids of the rows added to it); the page draws that field only
-   * as its title in brackets after the chosen row's name ("(Default)"), and picks it from a
-   * row's "…" menu.
-   */
-  rowChoice?: PluginConfigRowChoice;
-  /**
-   * `table` only: rows may be added (and only those deleted, from the row's "…" menu) and every
-   * row reordered. A new row
-   * starts from these values. What is stored, beside the declared rows' changed cells, is the
-   * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
-   * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
-   * key whole; a document without them reads as the declared rows in declared order.
-   */
-  extensible?: PluginConfigNewRow;
-  /**
-   * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
-   * Pin, under "Action"). `columns` names them. When the group ends the columns, the row's drag
-   * handle and "…" menu join it.
-   */
-  columnGroup?: PluginConfigColumnGroup;
-  /**
-   * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
-   * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
-   * state. Declared on the table, not the column, so every column keeps one shape.
-   */
-  pin?: PluginConfigPinColumn;
-}
-
-/** A table's pin column: which boolean column, and its tooltip pinned and not. */
-export interface PluginConfigPinColumn {
-  column: string;
-  on: string;
-  onZh?: string;
-  off: string;
-  offZh?: string;
-}
-
-/**
- * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
- * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
- * group's `derive` gives none): no row is marked and a save is not refused for it. A save that
- * leaves it naming a row the table no longer has is refused.
- */
-export interface PluginConfigRowChoice {
-  field: string;
-  title: string;
-  titleZh?: string;
-}
-
-/** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
-export interface PluginConfigTableColumn {
-  name: string;
-  type: "string" | "boolean" | "enum";
-  title: string;
-  titleZh?: string;
-  /** What the column means: disclosed behind a "?" beside its header. */
-  description?: string;
-  descriptionZh?: string;
-  options?: PluginConfigOption[];
-}
-
-/** One row of a `table` field: its id and its declared cells. */
-export interface PluginConfigTableRow {
-  id: string;
-  /** Every column's declared value. */
-  values: Record<string, string | boolean>;
-  /** A string cell's declared value in Chinese, shown until a save changes the cell. */
-  valuesZh?: Record<string, string>;
-  /** Columns whose cell in this row a save may not change. */
-  locked?: string[];
-  /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
-  added?: boolean;
-  /**
-   * What the row is for, disclosed behind a "?" beside its name while its `enum` cells hold
-   * their declared values. A row without one, or whose choices changed, gets a "?" listing its
-   * `enum` cells' values and what each does (the options' `description`s).
-   */
-  description?: string;
-  descriptionZh?: string;
-}
-
-/** A header over adjacent table columns, with its own "?". */
-export interface PluginConfigColumnGroup {
-  title: string;
-  titleZh?: string;
-  description?: string;
-  descriptionZh?: string;
-  columns: string[];
-}
-
-/** The values a row added to an `extensible` table starts from. */
-export interface PluginConfigNewRow {
-  /** The add button's text ("Add preset"). */
-  add?: string;
-  addZh?: string;
-  values: Record<string, string | boolean>;
-  /** A string column's starting text in Chinese. */
-  valuesZh?: Record<string, string>;
-}
-
-/** One choice of an `enum` field. */
-export interface PluginConfigOption {
-  value: string;
-  title: string;
-  titleZh?: string;
-  /** What picking it does: listed, for a table column's option, in a row's "?" (see the row's `description`). */
-  description?: string;
-  descriptionZh?: string;
-}
-
-/** A declared configuration: a titled group of fields, in declaration order. */
-export interface PluginConfiguration {
-  title?: string;
-  titleZh?: string;
-  description?: string;
-  descriptionZh?: string;
-  /**
-   * A `boolean` field that turns the group on (the sandbox's `enabled`). While it is off, as
-   * drafted, the card draws that field alone: no other field, notice or action, and none of the
-   * groups drawn inside it. Turning it on in a group that reports a `backend` it lacks offers
-   * to install one.
-   */
-  switch?: string;
-  properties: Record<string, PluginConfigField>;
-}
-
-/** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
-export interface PluginConfigNotice {
-  /**
-   * `progress` = work the group started is still running (an install, a download): the page
-   * reads the groups again every few seconds while any notice says so, and the text is the
-   * step it is on.
-   */
-  tone: "attention" | "muted" | "progress";
-  text: string;
-  textZh?: string;
-  /** More about the notice, disclosed under it on request; lines separated by `\n`. */
-  details?: string;
-  detailsZh?: string;
-}
-
-/** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
-export interface PluginConfigEntry {
-  /** The group's name — the id of the contribution that declared it; also the store key. */
-  name: string;
-  configuration: PluginConfiguration;
-  /** Stored values merged onto the defaults; a secret arrives masked (`first4…last4` or `***`), never in the clear. */
-  values: Record<string, unknown>;
-  /** Drawn inside that entry's card and saved with it (a sandbox backend's options inside the sandbox's). */
-  parent?: string;
-  /** Live status beside the fields; absent when there is none. */
-  notices?: PluginConfigNotice[];
-  /** What this group can DO once, on the machine, drawn as buttons beneath its notices. */
-  actions?: PluginConfigActionDecl[];
-  /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
-  unavailable?: PluginConfigUnavailableDecl[];
-  /**
-   * For a group whose settings a backend plugin enforces (the sandbox): whether one that
-   * applies to this machine's OS is installed, and which packages this OS defaults to. The card
-   * offers to install `recommended` when the group's switch is turned on and none is installed.
-   * Asked per read, like the notices; the client never guesses the OS.
-   */
-  backend?: PluginConfigBackend;
-  /**
-   * The plugin whose server module declared the group, by the specifier the plugin list names it
-   * with — an npm package name, or for a package installed from a directory, that directory's
-   * absolute path; absent for the host's own groups (the sandbox, plugin sources) and from a
-   * server older than this field. The Settings dialog draws the group on that plugin's page,
-   * keyed `plugin:<specifier>`; a specifier the plugin library does not list (a path) gets a page
-   * named by the group's own title.
-   */
-  plugin?: string;
-  /**
-   * That plugin's display name, from its card, in both languages — what names its page when the
-   * plugin library does not list it (a server-module plugin with no Skill: a sandbox backend).
-   */
-  pluginTitle?: string;
-  pluginTitleZh?: string;
-  /**
-   * That plugin's version and icon as its package on this server says them, for the same page:
-   * the npm version, and the icon (served at `GET /api/admin/plugin-config/icon?plugin=…`); each
-   * absent when the package carries none or is not known here.
-   */
-  pluginVersion?: string;
-  pluginIcon?: IconRef;
-  /**
-   * What the group's status reports in the status page's shape, checked on the way out (a state
-   * this build does not know reads as `unknown`, a field of the wrong type is dropped); absent
-   * when it reports none, or when its report could not be read.
-   */
-  report?: PluginStatusReport;
-}
-
-/**
- * A settings group's status in the plugin page's shape (its status contributor's `report()`):
- * a summary word, the program the plugin installs beside itself, and the preconditions it
- * checks. `action` and `recheck` name actions of the group's `actions`: an action named here is
- * drawn on its element only; the others are the page's primary actions.
- */
-export interface PluginStatusReport {
-  summary?: PluginStatusSummary;
-  version?: PluginStatusVersion;
-  /** Every precondition, in display order. */
-  checks?: PluginStatusCheck[];
-  /** The action that checks everything again: drawn once, at the checks' heading, and run without asking first (it only reads). */
-  recheck?: string;
-}
-
-/** Where the plugin stands, in a word or two, drawn as a pill in its state's tone. */
-export interface PluginStatusSummary {
-  /**
-   * `ready` usable now; `attention` something needs a person; `progress` work under way; `off`
-   * switched off or not usable here; `unknown` could not be told — also what a state this build
-   * does not know reads as (a newer plugin's), so a page never meets a state it cannot draw.
-   */
-  state: "ready" | "attention" | "progress" | "off" | "unknown";
-  text: string;
-  textZh?: string;
-  /** What the word cannot say, on the pill's hover. */
-  hint?: string;
-  hintZh?: string;
-}
-
-/** A program the plugin installs and runs beside itself (agent-desktop), as its version element shows it. */
-export interface PluginStatusVersion {
-  /** The program's name as its maker spells it. */
-  name: string;
-  /**
-   * `preparing` = being downloaded or installed now (`progress`, step in `text`); `missing` = not
-   * installed yet; `unknown` = could not be told, and what a state this build does not know reads as.
-   */
-  state: "installed" | "preparing" | "failed" | "missing" | "unsupported" | "unknown";
-  version?: string;
-  /** The OS and CPU the installed build is for ("linux-x64"). */
-  platform?: string;
-  /** While preparing: how far, from 0 to 1; absent when the step has no amount. */
-  progress?: number;
-  /** One line: the step while preparing, why when failed or unsupported, where it runs from. */
-  text?: string;
-  textZh?: string;
-  /** Folded under the element (an install directory, the whole error); lines separated by `\n`. */
-  details?: string;
-  detailsZh?: string;
-  /** The action the element offers as its button (install, retry). */
-  action?: string;
-}
-
-/** One precondition the plugin checks on this machine. */
-export interface PluginStatusCheck {
-  id: string;
-  /** What is checked, in a few words ("Display", "Accessibility"). */
-  label: string;
-  labelZh?: string;
-  /**
-   * `ok` holds; `action` needs a person; `unknown` could not be told yet (and what a state this
-   * build does not know reads as); `na` does not apply on this machine.
-   */
-  state: "ok" | "action" | "unknown" | "na";
-  /** One line in the plugin's own words: what was found, or what to do. */
-  text?: string;
-  textZh?: string;
-  /** Folded under the row: a tool's own words, paths; lines separated by `\n`. */
-  details?: string;
-  detailsZh?: string;
-  /** The action drawn on this row (open System Settings). */
-  action?: string;
-  /**
-   * A Settings page this row opens, drawn as a link on the row: `plugin:<specifier>` for a
-   * plugin's page (the sandbox lists each backend and links it to its plugin's page). A page
-   * the viewer does not have draws no link.
-   */
-  page?: string;
-}
-
-/** Whether a backend that applies to this machine is installed, and this OS's default ones. */
-export interface PluginConfigBackend {
-  /** A backend for this OS is installed: loaded, or installed and failing its check. */
-  installed: boolean;
-  /**
-   * The npm packages this OS defaults to, installed together: the rows of the index embedded in
-   * the server that declare this platform (`PluginIndexEntry.sandboxDefaultFor`), in index order;
-   * absent when none does.
-   */
-  recommended?: string[];
-}
-
-/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
-export interface PluginConfigUnavailableDecl {
-  field: string;
-  /** A `table` field's column: the option is unavailable in every cell of that column. */
-  column?: string;
-  /** An enum option, or a boolean field's position: "true" or "false". */
-  value: string;
-  reason: string;
-  reasonZh?: string;
-}
-
-/** One button under a settings group: what it is called, and what pressing it will do. */
-export interface PluginConfigActionDecl {
-  id: string;
-  title: string;
-  titleZh?: string;
-  description?: string;
-  descriptionZh?: string;
-}
-
-/** POST /api/admin/plugin-config/action — what running one reported. */
-export interface PluginConfigActionResponse {
-  ok: boolean;
-  message: string;
-  messageZh?: string;
-  /** The groups as they stand after it ran: a setup that worked changes what the page says. */
-  plugins: PluginConfigEntry[];
-}
-
 export interface PluginConfigResponse {
   plugins: PluginConfigEntry[];
 }
@@ -5392,20 +3664,6 @@ export interface PluginConfigResponse {
 export interface PluginConfigUpdateRequest {
   name: string;
   values: Record<string, unknown>;
-}
-
-/**
- * An installed plugin the running build cannot fully run (plugin/unsatisfied.ts): it
- * contributes to a slot, or wires to a module or interface, that this build does not have.
- * Also what a refused push names (`plugins_unsatisfied`) and a confirmed one reports.
- */
-export interface UnsatisfiedPlugin {
-  /** The package specifier, as the installed-plugins list spells it. */
-  specifier: string;
-  /** True when the whole plugin is left out of this generation; false when only the contributions this build has no slot for were dropped and the rest of it runs. */
-  disabled: boolean;
-  /** What this build lacks, in the platform's own words. */
-  reason: string;
 }
 
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
@@ -5473,43 +3731,6 @@ export interface PluginInstallOutcome {
    * (05 「插件库」 「安装从不卡住」). Absent for a zip import and on older servers.
    */
   from?: "registry" | "link" | "channel" | "offline";
-}
-
-/** One Agent that carries a plugin, as the server-uninstall confirm names it. */
-export interface PluginHolder {
-  projectId: string;
-  projectName: string;
-  agentId: string;
-  agentName: string;
-}
-
-/**
- * GET /api/admin/plugins/holders?package=… (admin): who would lose a plugin if it were uninstalled
- * from this server (05 「插件库」 「安装模型」). `agents` is every Agent of every Project here that
- * carries any part of it; `shared` the Projects whose shared table lists it (the uninstall is then
- * refused); `shipped` a package the build ships (it cannot be uninstalled from the server).
- */
-export interface PluginHoldersResponse {
-  package: string;
-  /** The library plugin the package is; null for a server module alone (no Agent carries it). */
-  plugin: string | null;
-  /** It is in this server's prefix (installed or linked). */
-  onServer: boolean;
-  shipped: boolean;
-  shared: Array<{ projectId: string; projectName: string }>;
-  agents: PluginHolder[];
-}
-
-/**
- * DELETE /api/admin/plugins?package=… (admin): uninstalls the plugin from every Agent here, then
- * from this server. 409 `plugin_shipped`, 404 `plugin_not_installed`, 409 `plugin_shared` (a
- * Project's shared table lists it), 409 `module_failed`, 500 `plugin_remove_failed`.
- */
-export interface PluginServerUninstallResponse {
-  package: string;
-  plugin: string | null;
-  /** Each Agent it was uninstalled from, with the parts that could not be removed. */
-  agents: Array<PluginHolder & { failed?: PluginUninstallResponse["failed"] }>;
 }
 
 /** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */

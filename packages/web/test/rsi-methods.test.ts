@@ -23,7 +23,7 @@ import {
   pickRsiMethod,
   rsiMethods,
   rsiToolkits,
-} from "../src/features/benchmark/rsi-methods";
+} from "@prismshadow/penguin-library-observability/web/benchmark/rsi-methods";
 
 /** A library plugin with the fields the mapping reads; everything else empty. */
 function toolkit(name: string, over: Partial<PluginItem> = {}, skills: string[] = []): PluginItem {

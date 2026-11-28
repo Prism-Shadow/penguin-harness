@@ -14,7 +14,7 @@ import { createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { UploadsSection } from "../src/features/settings/uploads-section";
+import { UploadsSection } from "@prismshadow/penguin-library-setting/web/uploads-section";
 import { AuthProvider } from "../src/state/auth";
 import { adminSettingsServer } from "./helpers/admin-settings";
 import { button, click, field, mount, type, unmountAll, waitFor } from "./helpers/dom";
