@@ -1,7 +1,7 @@
 ---
 name: penguin-support
 description: Answer PenguinHarness product questions and troubleshoot setup, models, agents, plugins and workbenches using the official documentation and source code. Use for every question handled by the PenguinHarness Support agent.
-version: 2026.10.14.2
+version: 2026.11.28.1
 ---
 
 # PenguinHarness support
