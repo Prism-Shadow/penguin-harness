@@ -142,17 +142,18 @@ import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "../../lib/permission-level";
 import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
-import { sameModelRef } from "../models";
-import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "../agents";
 import {
+  employeesLast,
+  isEmployee,
+  sameModelRef,
   ModelCatalogSelect,
   ModelPickerModal,
   SELECTABLE_THINKING_LEVELS,
   ThinkingLevelSelect,
   modelLabel,
   thinkingLevelLabel,
-} from "../model-picker";
+} from "@prismshadow/penguin-web/internal";
+import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import {

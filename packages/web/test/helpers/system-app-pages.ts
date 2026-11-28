@@ -4,11 +4,11 @@
  */
 import { moduleMetaOf, type Contributed, type ModuleClass } from "@prismshadow/penguin-core/kernel";
 import { pageTableOf, type WebAppPage } from "../../src/web-app/page-table";
-import { AgentsModule } from "../../src/features/agents/module";
+import { AgentsModule } from "@prismshadow/penguin-library-agent/web/agents/module";
 import { AppCenterModule } from "../../src/features/app-center/module";
 import { BenchmarkModule } from "../../src/features/benchmark/module";
 import { MachinesModule } from "../../src/features/machines/module";
-import { ModelsModule } from "../../src/features/models/module";
+import { ModelsModule } from "@prismshadow/penguin-library-model/web/models/module";
 import { PluginsModule } from "../../src/features/plugins/module";
 import { UsageModule } from "../../src/features/usage/module";
 

@@ -30,6 +30,11 @@
 /* A shipped plugin's web half is compiled with the app (plugin-web.gen.ts) and keeps its source
    under its package's src/web/, so its class strings are scanned there. */
 @source "../../../plugins/*/src/web";
+/* The domains' web halves moved to their packages' src/web/ (compiled in by the app), so their
+   class strings are scanned there too — the gallery's frames load this same entry, and are
+   covered by it as well. A file glob: a directory glob (`…/src/web`) matches directories, and
+   matched directories are not scanned, so nothing under the four domains entered the sheet. */
+@source "../../../library/*/src/web/**/*.{ts,tsx}";
 
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
 @theme {

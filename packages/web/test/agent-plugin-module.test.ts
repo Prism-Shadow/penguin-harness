@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The server module of a plugin an Agent carries, on the Agent settings Plugins sub-page
- * (features/agents/agent-plugin-row.tsx, agent-plugin-detail.tsx and their writes), against the
+ * (the agents feature's agent-plugin-row.tsx, agent-plugin-detail.tsx and their writes), against the
  * shared fake server.
  *
  * - Given a member whose request for the module waits, the row says so and offers nothing more.

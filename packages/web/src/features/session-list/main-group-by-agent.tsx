@@ -2,7 +2,7 @@ import { AgentAvatar, Fold, GroupHeader, ICONS, ICON_SIZE, Waiting } from "@pris
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
 import { Icon } from "../../components/ui/group-list";
-import { employmentsOf } from "../agents";
+import { employmentsOf } from "@prismshadow/penguin-web/internal";
 import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
 import { GroupBlock } from "./main-group-block";
 import { GroupPinButton } from "./main-group-pin-button";

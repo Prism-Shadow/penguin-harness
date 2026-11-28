@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A Trace event row (features/traces/trace-event-row.tsx), as a reader opens it.
+ * A Trace event row (library/trace/src/web/traces/trace-event-row.tsx), as a reader opens it.
  *
  * - The row's one pill names the record's kind, and the role where a kind's role varies:
  *   `text (user)`, `text (assistant)`, `inline_data (user)`; any other kind is bare. The text's
@@ -14,7 +14,7 @@
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AmspRecord } from "@prismshadow/amsp";
-import { EventRow } from "../src/features/traces/trace-event-row";
+import { EventRow } from "@prismshadow/penguin-library-trace/web/traces/trace-event-row";
 import { S } from "../src/lib/strings";
 import { click, mount, unmountAll } from "./helpers/dom";
 

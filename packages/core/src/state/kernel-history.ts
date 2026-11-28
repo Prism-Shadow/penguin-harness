@@ -44,7 +44,7 @@ export function valueAtPath(root: unknown, path: readonly string[]): unknown {
 
 /**
  * The unit of kernel management: one **settings tab** of the Web App's Agent settings page
- * (`web/src/features/agents/agent-settings-page.tsx`), and the config paths it owns. A tab is
+ * (`library/agent/src/web/agents/agent-settings-page.tsx`), and the config paths it owns. A tab is
  * matched, advanced and kept **whole** — the granularity is deliberately coarse, so a user who
  * edits one field of a tab keeps that entire tab until they restore defaults.
  *

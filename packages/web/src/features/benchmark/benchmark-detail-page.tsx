@@ -31,7 +31,7 @@ import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { downloadArchive } from "../agents";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";

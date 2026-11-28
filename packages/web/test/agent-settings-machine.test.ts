@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A machine's Agent on the Agent settings page (features/agents/agent-settings-page.tsx at
+ * A machine's Agent on the Agent settings page (the agents feature's agent-settings-page.tsx at
  * `?machine=<id>`): every read and write goes to that machine, never to this server's Agent of
  * the same id (lib/agent-location.ts).
  *
@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { agentSettingsPath } from "../src/lib/agent-location";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";

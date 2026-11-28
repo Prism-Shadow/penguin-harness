@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The MCP Server add / edit dialog (features/agents/mcp-server-dialog.tsx, opened from the
+ * The MCP Server add / edit dialog (the agents feature's mcp-server-dialog.tsx, opened from the
  * Tools tab's MCP section) as one record form under the settings commit model.
  *
  * - Save waits for a name and an address; a broken address is named as soon as it is typed,
@@ -22,7 +22,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { McpServersSection } from "../src/features/agents/mcp-servers-section";
+import { McpServersSection } from "@prismshadow/penguin-library-agent/web/agents/mcp-servers-section";
 import {
   AGENT_ID,
   agentServer,

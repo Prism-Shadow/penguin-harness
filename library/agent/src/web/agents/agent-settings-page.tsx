@@ -1,0 +1,1352 @@
+/**
+ * Agent settings page: nine tabs —
+ * Overview (avatar field, name/description form + two ruled sections in the skills import modal's
+ * family: Agent State — State version, export / replace from file and the copyable State
+ * path — and Kernel — the defaults generation with its update / restore-defaults
+ * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
+ * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: four
+ * sub-pages — the Agent's plugins, its Skills, its hook packages and its workbenches),
+ * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
+ * the Agent's public API, kept by this server). The system Agent's page has only a read-only
+ * Overview and the Plugins tab's system apps (system-agent-settings.tsx).
+ * Save = PUT config (sends only the changed keys; YAML comments are preserved
+ * server-side).
+ *
+ * Every form tab follows the settings commit model: its typed fields are a draft
+ * (`useFormDraft`) that only Save writes, Save is live only while the draft changed and is
+ * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
+ * switch, Back, a sidebar link and the browser's back button are all navigations that the
+ * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
+ * tools table's `call_description` included. A replace from file asks before it replaces the
+ * Agent State.
+ *
+ * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
+ * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
+ * While the machine cannot be asked, the page says why instead of showing anything stale.
+ *
+ * The header leads with the Agent's avatar — its own picture, or the default — and only shows it:
+ * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
+ * a crop is confirmed rather than with the tab's Save.
+ */
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
+import { useNavigate, useParams, useSearchParams } from "react-router";
+import type {
+  AgentAuthor,
+  AgentConfigDto,
+  AgentConfigResponse,
+  AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
+} from "@prismshadow/penguin-server/api";
+import type { ToolPermission } from "@prismshadow/penguin-core/interfaces";
+import {
+  AgentAvatar,
+  Button,
+  Card,
+  ConfirmModal,
+  GlyphIcon,
+  FieldLabel,
+  ICON_SIZE,
+  ICONS,
+  InfoPopover,
+  Input,
+  OptionMenu,
+  PageFrame,
+  PageHeader,
+  Select,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  Tabs,
+  Textarea,
+  UpdateDot,
+  Waiting,
+  toastSuccess,
+  useFormDraft,
+  type OptionMenuChoice,
+} from "@prismshadow/penguin-ui";
+
+import * as api from "@prismshadow/penguin-web/internal";
+import {
+  S,
+  useDocumentTitle,
+  scopeKey,
+  scoped,
+  scopedValue,
+  type Scoped,
+  useLeaveOnProjectSwitch,
+  useProject,
+  useMachines,
+  AgentLocationContext,
+  machineInSearch,
+  useAgentLocation,
+  machineLink,
+  remoteAgentsEmpty,
+  publishMachineAgentsChanged,
+  readMachineAgents,
+  useAgentAvatarSrc,
+  toastApiError,
+  failureNode,
+  ThinkingLevelSelect,
+  effectiveThinkingLevel,
+} from "@prismshadow/penguin-web/internal";
+import { AGENT_AVATAR_PREVIEW_PX, AgentAvatarField } from "./agent-avatar-field";
+import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
+import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
+import {
+  hasDescriptionProperty,
+  normalizeTools,
+  toolsDraftOf,
+  toolsErrors,
+  toolsUpdateOf,
+  withCallDescription,
+  type ToolNumberField,
+  type ToolRowDraft,
+} from "./tools-form";
+
+import { PluginsTab } from "./plugins-tab";
+import { AgentStateSection } from "./agent-overview-fields";
+import { SystemAgentOverview } from "./system-agent-settings";
+import {
+  PLUGIN_PARAM,
+  SUBPAGE_TABS,
+  resolvePluginsSubPage,
+  type PluginsSubPage,
+} from "./plugins-subpages";
+import { MemoryTab } from "./memory-tab";
+import { kernelTabLabel } from "./kernel-labels";
+import { AGENT_AUTHORS } from "./agent-groups";
+import { VaultTab } from "./vault-tab";
+import { SchedulesTab } from "./schedules-tab";
+import { ApiTab } from "./api-tab";
+import { McpServersSection } from "./mcp-servers-section";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+type TabKey =
+  | "overview"
+  | "prompt"
+  | "runtime"
+  | "tools"
+  | "plugins"
+  | "memory"
+  | "vault"
+  | "schedules"
+  | "api";
+
+/**
+ * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
+ * validated against the live TABS keys — not a hardcoded list — so newly added tabs
+ * deep-link without touching this helper; missing/unknown values fall back to the default.
+ * An alias names the tab another value opens (a sub-page's own value opens its tab).
+ */
+export function resolveTabKey<K extends string>(
+  raw: string | null,
+  tabs: ReadonlyArray<{ key: K }>,
+  fallback: K,
+  aliases: Readonly<Record<string, K>> = {},
+): K {
+  const key = raw !== null && Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
+  return tabs.some((t) => t.key === key) ? (key as K) : fallback;
+}
+
+export function AgentSettingsPage() {
+  // Read inside the component: after a language switch remount, this picks up the current dictionary.
+  const TABS = [
+    { key: "overview", label: S.agent.tabOverview },
+    { key: "prompt", label: S.agent.tabPrompt },
+    { key: "runtime", label: S.agent.tabRuntime },
+    { key: "tools", label: S.agent.tabTools },
+    { key: "plugins", label: S.agent.tabPlugins },
+    { key: "memory", label: S.agent.tabMemory },
+    { key: "vault", label: S.agent.tabVault },
+    { key: "schedules", label: S.agent.tabSchedules },
+    { key: "api", label: S.agent.tabApi },
+  ] as const;
+  const navigate = useNavigate();
+  const params = useParams<{ agentId: string }>();
+  const agentId = params.agentId ?? "";
+  useDocumentTitle(S.agent.settings);
+  const { currentProject, reloadAgents: reloadHere } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  // The route's Agent is one of the Project the page was opened in: a Project switch leaves for
+  // the new Project's Agents, where every tab would otherwise answer "This agent no longer exists."
+  const switchedAway = useLeaveOnProjectSwitch(projectId, "/agents");
+
+  // The open tab is the `?tab=` value alone (the Agents page's stat icons deep-link with it;
+  // missing or unknown values fall back to "overview"). The Plugins tab's sub-pages are values
+  // of the same key: `skills`, `hooks` and `workbenches` select the Plugins tab on their own
+  // sub-page. A switch of either only writes the address, so it is a navigation: while the open
+  // tab holds unsaved edits the app's leave guard asks before it happens, and the tab on screen
+  // never runs ahead of the address it would leave.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const subPage = resolvePluginsSubPage(searchParams.get("tab"));
+  /** The machine the Agent lives on (`?machine=`); null for this server. */
+  const machineId = machineInSearch(searchParams);
+  /**
+   * The config and its load failure, each tagged with the Agent it was read for — on the machine
+   * it was read from, since the same id on another server is another Agent.
+   */
+  const pageScope = scopeKey(projectId, agentId, machineId);
+  const [dataRead, setDataRead] = useState<Scoped<AgentConfigResponse> | null>(null);
+  const data = scopedValue(dataRead, pageScope);
+  /** The system Agent has only its read-only overview and its system apps (system-agent-settings.tsx). */
+  const system = data?.config.system === true;
+  const tabs = system ? TABS.filter((t) => t.key === "overview" || t.key === "plugins") : TABS;
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), tabs, "overview", SUBPAGE_TABS);
+  const machines = useMachines();
+  /** Whether that machine can be asked right now; null for this server, which always can. */
+  const link = machineId === null ? null : machineLink(machines.state, machines.settled, machineId);
+  /** The machine's ssh alias, for the header; its id until the list has named it. */
+  const machineLabel =
+    machineId === null
+      ? null
+      : (machines.state?.machines.find((m) => !m.local && m.machineId === machineId)?.alias ??
+        machineId);
+  /** The page can read the Agent: on this server, or on a connected machine. */
+  const reachable = link === null || link === "connected";
+  /** This server's Agent list moves with a write here; a machine's is read when its page is next shown. */
+  const reloadAgents = useCallback(
+    () => (machineId === null ? reloadHere() : Promise.resolve()),
+    [machineId, reloadHere],
+  );
+  const avatarSrc = useAgentAvatarSrc();
+  /** The Agent's own picture, from the list that names it; undefined draws the default. */
+  const picture = avatarSrc(agentId, machineId);
+  // A machine's list is what the header's picture is looked up in: read it as the page opens,
+  // once the machine can be asked (it is answered from the store when it answered moments ago).
+  useEffect(() => {
+    if (projectId === null || machineId === null || !reachable) return;
+    readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reachable]);
+  /** After the picture changed: the list it is looked up in is read again, here or on the machine. */
+  const avatarChanged = useCallback(async () => {
+    if (projectId === null) return;
+    if (machineId === null) {
+      await reloadHere();
+      return;
+    }
+    publishMachineAgentsChanged(machineId);
+    await readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reloadHere]);
+  /**
+   * Writes the tab, or the Plugins tab's sub-page, into `?tab=` (replacing the history entry,
+   * keeping the other params but the open plugin detail, which belongs to the page it was on).
+   */
+  const switchTab = useCallback(
+    (next: TabKey | PluginsSubPage) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set("tab", next);
+          p.delete(PLUGIN_PARAM);
+          return p;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
+  const [errorRead, setErrorRead] = useState<Scoped<ReactNode> | null>(null);
+  const error = scopedValue(errorRead, pageScope);
+
+  const load = useCallback(
+    (opts?: { keepStale?: boolean }) => {
+      const scope = scopeKey(projectId, agentId, machineId);
+      if (!projectId || !agentId || scope === null || !reachable) return;
+      // keepStale refreshes in place: dropping data would skeleton the page, unmount the tab
+      // tree and lose unsaved editor state. Identity changes and whole-state replacements
+      // (import / config reset) still clear, so no stale agent's config ever shows — and an
+      // answer is tagged with the Agent it was asked about, so a late one for the Agent just
+      // left is never read as this one's.
+      if (!opts?.keepStale) setDataRead(null);
+      setErrorRead(null);
+      api
+        .getAgentConfig(projectId, agentId, machineId)
+        .then((res) => setDataRead(scoped(scope, res)))
+        .catch((e: unknown) =>
+          setErrorRead(
+            scoped(scope, failureNode(e, { what: "an Agent's settings could not be loaded" })),
+          ),
+        );
+    },
+    [projectId, agentId, machineId, reachable],
+  );
+
+  useEffect(() => {
+    if (!switchedAway) load();
+  }, [load, switchedAway]);
+
+  /** Memory-tab config writes (switch, placeholder insert, prompt save): refresh the page's config copy without unmounting the tabs. */
+  const refreshConfig = useCallback(() => load({ keepStale: true }), [load]);
+
+  /** A replace from file landed (the dialog said so): it overwrote the entire Agent State, so every tab's data needs a refresh. */
+  const onImported = useCallback(() => load(), [load]);
+
+  /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
+  const onConfigReset = useCallback(() => {
+    toastSuccess(S.agent.resetConfigDone);
+    load();
+    void reloadAgents();
+  }, [load, reloadAgents]);
+
+  /**
+   * Kernel update succeeded: refresh in place (keepStale keeps the Overview mounted so its
+   * kept-fields report stays visible; the other tabs re-seed on their next mount) and reload
+   * the list for its outdated markers. The toast comes from the Overview tab, which holds
+   * the merge report.
+   */
+  const onKernelUpdated = useCallback(() => {
+    load({ keepStale: true });
+    void reloadAgents();
+  }, [load, reloadAgents]);
+
+  /**
+   * One config write from a tab. Resolves with the stored config, which the tab adopts as its
+   * new baseline; a refused write toasts why and resolves with null, leaving the tab's draft as
+   * it was — still dirty.
+   */
+  const save = useCallback(
+    async (update: AgentConfigUpdateRequest): Promise<AgentConfigResponse | null> => {
+      const scope = scopeKey(projectId, agentId, machineId);
+      if (!projectId || !agentId || scope === null) return null;
+      try {
+        const res = await api.putAgentConfig(projectId, agentId, update, machineId);
+        setDataRead(scoped(scope, res));
+        // Compaction is the one section core re-reads at every compaction checkpoint, so a save
+        // that changed nothing else lands on a running conversation right away; everything else
+        // still waits for that conversation's next context. The test is "only compaction", not
+        // "compaction among others" — a mixed save is only as immediate as its slowest field.
+        const changed = update.config ?? {};
+        const compactionOnly =
+          update.agentsMd === undefined &&
+          Object.keys(changed).length === 1 &&
+          changed.compaction !== undefined;
+        toastSuccess(compactionOnly ? S.agent.savedTakesEffectNow : S.agent.savedTakesEffect);
+        // Name/description changes affect the breadcrumb and list display, an author change
+        // moves the card to another group, and a builtin-tools change moves its tool count.
+        if (
+          update.config?.name !== undefined ||
+          update.config?.description !== undefined ||
+          update.config?.author !== undefined ||
+          update.config?.toolsBuiltin !== undefined
+        ) {
+          void reloadAgents();
+        }
+        return res;
+      } catch (e) {
+        toastApiError(e);
+        return null;
+      }
+    },
+    [projectId, agentId, machineId, reloadAgents],
+  );
+
+  // Switched away: nothing of the Agent renders, so no tab asks the new Project about it while
+  // the navigation above takes the page to the Agents list.
+  if (!projectId || switchedAway) return null;
+  // A machine that cannot be asked: say why, under the page's own header, rather than show a
+  // copy of the Agent that may no longer be what that machine holds.
+  if (link !== null && link !== "connected" && link !== "unknown") {
+    return (
+      <PageFrame width="sm">
+        <PageHeader
+          title={agentId}
+          back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
+          description={
+            <span className="block font-mono text-xs text-gray-400">
+              {agentId} {S.chat.machineTag(machineLabel ?? "")}
+            </span>
+          }
+        />
+        <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
+          {remoteAgentsEmpty(link, null)}
+        </p>
+      </PageFrame>
+    );
+  }
+  if (error && !data) {
+    return <p className="p-6 text-sm text-red-600 dark:text-red-400">{error}</p>;
+  }
+  if (!data) {
+    // The page's own frame around the wait, so the header and the tabs land where it stood.
+    return (
+      <PageFrame width="sm">
+        <Waiting form="page" />
+      </PageFrame>
+    );
+  }
+
+  return (
+    /* relative: a scroller is its own containing block (see the invariant in styles.css) —
+       this page's snapshot-import control used to grow the document from below the fold. */
+    <PageFrame width="sm" className="no-scrollbar relative">
+      <PageHeader
+        title={system ? S.agent.systemName : (data.config.name ?? agentId)}
+        media={<AgentAvatar id={agentId} size={AGENT_AVATAR_PREVIEW_PX} src={picture} />}
+        back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
+        // The id is data: mono on the small rung. A block keeps its line box at its own
+        // 16px rather than the description line's body height. A machine's Agent names the
+        // machine after it, the way a machine's Workspace group does.
+        description={
+          <span className="block font-mono text-xs text-gray-400">
+            {agentId}
+            {machineLabel !== null && ` ${S.chat.machineTag(machineLabel)}`}
+          </span>
+        }
+      />
+      {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
+          from the Agents list has to cross the tab strip to reach it. */}
+      <Tabs
+        items={tabs.map((t) =>
+          t.key === "overview" && data.config.kernelOutdated && !system
+            ? { ...t, badge: S.agent.kernelOutdatedHint }
+            : t,
+        )}
+        active={tab}
+        onChange={(next) => {
+          if (next !== tab) switchTab(next);
+        }}
+      />
+      <AgentLocationContext.Provider value={machineId}>
+        <div className="py-4">
+          {tab === "overview" && system && <SystemAgentOverview data={data} />}
+          {tab === "overview" && !system && (
+            <OverviewTab
+              data={data}
+              agentId={agentId}
+              picture={picture}
+              onAvatarChanged={avatarChanged}
+              onSave={save}
+              onImported={onImported}
+              onConfigReset={onConfigReset}
+              onKernelUpdated={onKernelUpdated}
+            />
+          )}
+          {tab === "prompt" && <PromptTab data={data} onSave={save} />}
+          {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
+          {tab === "runtime" && <RuntimeTab data={data} onSave={save} projectId={projectId} />}
+          {tab === "tools" && (
+            <div className="space-y-6">
+              <ToolsTab data={data} onSave={save} />
+              {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
+                builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
+              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+            </div>
+          )}
+          {tab === "plugins" && (
+            <PluginsTab
+              key={`${projectId}:${machineId ?? ""}:${agentId}`}
+              agentId={agentId}
+              system={system}
+              subPage={system && subPage === "hooks" ? "plugins" : subPage}
+              onSubPage={switchTab}
+              onConfigChanged={refreshConfig}
+            />
+          )}
+          {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
+          {tab === "schedules" && (
+            <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />
+          )}
+          {tab === "api" && (
+            <ApiTab
+              projectId={projectId}
+              agentId={agentId}
+              isOwner={currentProject?.role === "owner"}
+            />
+          )}
+        </div>
+      </AgentLocationContext.Provider>
+    </PageFrame>
+  );
+}
+
+/** The page's config write: the stored config on success, null once a refusal has been toasted. */
+type SaveFn = (update: AgentConfigUpdateRequest) => Promise<AgentConfigResponse | null>;
+
+/**
+ * A form tab's Save and Reset. Save is live only while the draft differs from the stored values
+ * and is valid; Reset puts the stored values back without asking, and is live only while there
+ * is something to put back.
+ */
+function SaveRow({
+  dirty,
+  valid,
+  busy,
+  onSave,
+  onReset,
+}: {
+  dirty: boolean;
+  valid: boolean;
+  busy: boolean;
+  onSave: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="primary" disabled={!dirty || !valid || busy} onClick={onSave}>
+        {S.common.save}
+      </Button>
+      <Button size="sm" disabled={!dirty || busy} onClick={onReset}>
+        {S.common.reset}
+      </Button>
+    </div>
+  );
+}
+
+/** Runs one tab save with its busy flag, adopting the stored answer when there is one. */
+async function saveWith(
+  setBusy: (busy: boolean) => void,
+  run: () => Promise<AgentConfigResponse | null>,
+  adopt: (res: AgentConfigResponse) => void,
+): Promise<void> {
+  setBusy(true);
+  try {
+    const res = await run();
+    if (res !== null) adopt(res);
+  } finally {
+    setBusy(false);
+  }
+}
+
+interface OverviewDraft {
+  name: string;
+  description: string;
+  author: AgentAuthor;
+}
+
+const overviewDraftOf = (config: AgentConfigDto): OverviewDraft => ({
+  name: config.name ?? "",
+  description: config.description ?? "",
+  // An older server reports no author; its Agents read as made by a person.
+  author: config.author ?? "user",
+});
+
+/** What Save sends: the two text fields trimmed. */
+const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
+  ...draft,
+  name: draft.name.trim(),
+  description: draft.description.trim(),
+});
+
+function OverviewTab({
+  data,
+  agentId,
+  picture,
+  onAvatarChanged,
+  onSave,
+  onImported,
+  onConfigReset,
+  onKernelUpdated,
+}: {
+  data: AgentConfigResponse;
+  agentId: string;
+  /** The Agent's own picture; undefined draws the default. */
+  picture: string | undefined;
+  /** The picture was written: the list it is looked up in is read again. */
+  onAvatarChanged: () => Promise<void>;
+  onSave: SaveFn;
+  onImported: () => void;
+  onConfigReset: () => void;
+  onKernelUpdated: () => void;
+}) {
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  const isOwner = currentProject?.role === "owner";
+  const machineId = useAgentLocation();
+  const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
+  const [saving, setSaving] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [kernelOpen, setKernelOpen] = useState(false);
+  const [kernelUpdating, setKernelUpdating] = useState(false);
+  /** Last kernel update's merge report (kept fields listed under the section until the next full reload). */
+  const [kernelResult, setKernelResult] = useState<AgentKernelUpdateResponse | null>(null);
+
+  const runReset = async () => {
+    if (!projectId) return;
+    setResetting(true);
+    try {
+      await api.resetAgentConfig(projectId, agentId, machineId);
+      setResetOpen(false);
+      onConfigReset();
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const runKernelUpdate = async () => {
+    if (!projectId) return;
+    setKernelUpdating(true);
+    try {
+      const res = await api.kernelUpdateAgentConfig(projectId, agentId, machineId);
+      setKernelOpen(false);
+      setKernelResult(res);
+      toastSuccess(S.agent.kernelUpdateDone(res.kernelVersion, res.advanced.length));
+      onKernelUpdated();
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setKernelUpdating(false);
+    }
+  };
+
+  /** Sends the trimmed fields that differ from the stored ones. */
+  const submit = () => {
+    const draft = trimOverview(form.draft);
+    const stored = trimOverview(form.baseline);
+    const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
+    if (draft.name !== stored.name) config.name = draft.name;
+    if (draft.description !== stored.description) config.description = draft.description;
+    if (draft.author !== stored.author) config.author = draft.author;
+    void saveWith(
+      setSaving,
+      () => onSave({ config }),
+      (res) => form.adopt(overviewDraftOf(res.config)),
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* The avatar is outside the draft below: it saves on crop confirm, and the Save row
+          answers only for the name and the description. */}
+      {projectId && (
+        <AgentAvatarField
+          projectId={projectId}
+          agentId={agentId}
+          machineId={machineId}
+          picture={picture}
+          onChanged={onAvatarChanged}
+        />
+      )}
+      <Input
+        size="sm"
+        label={S.common.name}
+        value={form.draft.name}
+        onChange={(e) => form.patch({ name: e.target.value })}
+      />
+      <Textarea
+        label={S.agent.description}
+        size="sm"
+        rows={3}
+        value={form.draft.description}
+        onChange={(e) => form.patch({ description: e.target.value })}
+      />
+      {/* A field of the overview form like the two above: Save writes it, Reset puts it back. */}
+      <Select
+        size="sm"
+        label={S.agent.authorLabel}
+        info={S.agent.authorInfo}
+        value={form.draft.author}
+        onChange={(e) => form.patch({ author: e.target.value as AgentAuthor })}
+      >
+        {AGENT_AUTHORS.map((author) => (
+          <option key={author} value={author}>
+            {S.agent.authors[author]}
+          </option>
+        ))}
+      </Select>
+      <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
+
+      <AgentStateSection data={data}>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" onClick={() => setExportOpen(true)}>
+            {S.agent.exportOpen}
+          </Button>
+          {isOwner && (
+            <Button size="sm" onClick={() => setReplaceOpen(true)}>
+              {S.agent.replaceOpen}
+            </Button>
+          )}
+        </div>
+      </AgentStateSection>
+
+      {/* Kernel section (same ruled family as Agent State — no lone card): the defaults
+          generation the config is based on, with its two maintenance actions in the title
+          row — update (smart merge, enabled only when outdated) and restore defaults
+          (destructive, danger tone). Both keep their confirm-first modals below. The value
+          line renders the generation dates dark and semibold with the connector words kept
+          light, mirroring the State rows' label/value contrast. */}
+      <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          {/* Last stop on the kernel trail: the dot sits on the update control itself, straddling
+              the top-right corner of the enabled button's border (the anchoring rule in
+              update-dot.tsx), not hung off the section title's text, whose flex item is only
+              as wide as its glyphs. The dot is decorative — the sr-only sentence folds what is
+              waiting into the button's accessible name, in the same wording the trail carried
+              all the way down. */}
+          <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              className="relative"
+              disabled={kernelUpdating || !data.config.kernelOutdated}
+              onClick={() => setKernelOpen(true)}
+            >
+              {S.agent.kernelUpdateAction}
+              {data.config.kernelOutdated && (
+                <>
+                  <UpdateDot
+                    size="inline"
+                    position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                  />
+                  <span className="sr-only"> · {S.agent.kernelOutdatedHint}</span>
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={resetting}
+              onClick={() => setResetOpen(true)}
+            >
+              {S.agent.resetConfigAction}
+            </Button>
+          </div>
+        </div>
+        <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-sm">
+          {data.config.kernelOutdated ? (
+            <>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {S.agent.kernelCurrent}
+              </span>
+              <span className="font-mono font-semibold">
+                {data.config.kernelVersion ?? S.agent.kernelLegacy}
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                · {S.agent.kernelLatest}
+              </span>
+              <span className="font-mono font-semibold">{data.config.kernelLatest}</span>
+              {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
+              <span
+                role="img"
+                data-tooltip={S.agent.kernelOutdatedHint}
+                aria-label={S.agent.kernelOutdatedHint}
+                className="self-center text-gray-500 dark:text-gray-400"
+              >
+                <GlyphIcon d={ICONS.rotateCw} size={12} />
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="font-mono font-semibold">{data.config.kernelVersion}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                · {S.agent.kernelUpToDate}
+              </span>
+            </>
+          )}
+        </p>
+        {/* Merge report: which fields the last update kept because customized (lightweight inline note). */}
+        {kernelResult !== null && kernelResult.kept.length > 0 && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {S.agent.kernelUpdateKeptIntro}
+            {kernelResult.kept.map(kernelTabLabel).join(S.agent.kernelListSeparator)}
+          </p>
+        )}
+      </section>
+
+      {projectId && exportOpen && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={agentId}
+          agentName={data.config.name || agentId}
+          machineId={machineId}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {projectId && replaceOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          replace={{ agentId, name: data.config.name || agentId }}
+          machineId={machineId}
+          onClose={() => setReplaceOpen(false)}
+          onImported={onImported}
+        />
+      )}
+
+      {/* Kernel update confirmation: lossless by design, but it still rewrites config fields —
+          confirm-first like the sibling reset, with the primary (overwrite) tone rather than
+          the reset's danger tone. */}
+      <ConfirmModal
+        open={kernelOpen}
+        title={S.agent.kernelUpdateTitle}
+        busy={kernelUpdating}
+        tone="primary"
+        onClose={() => setKernelOpen(false)}
+        onConfirm={() => void runKernelUpdate()}
+        confirmLabel={S.agent.kernelUpdateAction}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.agent.kernelUpdateConfirmBody}
+        </p>
+      </ConfirmModal>
+
+      {/* Reset confirmation: overwriting customizations with the defaults is destructive, so it keeps the danger tone. */}
+      <ConfirmModal
+        open={resetOpen}
+        title={S.agent.resetConfigTitle}
+        busy={resetting}
+        onClose={() => setResetOpen(false)}
+        onConfirm={() => void runReset()}
+        confirmLabel={S.agent.resetConfigAction}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
+      </ConfirmModal>
+    </div>
+  );
+}
+
+/** The props every form tab takes: the loaded config and the page's save. */
+interface FormTabProps {
+  data: AgentConfigResponse;
+  onSave: SaveFn;
+}
+
+interface PromptDraft {
+  agentsMd: string;
+  systemPrompt: string;
+}
+
+const promptDraftOf = (res: AgentConfigResponse): PromptDraft => ({
+  agentsMd: res.agentsMd,
+  systemPrompt: res.config.systemPrompt,
+});
+
+function PromptTab({ data, onSave }: FormTabProps) {
+  // Both editors compare exactly: whitespace is part of a prompt.
+  const form = useFormDraft(promptDraftOf(data));
+  const [saving, setSaving] = useState(false);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  const submit = () => {
+    const update: AgentConfigUpdateRequest = {};
+    if (form.draft.agentsMd !== form.baseline.agentsMd) update.agentsMd = form.draft.agentsMd;
+    if (form.draft.systemPrompt !== form.baseline.systemPrompt) {
+      update.config = { systemPrompt: form.draft.systemPrompt };
+    }
+    void saveWith(
+      setSaving,
+      () => onSave(update),
+      (res) => form.adopt(promptDraftOf(res)),
+    );
+  };
+
+  /**
+   * Quickly insert a placeholder at the system_prompt cursor position (appends to the
+   * end when unfocused). Prefers execCommand insertText — it writes to the browser's
+   * undo stack (undoable with Ctrl/⌘+Z) and fires an input event, which the
+   * controlled onChange syncs into the draft; falls back to directly editing the draft when
+   * unsupported (no undo).
+   */
+  const insertPlaceholder = (ph: string) => {
+    const el = promptRef.current;
+    if (el) {
+      el.focus();
+      // execCommand is deprecated but still the only available way to preserve the textarea's native undo stack.
+      const inserted = document.execCommand?.("insertText", false, ph);
+      if (inserted) return; // onChange will update the draft from e.target.value
+    }
+    const value = form.draft.systemPrompt;
+    const start = el ? el.selectionStart : value.length;
+    const end = el ? el.selectionEnd : value.length;
+    form.patch({ systemPrompt: value.slice(0, start) + ph + value.slice(end) });
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const caret = start + ph.length;
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Textarea
+        label={S.agent.agentsMd}
+        mono
+        size="sm"
+        rows={14}
+        value={form.draft.agentsMd}
+        onChange={(e) => form.patch({ agentsMd: e.target.value })}
+      />
+      <Textarea
+        ref={promptRef}
+        label={S.agent.systemPrompt}
+        mono
+        size="sm"
+        rows={12}
+        value={form.draft.systemPrompt}
+        onChange={(e) => form.patch({ systemPrompt: e.target.value })}
+      />
+      <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+        <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
+        <ul className="space-y-1">
+          {S.agent.placeholders.map(([ph, desc]) => (
+            <li key={ph} className="flex items-center gap-3 text-xs">
+              <button
+                type="button"
+                onClick={() => insertPlaceholder(ph)}
+                data-tooltip={S.agent.insertPlaceholder}
+                className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
+              >
+                {ph}
+              </button>
+              <span className="text-gray-500 dark:text-gray-400">{desc}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
+    </div>
+  );
+}
+
+/** The bar that titles each section of the Runtime tab's card. */
+const runtimeSectionHeadClass =
+  "border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900";
+
+function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: string }) {
+  const machineId = useAgentLocation();
+  const [projectThinking, setProjectThinking] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setProjectThinking(null);
+    void api.getChatDefaults(projectId, machineId).then(
+      (res) => {
+        if (!cancelled) setProjectThinking(effectiveThinkingLevel("", res.thinkingLevel));
+      },
+      (error: unknown) => {
+        if (!cancelled) toastApiError(error);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, machineId]);
+  const cfg = data.config;
+  // A server that predates the tool rounds and the two texts reports none of them (a machine on
+  // an older server): their fields stay off rather than offering an edit it would drop.
+  const reported = {
+    maxRounds: cfg.compaction?.maxRounds !== undefined,
+    reminder: cfg.compaction?.reminder !== undefined,
+    handoffNote: cfg.compaction?.handoffNote !== undefined,
+  };
+  // The six numbers, the two menus and the three texts are one form: the menus sit inside it,
+  // so they save with it (a menu that stood alone in its row would write at once instead).
+  const form = useFormDraft(runtimeDraftOf(cfg), { normalize: normalizeRuntime });
+  const errors = runtimeErrors(form.draft, form.baseline);
+  const [saving, setSaving] = useState(false);
+
+  /** A number box's inline error, judged only once it differs from the stored value. */
+  const errorOf = (field: RuntimeNumberField): string | undefined => {
+    const error = errors?.[field];
+    if (error === "invalid") {
+      return field === "maxRounds" ? S.agent.maxRoundsInvalid : S.agent.numberInvalid;
+    }
+    if (error === "cannotClear") return S.agent.numberCannotClear;
+    return undefined;
+  };
+  const setNumber = (field: RuntimeNumberField, value: string) =>
+    form.patch({ [field]: value } as Partial<RuntimeDraft>);
+
+  /** Sends the keys that differ from the stored config, and nothing else. */
+  const submit = () => {
+    if (errors !== null) return;
+    const config = runtimeUpdateOf(form.draft, form.baseline);
+    void saveWith(
+      setSaving,
+      () => onSave({ config }),
+      (res) => form.adopt(runtimeDraftOf(res.config)),
+    );
+  };
+
+  const thinkingLevel = form.draft.thinkingLevel || projectThinking;
+  const compactionModeOptions = S.agent.compactionModeOptions.map(([value, description]) => ({
+    value,
+    triggerLabel: S.agent.compactionModeNames[value] ?? value,
+    label: S.agent.compactionModeNames[value] ?? value,
+    description,
+  }));
+
+  return (
+    <div className="space-y-4">
+      <Card padding="none">
+        <div className="p-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Input
+              label={S.agent.maxTurns}
+              hint={S.agent.maxTurnsHint}
+              size="sm"
+              value={form.draft.maxTurns}
+              error={errorOf("maxTurns")}
+              onChange={(e) => setNumber("maxTurns", e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+            <Input
+              label={S.agent.maxTokens}
+              size="sm"
+              value={form.draft.maxTokens}
+              error={errorOf("maxTokens")}
+              onChange={(e) => setNumber("maxTokens", e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+            <div className="min-w-0">
+              <FieldLabel>{S.chat.thinkingLevel}</FieldLabel>
+              <ThinkingLevelSelect
+                variant="form"
+                value={thinkingLevel}
+                onChange={(thinkingLevel) => form.patch({ thinkingLevel })}
+                disabled={saving}
+                {...(cfg.model?.thinkingLevel !== undefined
+                  ? { storedLevel: cfg.model.thinkingLevel }
+                  : {})}
+              />
+            </div>
+            <Input
+              label={S.agent.timeoutMs}
+              info={S.agent.timeoutMsHint}
+              infoLabel={S.agent.timeoutMs}
+              size="sm"
+              value={form.draft.timeoutMs}
+              error={errorOf("timeoutMs")}
+              onChange={(e) => setNumber("timeoutMs", e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+          </div>
+        </div>
+
+        <div className={runtimeSectionHeadClass}>{S.agent.compaction}</div>
+        <div className="p-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Input
+              label={S.agent.maxContextLength}
+              info={S.agent.maxContextLengthHint}
+              infoLabel={S.agent.maxContextLength}
+              size="sm"
+              value={form.draft.maxContextLength}
+              error={errorOf("maxContextLength")}
+              onChange={(e) => setNumber("maxContextLength", e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+            <Input
+              label={S.agent.maxSessionTurns}
+              info={S.agent.maxSessionTurnsHint}
+              infoLabel={S.agent.maxSessionTurns}
+              size="sm"
+              value={form.draft.maxSessionTurns}
+              error={errorOf("maxSessionTurns")}
+              onChange={(e) => setNumber("maxSessionTurns", e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+            <OptionMenu
+              label={S.agent.compactionMode}
+              fullWidth
+              size="sm"
+              placeholder={S.agent.defaultValue}
+              value={form.draft.mode || "summarize"}
+              onChange={(mode) => form.patch({ mode })}
+              options={compactionModeOptions}
+            />
+            {reported.maxRounds && (
+              <Input
+                label={S.agent.maxRounds}
+                info={S.agent.maxRoundsInfo}
+                infoLabel={S.agent.maxRounds}
+                hint={S.agent.maxRoundsHint}
+                size="sm"
+                value={form.draft.maxRounds}
+                error={errorOf("maxRounds")}
+                onChange={(e) => setNumber("maxRounds", e.target.value)}
+                inputMode="numeric"
+                className="font-mono"
+              />
+            )}
+          </div>
+        </div>
+
+        <div className={runtimeSectionHeadClass}>{S.agent.compactionPrompt}</div>
+        <div className="p-3">
+          <Textarea
+            aria-label={S.agent.compactionPrompt}
+            mono
+            size="sm"
+            rows={4}
+            value={form.draft.prompt}
+            onChange={(e) => form.patch({ prompt: e.target.value })}
+          />
+        </div>
+
+        {reported.reminder && (
+          <>
+            <div className={`flex items-center gap-1.5 ${runtimeSectionHeadClass}`}>
+              {S.agent.compactionReminder}
+              <InfoPopover label={S.agent.compactionReminder}>
+                {S.agent.compactionReminderInfo}
+              </InfoPopover>
+            </div>
+            <div className="p-3">
+              <Textarea
+                aria-label={S.agent.compactionReminder}
+                hint={S.agent.compactionReminderHint}
+                mono
+                size="sm"
+                rows={2}
+                value={form.draft.reminder}
+                onChange={(e) => form.patch({ reminder: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+
+        {reported.handoffNote && (
+          <>
+            <div className={`flex items-center gap-1.5 ${runtimeSectionHeadClass}`}>
+              {S.agent.compactionHandoffNote}
+              <InfoPopover label={S.agent.compactionHandoffNote}>
+                {S.agent.compactionHandoffNoteInfo}
+              </InfoPopover>
+            </div>
+            <div className="p-3">
+              <Textarea
+                aria-label={S.agent.compactionHandoffNote}
+                hint={S.agent.compactionHandoffNoteHint}
+                mono
+                size="sm"
+                rows={4}
+                value={form.draft.handoffNote}
+                onChange={(e) => form.patch({ handoffNote: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+      </Card>
+
+      <SaveRow
+        dirty={form.dirty}
+        valid={errors === null}
+        busy={saving}
+        onSave={submit}
+        onReset={form.reset}
+      />
+    </div>
+  );
+}
+
+function ToolsTab({ data, onSave }: FormTabProps) {
+  // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
+  const permissionOptions: ReadonlyArray<OptionMenuChoice<ToolPermission>> = [
+    {
+      value: "r",
+      triggerLabel: S.agent.permissionReadLabel,
+      label: S.agent.permissionReadLabel,
+      description: S.agent.permissionReadDescription,
+    },
+    {
+      value: "rw",
+      triggerLabel: S.agent.permissionReadWriteLabel,
+      label: S.agent.permissionReadWriteLabel,
+      description: S.agent.permissionReadWriteDescription,
+    },
+  ];
+  const stored = data.config.toolsBuiltin;
+  // The permission menus and the two number columns are the table's draft (see tools-form.ts);
+  // the call_description switches are not — each writes at once, alone.
+  const form = useFormDraft(toolsDraftOf(stored), { normalize: normalizeTools });
+  const errors = toolsErrors(form.draft, form.baseline);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  /** A call_description write in flight: the row it flips and the value it shows meanwhile. */
+  const [flip, setFlip] = useState<{ name: string; on: boolean } | null>(null);
+  // One write at a time: a flip and a table Save both PUT the whole table, so one landing
+  // after the other must not carry the other's stale copy.
+  const writing = saving || flip !== null || removing;
+
+  const setRow = (name: string, patch: Partial<ToolRowDraft>) =>
+    form.setDraft((rows) => rows.map((r) => (r.name === name ? { ...r, ...patch } : r)));
+
+  /**
+   * The switch: the stored table with this one row flipped, written at once. The table's draft
+   * beside it stays as typed; a refused write toasts (the page's save) and the switch shows the
+   * stored value again.
+   */
+  const flipCallDescription = async (name: string, on: boolean) => {
+    if (writing) return;
+    setFlip({ name, on });
+    try {
+      await onSave({ config: { toolsBuiltin: withCallDescription(stored, name, on) } });
+    } finally {
+      setFlip(null);
+    }
+  };
+
+  /** The whole table: the draft laid over the stored rows (a blank cell drops its override). */
+  const submit = () => {
+    if (errors !== null || writing) return;
+    void saveWith(
+      setSaving,
+      () => onSave({ config: { toolsBuiltin: toolsUpdateOf(stored, form.draft) } }),
+      (res) => form.adopt(toolsDraftOf(res.config.toolsBuiltin)),
+    );
+  };
+
+  const removeTool = async () => {
+    if (deleting === null || writing) return;
+    const name = deleting;
+    const remainingDraft = form.draft.filter((row) => row.name !== name);
+    setRemoving(true);
+    try {
+      const result = await onSave({
+        config: { toolsBuiltin: stored.filter((tool) => tool.name !== name) },
+      });
+      if (result !== null) {
+        form.adopt(toolsDraftOf(result.config.toolsBuiltin));
+        form.setDraft(remainingDraft);
+        setDeleting(null);
+      }
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const cellError = (row: ToolRowDraft, field: ToolNumberField): string | undefined =>
+    errors?.has(`${row.name}/${field}`) === true
+      ? S.agent.toolFieldInvalid(
+          row.name,
+          field === "timeoutMs" ? S.agent.toolTimeout : S.agent.toolMaxOutput,
+        )
+      : undefined;
+
+  return (
+    <div className="space-y-4">
+      <Table tableClassName="min-w-[640px]">
+        <TableHead>
+          <TableHeaderCell>{S.common.name}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolPermission}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolTimeout}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolMaxOutput}</TableHeaderCell>
+          <TableHeaderCell>
+            <span className="flex items-center gap-1.5">
+              {S.agent.toolCallDescription}
+              <InfoPopover label={S.agent.toolCallDescription}>
+                {S.agent.callDescriptionHint}
+              </InfoPopover>
+            </span>
+          </TableHeaderCell>
+          <TableHeaderCell>
+            <span className="sr-only">{S.common.actions}</span>
+          </TableHeaderCell>
+        </TableHead>
+        <TableBody>
+          {form.draft.map((row) => {
+            const tool = stored.find((t) => t.name === row.name);
+            return (
+              <TableRow key={row.name}>
+                <TableCell className="align-top font-mono text-xs">{row.name}</TableCell>
+                <TableCell className="align-top">
+                  <OptionMenu
+                    size="sm"
+                    aria-label={`${row.name} ${S.agent.toolPermission}`}
+                    placeholder={S.agent.defaultValue}
+                    options={permissionOptions}
+                    disabled={writing}
+                    value={row.permission ?? "rw"}
+                    onChange={(permission) => setRow(row.name, { permission })}
+                  />
+                </TableCell>
+                <TableCell className="align-top">
+                  <Input
+                    size="sm"
+                    disabled={writing}
+                    aria-label={`${row.name} ${S.agent.toolTimeout}`}
+                    value={row.timeoutMs}
+                    error={cellError(row, "timeoutMs")}
+                    inputMode="numeric"
+                    className="font-mono"
+                    onChange={(e) => setRow(row.name, { timeoutMs: e.target.value })}
+                  />
+                </TableCell>
+                <TableCell className="align-top">
+                  <Input
+                    size="sm"
+                    disabled={writing}
+                    aria-label={`${row.name} ${S.agent.toolMaxOutput}`}
+                    value={row.maxOutputLength}
+                    error={cellError(row, "maxOutputLength")}
+                    inputMode="numeric"
+                    className="font-mono"
+                    onChange={(e) => setRow(row.name, { maxOutputLength: e.target.value })}
+                  />
+                </TableCell>
+                <TableCell className="align-top">
+                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                      config schema actually declares the description argument. */}
+                  {tool !== undefined && hasDescriptionProperty(tool) ? (
+                    <Switch
+                      checked={flip?.name === row.name ? flip.on : tool.call_description !== false}
+                      disabled={writing}
+                      onChange={(on) => void flipCallDescription(row.name, on)}
+                      aria-label={`${row.name} ${S.agent.toolCallDescription}`}
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="align-top">
+                  <button
+                    type="button"
+                    aria-label={S.agent.deleteToolNamed(row.name)}
+                    data-tooltip={S.agent.deleteToolNamed(row.name)}
+                    disabled={writing}
+                    onClick={() => setDeleting(row.name)}
+                    className="inline-flex size-7 items-center justify-center text-fg-subtle hover:text-tone-danger-fg disabled:opacity-50"
+                  >
+                    <GlyphIcon d={ICONS.trash} size={ICON_SIZE.rowLead} />
+                  </button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+
+      <ConfirmModal
+        open={deleting !== null}
+        title={S.agent.deleteTool}
+        onClose={() => {
+          if (!removing) setDeleting(null);
+        }}
+        onConfirm={() => void removeTool()}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
+        busy={removing}
+      >
+        <p className="text-sm text-fg-muted">
+          {deleting !== null ? S.agent.deleteToolBody(deleting) : ""}
+        </p>
+      </ConfirmModal>
+      <SaveRow
+        dirty={form.dirty}
+        valid={errors === null}
+        busy={writing}
+        onSave={submit}
+        onReset={form.reset}
+      />
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 /**
  * An Agent's card opens the Agent's settings page, a full page of its own
- * (features/agents/agents-page.tsx `AgentCard` and `AgentNameLink`, on the rule in
+ * (the agents feature's agents-page.tsx `AgentCard` and `AgentNameLink`, on the rule in
  * lib/card-open.ts).
  *
  * - A click anywhere on the card's body opens the Agent's settings page.
@@ -25,7 +25,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { Button } from "@prismshadow/penguin-ui";
-import { AgentCard, AgentNameLink } from "../src/features/agents/agents-page";
+import {
+  AgentCard,
+  AgentNameLink,
+} from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import { S } from "../src/lib/strings";
 import { clickOn, fakeElement } from "./helpers/fake-dom";
 

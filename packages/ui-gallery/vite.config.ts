@@ -27,12 +27,14 @@
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { STATIC_BOOT_SCRIPT } from "../ui/src/boot";
 import { penguinUi } from "../ui/src/vite-plugin";
-import { dropNonWoff2FontSources } from "../web/vite.config";
+import { dropNonWoff2FontSources, libraryWebAliases } from "../web/vite.config";
 import { storageSeedScript } from "./src/app/frame";
 import { workbenchAssets } from "./src/app/mock/workbench-assets";
 import { mockWebNetwork } from "./src/app/mock/vite-plugin";
@@ -41,7 +43,15 @@ import { deepPagePaths } from "./src/lib/page-paths";
 const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 function watchPackageSources(): Plugin {
-  const roots = [at("../ui/src/"), at("../web/src/")];
+  // The app's sources include the library domains' web halves (the alias table compiles them
+  // in), so a new file there invalidates the sheets too.
+  const libraries = path.resolve(at("../../"), "library");
+  const libraryWebRoots = fs
+    .readdirSync(libraries, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(libraries, entry.name, "src", "web"))
+    .filter((web) => fs.existsSync(web));
+  const roots = [at("../ui/src/"), at("../web/src/"), ...libraryWebRoots];
   const stylesheets = [
     at("./src/styles.css"),
     at("./src/app/app.css"),
@@ -137,6 +147,7 @@ export default defineConfig({
     watchPackageSources(),
   ],
   resolve: {
+    alias: libraryWebAliases,
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in

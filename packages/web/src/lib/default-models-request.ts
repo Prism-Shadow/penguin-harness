@@ -1,7 +1,7 @@
 /**
  * Opening the Project's Default model settings dialog: the Models page's header, the composer's
  * reminder, a connect flow that leaves a Project with keys but no default — anything outside the layer that
- * owns the dialog (features/models/default-models-layer.tsx, mounted once beside every page).
+ * owns the dialog (the models feature's default-models-layer.tsx, mounted once beside every page).
  *
  * A request made before the layer has mounted is kept and delivered the moment it subscribes, as
  * a Settings request is (settings-request.ts).

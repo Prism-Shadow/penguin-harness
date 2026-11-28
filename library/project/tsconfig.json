@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "paths": {
       "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
       "@prismshadow/penguin-library-agent-api/agent-api-repo": [
@@ -60,5 +61,6 @@
       "@prismshadow/penguin-library-workbench/workbench": ["../workbench/src/workbench.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

@@ -63,7 +63,12 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 
-import { AgentSelect } from "../../agents";
+import {
+  AgentSelect,
+  effectiveThinkingLevel,
+  defaultChatModel,
+  sameModelRef,
+} from "@prismshadow/penguin-web/internal";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";
@@ -110,11 +115,9 @@ import {
 import { newChatAgentId } from "../new-chat";
 import { requestedApproval, shownApproval, useTargetDefaults } from "../draft-permission";
 import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
-import { effectiveThinkingLevel } from "../../model-picker";
 import { useAgentSkills } from "../use-agent-skills";
 import { WorkspaceSelect } from "../../workspace";
 import { FilesPanelToggle } from "../dock-toggles";
-import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { requestDefaultModels } from "../../../lib/default-models-request";
 

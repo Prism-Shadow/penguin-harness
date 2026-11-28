@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * An Agent's own avatar in the Web App: changed in the Overview tab of its settings page, in a
- * field above the name, with the profile row's controls (features/agents/agent-avatar-field.tsx
+ * field above the name, with the profile row's controls (the agents feature's agent-avatar-field.tsx
  * over the shared components/ui/avatar-picker.tsx), and drawn wherever the Agent is, looked up
  * once (lib/agent-avatar.ts) — with an organization's own picture of its employee first on
  * company surfaces (features/company/employee-avatar.tsx).
@@ -32,8 +32,8 @@ import type {
   OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
 import { hasUnsaved, toastStore } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { AgentSelect } from "../src/features/agents/agent-select";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
+import { AgentSelect } from "@prismshadow/penguin-library-agent/web/agents/agent-select";
 import { EmployeeAvatar } from "../src/features/company/employee-avatar";
 import { CompanyContext, type CompanyContextValue } from "../src/lib/company-context";
 import { setActiveStrings, zh } from "../src/lib/strings";

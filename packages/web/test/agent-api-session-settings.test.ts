@@ -21,7 +21,7 @@ import type {
   AgentConfigResponse,
   ChatDefaultsDto,
 } from "@prismshadow/penguin-server/api";
-import { ApiTab } from "../src/features/agents/api-tab";
+import { ApiTab } from "@prismshadow/penguin-library-agent/web/agents/api-tab";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AGENT_ID, PROJECT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The Skill, hook, workbench and Benchmark import dialogs under the settings commit model: the
- * Agent settings Plugins tab's Import skill (features/agents/agent-skills.tsx), Import hook
- * (features/agents/agent-hooks.tsx) and Import workbench (features/agents/agent-workbenches.tsx),
+ * Agent settings Plugins tab's Import skill (the agents feature's agent-skills.tsx), Import hook
+ * (the agents feature's agent-hooks.tsx) and Import workbench (the agents feature's agent-workbenches.tsx),
  * each opened from its sub-page's Import button, and the Evaluation Center's Import benchmark
  * (features/benchmark/benchmark-import-modal.tsx). In each, what the source field holds is the
  * dialog's draft; every scenario runs on all four.
@@ -24,8 +24,8 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
-import { PluginsTab } from "../src/features/agents/plugins-tab";
-import type { PluginsSubPage } from "../src/features/agents/plugins-subpages";
+import { PluginsTab } from "@prismshadow/penguin-library-agent/web/agents/plugins-tab";
+import type { PluginsSubPage } from "@prismshadow/penguin-library-agent/web/agents/plugins-subpages";
 import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
 import {
   AGENT_ID,

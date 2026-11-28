@@ -8,6 +8,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
+import { libraryWebAliases } from "./vite.config";
 
 /**
  * A path in vite's spelling: forward slashes on every OS. vite hands `resolveId` its importers
@@ -48,6 +49,9 @@ const socketStandInPlugin: Plugin = {
 };
 
 export default defineConfig({
+  // The library web halves' faces resolve to their TypeScript source, like the app build's
+  // (vite.config.ts, which owns the table; keep the two in step through that export).
+  resolve: { alias: libraryWebAliases },
   plugins: [socketStandInPlugin],
   test: {
     environment: "node",
@@ -58,7 +62,14 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "src/features/*/test/**/*.test.ts"],
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,
-    // `vitest run --coverage`: branch and line coverage of the app's own source.
-    coverage: { provider: "v8", include: ["src/**"] },
+    // `vitest run --coverage`: branch and line coverage of the app's own source, including the
+    // library web halves it compiles in (their moved feature code stays reported). The halves
+    // sit outside this package's root, and the coverage provider drops out-of-root files before
+    // include patterns apply, so the patterns alone would never match them; admit them here.
+    coverage: {
+      provider: "v8",
+      include: ["src/**", "../../library/*/src/web/**"],
+      allowExternal: true,
+    },
   },
 });

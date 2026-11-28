@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Agent export and import dialogs (features/agents/agent-export-dialog.tsx and
+ * The Agent export and import dialogs (the agents feature's agent-export-dialog.tsx and
  * agent-import-dialog.tsx), opened where a user opens them.
  *
  * - Export, from a card: the parts and conversations chosen are the query of one download,
@@ -22,8 +22,8 @@ import { createElement as h } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { AgentsPage } from "../src/features/agents/agents-page";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

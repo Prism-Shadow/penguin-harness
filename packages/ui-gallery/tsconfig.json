@@ -6,7 +6,17 @@
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
     "paths": {
-      "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"]
+      "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"],
+      "@prismshadow/penguin-web/internal": ["../web/src/internal.ts"],
+      "@prismshadow/penguin-web/internal-hub": ["../web/src/internal-hub.ts"],
+      "@prismshadow/penguin-library-agent/web": ["../../library/agent/src/web/index.ts"],
+      "@prismshadow/penguin-library-agent/web/*": ["../../library/agent/src/web/*"],
+      "@prismshadow/penguin-library-model/web": ["../../library/model/src/web/index.ts"],
+      "@prismshadow/penguin-library-model/web/*": ["../../library/model/src/web/*"],
+      "@prismshadow/penguin-library-project/web": ["../../library/project/src/web/index.ts"],
+      "@prismshadow/penguin-library-project/web/*": ["../../library/project/src/web/*"],
+      "@prismshadow/penguin-library-trace/web": ["../../library/trace/src/web/index.ts"],
+      "@prismshadow/penguin-library-trace/web/*": ["../../library/trace/src/web/*"]
     }
   },
   "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]

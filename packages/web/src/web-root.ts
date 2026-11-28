@@ -1,4 +1,3 @@
-import { MainSidebarBadgesModule } from "./features/models/main-sidebar-badges.module";
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
@@ -35,9 +34,9 @@ import { SidebarModule } from "./web-app/sidebar/module";
 import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";
-import { AgentsModule } from "./features/agents/module";
+import { AgentsModule } from "@prismshadow/penguin-library-agent/web";
+import { ModelsModule, MainSidebarBadgesModule } from "@prismshadow/penguin-library-model/web";
 import { AppCenterModule } from "./features/app-center/module";
-import { ModelsModule } from "./features/models/module";
 import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "./features/machines/module";
 import { UsageModule } from "./features/usage/module";
@@ -48,11 +47,11 @@ import { CompanyModule } from "./features/company/module";
 import { SettingsModule } from "./features/settings/module";
 import { SchedulesModule } from "./features/schedules/module";
 import { SessionListModule } from "./features/session-list/module";
-import { ProjectsModule } from "./features/projects/module";
+import { ProjectsModule } from "@prismshadow/penguin-library-project/web";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "./features/workspace/module";
-import { TracesModule } from "./features/traces/module";
+import { TracesModule } from "@prismshadow/penguin-library-trace/web";
 import { AudioModule } from "./features/audio/module";
 
 @Module({

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Vault tab's Add dialog (features/agents/vault-add-dialog.tsx) as one record form under
+ * The Vault tab's Add dialog (the agents feature's vault-add-dialog.tsx) as one record form under
  * the settings commit model.
  *
  * - Add waits for a key that keeps the naming rule and a value; a broken key is named as it is
@@ -19,7 +19,7 @@ import { act, createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { VaultTab } from "../src/features/agents/vault-tab";
+import { VaultTab } from "@prismshadow/penguin-library-agent/web/agents/vault-tab";
 import {
   AGENT_ID,
   agentServer,

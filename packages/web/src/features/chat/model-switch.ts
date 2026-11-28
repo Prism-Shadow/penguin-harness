@@ -22,10 +22,13 @@ import type {
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import { modelCalledKeyless } from "@prismshadow/penguin-server/model-catalog";
-import { groupShape } from "../models/connection";
-import { hasConfiguredKey, sameModelRef } from "../models";
-import { trailingCompaction, type ThinkingSwitchItem } from "../model-picker";
-
+import {
+  groupShape,
+  hasConfiguredKey,
+  sameModelRef,
+  trailingCompaction,
+  type ThinkingSwitchItem,
+} from "@prismshadow/penguin-web/internal";
 /**
  * Whether the picker is disabled: a switch compacts, and the server neither starts nor queues a
  * compaction while a Task runs or another compaction is under way.

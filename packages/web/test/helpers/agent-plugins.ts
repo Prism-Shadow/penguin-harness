@@ -16,7 +16,7 @@ import type {
   WorkbenchInfo,
 } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { en } from "../../src/lib/strings-en";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp } from "./agent-app";
 import { waitFor } from "./dom";

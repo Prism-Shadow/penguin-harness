@@ -1,5 +1,5 @@
 /**
- * The API tab's Try it (features/agents/api-try-log.ts, api-try-transport.ts and
+ * The API tab's Try it (the agents feature's api-try-log.ts, api-try-transport.ts and
  * api-try-panel.tsx): a run sent through the try route and read by the SDK's client as the
  * records a program receives. The driver runs against the package's fetch fake, which serves SSE
  * bodies — whole, or held open and fed as the server would; the view renders to static markup and
@@ -46,9 +46,12 @@ import {
   type TryAction,
   type TryRow,
   type TryState,
-} from "../src/features/agents/api-try-log";
+} from "@prismshadow/penguin-library-agent/web/agents/api-try-log";
 
-import { ApiTryView, type ApiTryViewProps } from "../src/features/agents/api-try-panel";
+import {
+  ApiTryView,
+  type ApiTryViewProps,
+} from "@prismshadow/penguin-library-agent/web/agents/api-try-panel";
 
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";

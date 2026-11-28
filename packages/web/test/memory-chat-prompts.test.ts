@@ -10,7 +10,7 @@ import { en } from "../src/lib/strings-en";
 import {
   buildMemoryAddPrompt,
   buildMemoryEditPrompt,
-} from "../src/features/agents/memory-chat-prompts";
+} from "@prismshadow/penguin-library-agent/web/agents/memory-chat-prompts";
 
 afterEach(() => setActiveStrings(zh));
 

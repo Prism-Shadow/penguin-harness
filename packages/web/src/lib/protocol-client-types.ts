@@ -4,7 +4,7 @@
  * MMSP is selected manually.
  *
  * The list sits in lib/ because both dictionaries name every entry (`models.protocolNames`); the
- * models feature re-exports it with the helpers around it (features/models/protocol-types.ts).
+ * models feature re-exports it with the helpers around it (protocol-types.ts).
  */
 export const PROTOCOL_CLIENT_TYPES = [
   "openai-responses",

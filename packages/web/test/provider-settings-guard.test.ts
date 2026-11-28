@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A group's settings dialog (features/models/provider-settings-dialog.tsx) under the settings
+ * A group's settings dialog (the models feature's provider-settings-dialog.tsx) under the settings
  * commit model, driven the way a user drives it. (provider-settings.test.ts holds what a save
  * sends and what the dialog shows; this file is about when it may save and how it is left.)
  *
@@ -18,7 +18,7 @@ import type { ModelsResponse, ProviderConnectionDto } from "@prismshadow/penguin
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { ProviderSettingsDialog } from "../src/features/models/provider-settings-dialog";
+import { ProviderSettingsDialog } from "@prismshadow/penguin-library-model/web/models/provider-settings-dialog";
 import { userProviderInfo } from "../src/lib/model-grouping";
 import { json, stubFetch } from "./helpers/fetch";
 import {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Switching tabs on the Agent settings page (features/agents/agent-settings-page.tsx): one rule
+ * Switching tabs on the Agent settings page (the agents feature's agent-settings-page.tsx): one rule
  * for every tab, and no placeholder for data the page already has.
  *
  * - Given the page holds the Agent's config, the tabs drawn from it — Overview, System Prompt,
@@ -16,7 +16,7 @@ import { createElement as h } from "react";
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { AGENT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, field, hasButton, unmountAll, waitFor } from "./helpers/dom";
 

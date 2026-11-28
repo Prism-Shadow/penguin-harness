@@ -396,7 +396,7 @@ interface SessionsStoreState {
    * machineId → the Agents THAT machine runs, which are not this Project's.
    *
    * An Agent is per server: a machine has its own set, and the Agents page offers a new chat
-   * on one of them (features/agents/agents-page.tsx). The Session that follows belongs to an
+   * on one of them (the agents feature's agents-page.tsx). The Session that follows belongs to an
    * Agent this server has never heard of, so a list built from this server's Agent ids alone
    * would ask the machine the wrong question and drop the row on the next reload — and with
    * it the record of which machine holds that Session, which is what a deep link needs to

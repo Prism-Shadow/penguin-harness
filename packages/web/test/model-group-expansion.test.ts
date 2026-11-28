@@ -9,7 +9,7 @@ import {
   saveExpandedProviders,
   toggleExpandedProvider,
   type ExpansionStorage,
-} from "../src/features/models/model-group-expansion";
+} from "@prismshadow/penguin-library-model/web/models/model-group-expansion";
 
 import { groupModelRows, type ModelRowLike } from "../src/lib/model-grouping";
 

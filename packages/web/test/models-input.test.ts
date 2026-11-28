@@ -54,13 +54,13 @@ import {
   rowRef,
   toRow,
   type RowState,
-} from "../src/features/models/models-page";
+} from "@prismshadow/penguin-library-model/web/models/models-page";
 
 import {
   DetailsFold,
   foldedErrors,
   foldedSlots,
-} from "../src/features/models/model-dialog-details";
+} from "@prismshadow/penguin-library-model/web/models/model-dialog-details";
 import { S } from "../src/lib/strings";
 
 /** A saved model as GET /models sends it; the effective connection is irrelevant to these rules. */

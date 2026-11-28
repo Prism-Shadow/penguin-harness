@@ -1,5 +1,5 @@
 /**
- * Which rounds the Trace panel draws and reads (features/traces/trace-rounds.ts). A long
+ * Which rounds the Trace panel draws and reads (library/trace/src/web/traces/trace-rounds.ts). A long
  * Session's file is thousands of rounds and tens of megabytes; the panel stays fast only while
  * what it draws and what it reads are bounded by what the reader opened.
  *
@@ -27,7 +27,7 @@ import {
   staleRounds,
   visibleRounds,
   type RoundRange,
-} from "../src/features/traces/trace-rounds";
+} from "@prismshadow/penguin-library-trace/web/traces/trace-rounds";
 
 /** One synthetic event, identified by its index in the file so a read's slice can be checked exactly. */
 const event = (i: number): AmspRecord => ({

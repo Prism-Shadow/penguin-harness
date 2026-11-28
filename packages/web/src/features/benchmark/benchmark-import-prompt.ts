@@ -11,7 +11,7 @@ import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { composeAiPrompt, pickDefaultAgent, type AiChatRequest } from "../ai-create";
 
-import { classifyImportSource } from "../agents";
+import { classifyImportSource } from "@prismshadow/penguin-web/internal";
 
 /** What the pasted source is, as far as the prompt's lead sentence cares. */
 export type BenchmarkSourceKind = "repoFolderUrl" | "localPath" | "reference";

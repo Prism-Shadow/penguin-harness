@@ -47,9 +47,8 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
-import { ModelCatalogSelect } from "../model-picker";
+import { ModelCatalogSelect, sameModelRef } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "../workspace";
-import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
 import { failureNode } from "../../lib/failure";
 

@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-trace",
   "version": "0.2.20",
-  "description": "The traces domain: the TraceIndexStore mechanism and its reading interfaces, and the trace-index repo. A library package - the server imports it; nothing here imports the server.",
+  "description": "The traces domain: the TraceIndexStore mechanism and its reading interfaces, and the trace-index repo. A library package - the server imports it; nothing here imports the server. Its web half (./web, the trace panel and its dock panel) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -20,6 +20,17 @@
   "main": "./dist/index.js",
   "exports": {
     "./package.json": "./package.json",
+    "./web": "./src/web/index.ts",
+    "./web/traces/lane-packing": "./src/web/traces/lane-packing.ts",
+    "./web/traces/main-dock-panel": "./src/web/traces/main-dock-panel.tsx",
+    "./web/traces/round-in-view": "./src/web/traces/round-in-view.ts",
+    "./web/traces/round-readings": "./src/web/traces/round-readings.tsx",
+    "./web/traces/timeline-chart": "./src/web/traces/timeline-chart.tsx",
+    "./web/traces/trace-event-row": "./src/web/traces/trace-event-row.tsx",
+    "./web/traces/trace-file-view": "./src/web/traces/trace-file-view.tsx",
+    "./web/traces/trace-levels": "./src/web/traces/trace-levels.ts",
+    "./web/traces/trace-refresh": "./src/web/traces/trace-refresh.ts",
+    "./web/traces/trace-rounds": "./src/web/traces/trace-rounds.ts",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -129,12 +140,18 @@
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/penguin-library-model": "workspace:*",
-    "hono": "^4.13.11"
+    "hono": "^4.13.11",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0"
   },
   "engines": {
     "node": ">=24"

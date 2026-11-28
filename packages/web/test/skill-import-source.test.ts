@@ -9,7 +9,7 @@ import {
   buildImportPrompt,
   classifyImportSource,
   type ImportSourceKind,
-} from "../src/features/agents/skill-import-source";
+} from "@prismshadow/penguin-library-agent/web/agents/skill-import-source";
 import { S } from "../src/lib/strings";
 
 describe("classifyImportSource", () => {

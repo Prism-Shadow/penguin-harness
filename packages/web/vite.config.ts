@@ -21,6 +21,7 @@
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
@@ -93,7 +94,65 @@ function katexWoff2Only(): Plugin {
   };
 }
 
+/**
+ * The domain library packages' web halves, resolved to their TypeScript source: the packages sit
+ * outside this one's dependency graph (their web halves are compiled by this app, not installed
+ * into node_modules), so both bundlers resolve the faces — `@prismshadow/penguin-web/internal`,
+ * its sibling `internal-hub`, and each package's `./web` entry and deep files — through this
+ * table. TypeScript resolves the same specifiers through the matching `paths` in tsconfig.json;
+ * keep the two in step.
+ */
+const LIBRARY_WEB_DOMAINS = ["agent", "model", "project", "trace"] as const;
+
+/**
+ * The server's `model-catalog` subpath is a re-export of the model domain's catalog, so the two
+ * names must land on one module: the library files read the catalog's source and the app's own
+ * code reads the server subpath, and two copies of the provider table would disagree the moment
+ * one of them is patched. Alias the subpath to the catalog's TypeScript source (the same file the
+ * server's bundle inlines); the tsconfig `paths` mirror it.
+ */
+const serverModelCatalogAliases = [
+  {
+    find: /^@prismshadow\/penguin-server\/model-catalog$/,
+    replacement: fileURLToPath(
+      new URL("../../library/model/src/model-catalog/index.ts", import.meta.url),
+    ),
+  },
+];
+
+/** The alias table above, as vite's `resolve.alias` entries (shared with vitest.config.ts). */
+export const libraryWebAliases = [
+  {
+    find: /^@prismshadow\/penguin-web\/internal$/,
+    replacement: fileURLToPath(new URL("./src/internal.ts", import.meta.url)),
+  },
+  {
+    find: /^@prismshadow\/penguin-web\/internal-hub$/,
+    replacement: fileURLToPath(new URL("./src/internal-hub.ts", import.meta.url)),
+  },
+  ...LIBRARY_WEB_DOMAINS.flatMap((domain) => [
+    {
+      find: new RegExp(`^@prismshadow/penguin-library-${domain}/web$`),
+      replacement: fileURLToPath(
+        new URL(`../../library/${domain}/src/web/index.ts`, import.meta.url),
+      ),
+    },
+    {
+      find: new RegExp(`^@prismshadow/penguin-library-${domain}/web/(.*)$`),
+      replacement: fileURLToPath(new URL(`../../library/${domain}/src/web/$1`, import.meta.url)),
+    },
+  ]),
+  ...serverModelCatalogAliases,
+];
+
 export default defineConfig({
+  resolve: {
+    alias: libraryWebAliases,
+    // A shipped plugin's web half is compiled with the app (src/plugin-web.gen.ts): whichever
+    // directory it resolves its imports from, the app and every plugin share one React, one UI
+    // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
+    dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+  },
   plugins: [
     penguinManifest(),
     penguinUi({ workbenchRuntime: true }),
@@ -105,12 +164,6 @@ export default defineConfig({
   // runs yet. The production build lowers them for its browser target; the dev server
   // transforms for `esnext` by default and would pass them through as a syntax error.
   esbuild: { target: "es2022" },
-  // A shipped plugin's web half is compiled with the app (src/plugin-web.gen.ts): whichever
-  // directory it resolves its imports from, the app and every plugin share one React, one UI
-  // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
-  resolve: {
-    dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
-  },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
     // stylesheet references would then ride inside the one render-blocking CSS file for every

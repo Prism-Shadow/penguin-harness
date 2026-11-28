@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Leaving the Agent settings page (features/agents/agent-settings-page.tsx) with unsaved edits,
+ * Leaving the Agent settings page (the agents feature's agent-settings-page.tsx) with unsaved edits,
  * on the app's leave guard: the open tab lives in `?tab=`, so every way off the tab is a
  * navigation the router holds while a form on it is dirty.
  *
@@ -19,7 +19,7 @@ import { createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { AGENT_ID, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
 import {
   button,

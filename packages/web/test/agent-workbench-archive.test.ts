@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /**
  * A workbench's zip import and per-row export on the Agent settings Plugins tab's Workbenches
- * sub-page (features/agents/agent-workbenches.tsx), the import reached through its Import button.
+ * sub-page (the agents feature's agent-workbenches.tsx), the import reached through its Import button.
  *
  * - Picking a zip in the import dialog posts it as it was read, to the server the Agent lives on,
  *   closes the dialog, says it was imported and lists the workbench it installed.
@@ -17,7 +17,7 @@ import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {

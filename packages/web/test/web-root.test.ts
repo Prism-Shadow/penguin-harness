@@ -1,7 +1,7 @@
 import { mainPanelDefinition as mainAgents } from "../src/features/chat/main-agents-panel";
 import { mainPanelDefinition as mainMemory } from "../src/features/chat/main-memory-panel";
 import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/main-dock-panel";
-import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
+import { mainPanelDefinition as mainTrace } from "@prismshadow/penguin-library-trace/web/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
@@ -80,7 +80,7 @@ import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
 import { systemAppsOf } from "../src/lib/system-apps";
-import { AgentsPage } from "../src/features/agents/agents-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
@@ -93,10 +93,10 @@ import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
-import { PinnedBalanceBadge } from "../src/features/models/group-balance";
-import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
-import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
-import { ProjectSwitcher } from "../src/features/projects/project-switcher";
+import { PinnedBalanceBadge } from "@prismshadow/penguin-library-model/web/models/group-balance";
+import { ProjectSettingsLayer } from "@prismshadow/penguin-library-project/web/projects/project-settings-layer";
+import { DefaultModelsLayer } from "@prismshadow/penguin-library-model/web/models/default-models-layer";
+import { ProjectSwitcher } from "@prismshadow/penguin-library-project/web/projects/project-switcher";
 import {
   companyChannels,
   companyDesks,

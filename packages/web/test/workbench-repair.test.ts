@@ -33,7 +33,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { aiChatRouteState, buildAiDraft } from "../src/features/ai-create/ai-bridge";
 import { workbenchRepairRequest } from "../src/features/ai-create/workbench-repair";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { WorkbenchAppPage } from "../src/features/workbenches/workbench-app-page";

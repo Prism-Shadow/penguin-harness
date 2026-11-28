@@ -7,9 +7,11 @@
  * under e2e/ are Playwright's (`test:e2e`), not vitest's.
  */
 import { defineConfig } from "vitest/config";
+import { libraryWebAliases } from "../web/vite.config";
 import { mockWebNetwork } from "./src/app/mock/vite-plugin";
 
 export default defineConfig({
   plugins: [mockWebNetwork()],
+  resolve: { alias: libraryWebAliases },
   test: { environment: "node", include: ["test/**/*.test.ts"] },
 });

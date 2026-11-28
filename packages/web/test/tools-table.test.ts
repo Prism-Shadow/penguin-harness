@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The built-in tools table on the Agent settings Tools tab (features/agents/tools-form.ts and
+ * The built-in tools table on the Agent settings Tools tab (the agents feature's tools-form.ts and
  * the tab in agent-settings-page.tsx): a typed table with deletable rows and a
  * `call_description` switch on each row that commits on its own.
  *
@@ -21,7 +21,7 @@ import { createElement as h } from "react";
 import { hasUnsaved, toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { AGENT_ID, agentConfig, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
 import {
   button,

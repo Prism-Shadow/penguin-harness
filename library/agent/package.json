@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-agent",
   "version": "0.2.20",
-  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies — the server imports these; nothing here imports the server.",
+  "description": "The agent domain: the AgentConfig and Memory mechanisms and their services (the Web App's Agent config, vault, skills/schedules prompt templates and Memory tabs), the Agent package import/export/zip caps, the avatar plumbing and the API vocabulary. One package, no server dependencies — the server imports these; nothing here imports the server. Its web half (./web, the Agent settings pages) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -20,6 +20,28 @@
   "main": "./dist/index.js",
   "exports": {
     "./package.json": "./package.json",
+    "./web": "./src/web/index.ts",
+    "./web/agents/agent-groups": "./src/web/agents/agent-groups.ts",
+    "./web/agents/agent-select": "./src/web/agents/agent-select.tsx",
+    "./web/agents/agent-settings-page": "./src/web/agents/agent-settings-page.tsx",
+    "./web/agents/agents-page": "./src/web/agents/agents-page.tsx",
+    "./web/agents/api-tab": "./src/web/agents/api-tab.tsx",
+    "./web/agents/api-try-log": "./src/web/agents/api-try-log.ts",
+    "./web/agents/api-try-panel": "./src/web/agents/api-try-panel.tsx",
+    "./web/agents/create-agent-dialog": "./src/web/agents/create-agent-dialog.tsx",
+    "./web/agents/hook-import": "./src/web/agents/hook-import.ts",
+    "./web/agents/kernel-labels": "./src/web/agents/kernel-labels.ts",
+    "./web/agents/mcp-servers-form": "./src/web/agents/mcp-servers-form.ts",
+    "./web/agents/mcp-servers-section": "./src/web/agents/mcp-servers-section.tsx",
+    "./web/agents/memory-chat-prompts": "./src/web/agents/memory-chat-prompts.ts",
+    "./web/agents/memory-transfer": "./src/web/agents/memory-transfer.ts",
+    "./web/agents/module": "./src/web/agents/module.ts",
+    "./web/agents/plugins-subpages": "./src/web/agents/plugins-subpages.ts",
+    "./web/agents/plugins-tab": "./src/web/agents/plugins-tab.tsx",
+    "./web/agents/runtime-form": "./src/web/agents/runtime-form.ts",
+    "./web/agents/skill-import-source": "./src/web/agents/skill-import-source.ts",
+    "./web/agents/vault-tab": "./src/web/agents/vault-tab.tsx",
+    "./web/agents/workbench-import": "./src/web/agents/workbench-import.ts",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -103,11 +125,16 @@
     "@prismshadow/penguin-library-trace": "workspace:*",
     "fflate": "^0.8.3",
     "yaml": "^2.5.0",
-    "tar": "^7.5.21"
+    "tar": "^7.5.21",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/amsp": "workspace:*",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
     "@types/node": "^24",
-    "tsup": "^8"
+    "tsup": "^8",
+    "@types/react": "^19.1.0"
   },
   "private": true
 }

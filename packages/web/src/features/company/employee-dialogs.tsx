@@ -74,7 +74,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "../model-picker";
+} from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "../../lib/toast-api-error";
 import { failureNode } from "../../lib/failure";
 

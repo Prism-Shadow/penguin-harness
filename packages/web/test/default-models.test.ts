@@ -1,5 +1,5 @@
 /**
- * The Project's default models (features/models/default-models.tsx, lib/model-onboarding.ts).
+ * The Project's default models (the models feature's default-models.tsx, lib/model-onboarding.ts).
  *
  * - The bindings a model can serve (what a tool model's "Use model" takes) are every binding that
  *   accepts it — the multimodal rows first, then web search, page reading and other plugins'
@@ -14,7 +14,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { MULTIMODAL_TOOLS_PACKAGE, type ToolBinding } from "../src/api/tool-types";
-import { usageTargets } from "../src/features/models/default-models";
+import { usageTargets } from "@prismshadow/penguin-library-model/web/models/default-models";
 import { defaultChatModel } from "../src/lib/model-grouping";
 import { modelTags } from "../src/lib/model-tags";
 import {

@@ -6,7 +6,7 @@ import {
   parseKeyValueLines,
   permissionOf,
   serverToForm,
-} from "../src/features/agents/mcp-servers-form";
+} from "@prismshadow/penguin-library-agent/web/agents/mcp-servers-form";
 
 describe("serverToForm", () => {
   it("loads a stdio entry, inferring the transport from command", () => {

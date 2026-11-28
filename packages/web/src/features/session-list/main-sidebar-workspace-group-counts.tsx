@@ -9,7 +9,7 @@ import { machineForSession } from "../../lib/session-machines";
 import { isConversationAgent } from "../../lib/builtin-agents";
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
 import { orderGroups } from "./group-order";
-import { dropsEmployeeGroup } from "../agents";
+import { dropsEmployeeGroup } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarSetGroupMode } from "./main-sidebar-set-group-mode";
 
 /** Consecutive live main statements 82..89, called once in original hook order. */

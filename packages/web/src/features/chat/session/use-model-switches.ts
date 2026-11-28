@@ -10,8 +10,8 @@ import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { toastApiError } from "../../../lib/toast-api-error";
-import { sameModelRef } from "../../models";
 import {
+  sameModelRef,
   compactionTally,
   heldThinkingSwitch,
   modelLabel,
@@ -19,8 +19,7 @@ import {
   sessionThinkingLevel,
   thinkingLevelLabel,
   type StagedThinkingSwitch,
-} from "../../model-picker";
-
+} from "@prismshadow/penguin-web/internal";
 import {
   sessionModelPickerDisabled,
   sessionRowStale,

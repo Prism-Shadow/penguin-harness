@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The model-picker dialog's logic (features/model-picker/model-picker-logic.ts) and its no-key
- * overlay (features/model-picker/model-picker-modal.tsx).
+ * The model-picker dialog's logic (the model-picker feature's model-picker-logic.ts) and its no-key
+ * overlay (the model-picker feature's model-picker-modal.tsx).
  *
  * - The rail shows the groups holding a key-configured model, in the user's saved order; the
  *   selected and the default model stay visible without a key, the toggle counts and then lists
@@ -37,8 +37,8 @@ import {
   pickerRowTags,
   searchPickerGroups,
   stepIndex,
-} from "../src/features/model-picker/model-picker-logic";
-import { ModelPickerModal } from "../src/features/model-picker/model-picker-modal";
+} from "@prismshadow/penguin-library-model/web/model-picker/model-picker-logic";
+import { ModelPickerModal } from "@prismshadow/penguin-library-model/web/model-picker/model-picker-modal";
 import { S } from "../src/lib/strings";
 import { button, click, mount, unmountAll, waitFor } from "./helpers/dom";
 

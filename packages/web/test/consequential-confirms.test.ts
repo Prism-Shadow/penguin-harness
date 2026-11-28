@@ -24,8 +24,11 @@ const SCAN = scanSources();
  * and the list is meant to empty.
  */
 const GUARDED: ReadonlyArray<readonly [string, string]> = [
-  ["features/projects/project-dialogs/members-section.tsx", "doRemove"],
-  ["features/projects/project-dialogs/security-policy-section.tsx", "restoreDefaults"],
+  ["library/project/src/web/projects/project-dialogs/members-section.tsx", "doRemove"],
+  [
+    "library/project/src/web/projects/project-dialogs/security-policy-section.tsx",
+    "restoreDefaults",
+  ],
   ["features/machines/machines-page.tsx", "deleteMachine"],
   ["features/machines/machines-page.tsx", "stopServer"],
   ["features/machines/machines-page.tsx", "uninstall"],
@@ -33,7 +36,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/chat/session/main-chat-dialogs.tsx", "onKillProcess"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
   ["features/company/org-dialogs.tsx", "doDelete"],
-  ["features/models/preset-sync.tsx", "runPresetSync"],
+  ["library/model/src/web/models/preset-sync.tsx", "runPresetSync"],
   ["plugins/browser-automation/src/web/browser-section.tsx", "revokeChrome"],
   ["features/chat/archived-session-stub.tsx", "remove"],
   ["features/settings/archived-sessions-section.tsx", "deletePending"],

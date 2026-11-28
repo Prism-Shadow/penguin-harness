@@ -7,13 +7,13 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
-import { applyProviderUpdate } from "../src/features/models/connection";
+import { applyProviderUpdate } from "@prismshadow/penguin-library-model/web/models/connection";
 import {
   buildImportedRows,
   groupImportConnection,
   pickableModelIds,
-} from "../src/features/models/group-import";
-import { rowToEntry, toRow } from "../src/features/models/models-page";
+} from "@prismshadow/penguin-library-model/web/models/group-import";
+import { rowToEntry, toRow } from "@prismshadow/penguin-library-model/web/models/models-page";
 
 const config = { baseUrl: "https://gw.example/v1", clientType: "openai-chat", apiKey: "sk-g1" };
 

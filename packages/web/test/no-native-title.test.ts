@@ -188,7 +188,10 @@ describe("native title tooltips", () => {
   it("are not used anywhere in the web app", () => {
     expectEveryRootScanned(scan);
     const hits = scan.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
+      .filter(
+        (file) =>
+          (file.root === "web" || file.root.startsWith("library:")) && file.name.endsWith(".tsx"),
+      )
       .flatMap(nativeTitles);
     expect(
       hits,
@@ -199,7 +202,10 @@ describe("native title tooltips", () => {
 
   it("leave no element whose hint was its only name without an aria-label", () => {
     const hits = scan.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
+      .filter(
+        (file) =>
+          (file.root === "web" || file.root.startsWith("library:")) && file.name.endsWith(".tsx"),
+      )
       .flatMap(unnamedHints);
     expect(
       hits,

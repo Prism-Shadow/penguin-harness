@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Agents page holds still while machines answer (features/agents/agents-page.tsx over
+ * The Agents page holds still while machines answer (the agents feature's agents-page.tsx over
  * lib/machine-agent-lists.ts): what it shows changes only when the data does.
  *
  * - Given a connected machine whose list an earlier page load remembered, its cards are on the
@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { createElement as h } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentsPage } from "../src/features/agents/agents-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import { PROJECT_ID, agentServer, mountAgentApp } from "./helpers/agent-app";
 import type { AgentServer, FakeMachine } from "./helpers/agent-app";
 import { button, click, run, unmountAll, waitFor, watchText } from "./helpers/dom";

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /**
  * The workbench chat import on the Agent settings Plugins tab's Workbenches sub-page (its Import
- * workbench button, the dialog in features/agents/agent-workbenches.tsx, through the shared
+ * workbench button, the dialog in the agents feature's agent-workbenches.tsx, through the shared
  * chat-or-zip-import-dialog.tsx and workbench-import.ts). The zip path is
  * agent-workbench-archive.test.ts's, and closing with a source typed is import-dialogs-guard's.
  *
@@ -14,7 +14,7 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClipboardWriterProvider } from "@prismshadow/penguin-ui";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AgentSettingsPage } from "@prismshadow/penguin-library-agent/web/agents/agent-settings-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

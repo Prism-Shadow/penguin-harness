@@ -1,5 +1,5 @@
 /**
- * An Agent's public API in the Web App: the Agent page's API tab (features/agents/api-tab.tsx),
+ * An Agent's public API in the Web App: the Agent page's API tab (the agents feature's api-tab.tsx),
  * the Agents list's mark (agents-page.tsx) and the admin's server-wide switch
  * (features/settings/agent-api-section.tsx). The views render to static markup and the
  * confirmations are driven through their handlers against the fetch fake (node env, no DOM).
@@ -47,9 +47,9 @@ import {
   agentApiBaseUrl,
   agentApiExamples,
   type ApiTabViewProps,
-} from "../src/features/agents/api-tab";
+} from "@prismshadow/penguin-library-agent/web/agents/api-tab";
 
-import { AgentApiMark } from "../src/features/agents/agents-page";
+import { AgentApiMark } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import { AgentApiServerOffConfirm } from "../src/features/settings/agent-api-section";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";

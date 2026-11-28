@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-model",
   "version": "0.2.20",
-  "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server.",
+  "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server. Its web half (./web, the model pages and the model picker) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -20,6 +20,33 @@
   "main": "./dist/index.js",
   "exports": {
     "./package.json": "./package.json",
+    "./web": "./src/web/index.ts",
+    "./web/model-picker/model-picker-logic": "./src/web/model-picker/model-picker-logic.ts",
+    "./web/model-picker/model-picker-modal": "./src/web/model-picker/model-picker-modal.tsx",
+    "./web/model-picker/thinking-level": "./src/web/model-picker/thinking-level.ts",
+    "./web/models/balance": "./src/web/models/balance.ts",
+    "./web/models/connection": "./src/web/models/connection.ts",
+    "./web/models/default-models": "./src/web/models/default-models.tsx",
+    "./web/models/default-models-layer": "./src/web/models/default-models-layer.tsx",
+    "./web/models/group-balance": "./src/web/models/group-balance.tsx",
+    "./web/models/group-connection": "./src/web/models/group-connection.tsx",
+    "./web/models/group-header": "./src/web/models/group-header.ts",
+    "./web/models/group-import": "./src/web/models/group-import.ts",
+    "./web/models/group-settings-menu": "./src/web/models/group-settings-menu.tsx",
+    "./web/models/main-sidebar-badges.module": "./src/web/models/main-sidebar-badges.module.ts",
+    "./web/models/model-dialog-details": "./src/web/models/model-dialog-details.tsx",
+    "./web/models/model-group-expansion": "./src/web/models/model-group-expansion.ts",
+    "./web/models/model-group-pins": "./src/web/models/model-group-pins.ts",
+    "./web/models/model-sort": "./src/web/models/model-sort.ts",
+    "./web/models/models-page": "./src/web/models/models-page.tsx",
+    "./web/models/module": "./src/web/models/module.ts",
+    "./web/models/preset-sync": "./src/web/models/preset-sync.tsx",
+    "./web/models/protocol-path": "./src/web/models/protocol-path.ts",
+    "./web/models/protocol-suffix": "./src/web/models/protocol-suffix.tsx",
+    "./web/models/protocol-types": "./src/web/models/protocol-types.ts",
+    "./web/models/provider-settings-dialog": "./src/web/models/provider-settings-dialog.tsx",
+    "./web/models/speed-test": "./src/web/models/speed-test.ts",
+    "./web/models/tokendance-banner": "./src/web/models/tokendance-banner.tsx",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -87,12 +114,17 @@
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.12"
+    "@prismshadow/mmsp": "^0.5.12",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@types/react": "^19.1.0"
   },
   "engines": {
     "node": ">=24"

@@ -13,10 +13,10 @@ import {
   sessionThinkingLevel,
   thinkingLevelLabel,
   type StagedThinkingSwitch,
-} from "../../model-picker";
+  sameModelRef,
+} from "@prismshadow/penguin-web/internal";
 
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "../model-switch";
-import { sameModelRef } from "../../models";
 import type { useMainChatComposer } from "./main-chat-composer";
 
 /** Exact consecutive main ChatPage statements 148..158; called once, in original order. */

@@ -83,7 +83,7 @@ import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { apiUrl } from "../../lib/server-context";
 import { locatedAppKey } from "../../lib/app-center-path";
-import { downloadArchive } from "../agents/archive-download";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";

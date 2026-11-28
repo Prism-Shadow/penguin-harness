@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Plugins sub-page of the Agent settings Plugins tab (features/agents/agent-plugins-page.tsx
+ * The Plugins sub-page of the Agent settings Plugins tab (the agents feature's agent-plugins-page.tsx
  * and its row, detail and writes): the Agent's plugins as one column of rows, in two sections,
  * with install, update and uninstall for this one Agent.
  *

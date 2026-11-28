@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-project",
   "version": "0.2.20",
-  "description": "The projects domain: the Projects, Members, AgentIndex, ModelPromotions and ModelProviderAuthTokens mechanisms with their DTOs, and the five repos that store them. A library package - the server imports it; nothing here imports the server.",
+  "description": "The projects domain: the Projects, Members, AgentIndex, ModelPromotions and ModelProviderAuthTokens mechanisms with their DTOs, and the five repos that store them. A library package - the server imports it; nothing here imports the server. Its web half (./web, the Project switcher and its dialogs) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -20,6 +20,12 @@
   "main": "./dist/index.js",
   "exports": {
     "./package.json": "./package.json",
+    "./web": "./src/web/index.ts",
+    "./web/projects/project-dialogs/create-project-dialog": "./src/web/projects/project-dialogs/create-project-dialog.tsx",
+    "./web/projects/project-dialogs/project-settings-dialog": "./src/web/projects/project-dialogs/project-settings-dialog.tsx",
+    "./web/projects/project-dialogs/security-policy-section": "./src/web/projects/project-dialogs/security-policy-section.tsx",
+    "./web/projects/project-settings-layer": "./src/web/projects/project-settings-layer.tsx",
+    "./web/projects/project-switcher": "./src/web/projects/project-switcher.tsx",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -61,12 +67,16 @@
     "@prismshadow/penguin-library-organization": "workspace:*",
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
-    "@prismshadow/penguin-library-workbench": "workspace:*"
+    "@prismshadow/penguin-library-workbench": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@types/react": "^19.1.0"
   },
   "engines": {
     "node": ">=24"

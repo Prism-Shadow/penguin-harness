@@ -29,7 +29,7 @@ import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { ModelsPage } from "../src/features/models/models-page";
+import { ModelsPage } from "@prismshadow/penguin-library-model/web/models/models-page";
 import { AuthProvider } from "../src/state/auth";
 import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";

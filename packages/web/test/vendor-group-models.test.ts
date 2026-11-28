@@ -18,7 +18,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ModelCard, unroutableFix, type RowState } from "../src/features/models/models-page";
+import {
+  ModelCard,
+  unroutableFix,
+  type RowState,
+} from "@prismshadow/penguin-library-model/web/models/models-page";
 import { S } from "../src/lib/strings";
 
 const noop = () => {};

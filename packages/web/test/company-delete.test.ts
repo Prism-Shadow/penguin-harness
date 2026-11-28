@@ -34,7 +34,7 @@ import type { OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AgentsPage } from "../src/features/agents/agents-page";
+import { AgentsPage } from "@prismshadow/penguin-library-agent/web/agents/agents-page";
 import {
   CreateOrganizationDialog,
   OrganizationSettingsDialog,

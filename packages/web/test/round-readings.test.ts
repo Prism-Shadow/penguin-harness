@@ -1,5 +1,5 @@
 /**
- * What a round's readings panel lists (features/traces/round-readings.tsx, `roundReadingRows`):
+ * What a round's readings panel lists (library/trace/src/web/traces/round-readings.tsx, `roundReadingRows`):
  * the figures the round's row no longer prints, a click on its ring away, each once.
  *
  * - A round with a context snapshot lists its input, cache hits with their rate, cache misses,
@@ -8,7 +8,7 @@
  * - A round with no input reads its hit rate as a dash, never as a rate of nothing.
  */
 import { describe, expect, it } from "vitest";
-import { roundReadingRows } from "../src/features/traces/round-readings";
+import { roundReadingRows } from "@prismshadow/penguin-library-trace/web/traces/round-readings";
 import { S } from "../src/lib/strings";
 
 const TOKENS = { cacheRead: 30_000, cacheWrite: 2_000, output: 1_234 };
