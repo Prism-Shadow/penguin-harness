@@ -22,13 +22,16 @@ import type {
   GitFileMode,
   GitRepo,
 } from "@prismshadow/penguin-core/plugin";
-import { loadNative } from "../src/binary.js";
+import { tryLoadNative } from "../src/binary.js";
 import { gixGitEngine } from "../src/git-engine.js";
 import { gitclGitEngine } from "@penguinharness/agent-state-gitcl";
 
 const GIT = "git";
 
-function runGitSync(gitdir: string, args: string[]): { status: number; stdout: string; stderr: string } {
+function runGitSync(
+  gitdir: string,
+  args: string[],
+): { status: number; stdout: string; stderr: string } {
   const r = spawnSync(GIT, ["--git-dir", gitdir, ...args], {
     windowsHide: true,
     encoding: "utf8",
@@ -44,7 +47,10 @@ async function initBare(gitdir: string): Promise<void> {
   if (r.status !== 0) throw new Error(`git init failed: ${r.stderr}`);
 }
 
-async function readExtractedTree(destDir: string, files: readonly string[]): Promise<Record<string, Buffer>> {
+async function readExtractedTree(
+  destDir: string,
+  files: readonly string[],
+): Promise<Record<string, Buffer>> {
   const out: Record<string, Buffer> = {};
   for (const rel of files) {
     out[rel] = await fs.readFile(path.join(destDir, rel));
@@ -74,17 +80,27 @@ async function expectGitErrorCode(promise: Promise<unknown>, code: string): Prom
   expect((caught as GitError).code, (caught as Error)?.message).toBe(code);
 }
 
-describe("GitEngine differential testing: gix <-> gitcl", () => {
-  const native = loadNative();
-  const gix: GitEngine = gixGitEngine(native, native.engineVersion());
+const native = tryLoadNative();
+
+describe("agent-state-gix module exports", () => {
+  it("exports gixGitEngine", () => {
+    expect(typeof gixGitEngine).toBe("function");
+  });
+});
+
+describe.skipIf(native === null)("GitEngine differential testing: gix <-> gitcl", () => {
+  let gix: GitEngine;
   const gitVer =
-    /^git version (\S+)/.exec(spawnSync(GIT, ["version"], { encoding: "utf8" }).stdout ?? "")?.[1] ?? "git";
+    /^git version (\S+)/.exec(
+      spawnSync(GIT, ["version"], { encoding: "utf8" }).stdout ?? "",
+    )?.[1] ?? "git";
   const gitcl: GitEngine = gitclGitEngine({ program: GIT }, gitVer);
 
   let root: string;
   let diskFilesDir: string;
 
   beforeAll(async () => {
+    gix = gixGitEngine(native!, native!.engineVersion());
     root = await fs.mkdtemp(path.join(os.tmpdir(), "git-engine-diff-"));
     diskFilesDir = path.join(root, "disk-sources");
     await fs.mkdir(diskFilesDir, { recursive: true });
@@ -131,7 +147,10 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
               { rel: "bin/run.sh", source: { kind: "file", path: fScript }, mode: "100755" },
               { rel: "empty.txt", source: { kind: "file", path: fEmpty } },
               { rel: "ui.css", source: { kind: "bytes", body: Buffer.from("body{}\n") } },
-              { rel: "ui/index.html", source: { kind: "bytes", body: Buffer.from("<h1>v1</h1>\n") } },
+              {
+                rel: "ui/index.html",
+                source: { kind: "bytes", body: Buffer.from("<h1>v1</h1>\n") },
+              },
               { rel: "ａ.txt", source: { kind: "bytes", body: Buffer.from("fullwidth") } },
               { rel: "\u{1F600}.txt", source: { kind: "bytes", body: Buffer.from("astral") } },
             ],
@@ -150,8 +169,12 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
         expect(await rGix.listTree(sha1Gix, "workbenches/demo")).toEqual(
           await rGitcl.listTree(sha1Gitcl, "workbenches/demo"),
         );
-        const listWithSizeGix = await rGix.listTree(sha1Gix, "workbenches/demo", { withSize: true });
-        const listWithSizeGitcl = await rGitcl.listTree(sha1Gitcl, "workbenches/demo", { withSize: true });
+        const listWithSizeGix = await rGix.listTree(sha1Gix, "workbenches/demo", {
+          withSize: true,
+        });
+        const listWithSizeGitcl = await rGitcl.listTree(sha1Gitcl, "workbenches/demo", {
+          withSize: true,
+        });
         expect(listWithSizeGix).toEqual(listWithSizeGitcl);
         expect(listWithSizeGix!.find((e) => e.rel === "bin/run.sh")?.mode).toBe("100755");
         expect(listWithSizeGix!.find((e) => e.rel === "empty.txt")?.size).toBe(0);
@@ -247,14 +270,24 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
         await expectGitErrorCode(rGitcl.commit({ ...c1, parent: null }), "CAS_CONFLICT");
         await expectGitErrorCode(rGix.commit({ ...c2, parent: sha1Gix }), "CAS_CONFLICT");
         await expectGitErrorCode(rGitcl.commit({ ...c2, parent: sha1Gitcl }), "CAS_CONFLICT");
-        await expectGitErrorCode(rGix.commit({ ...c2, parent: "1".repeat(40) }), "PARENT_NOT_FOUND");
-        await expectGitErrorCode(rGitcl.commit({ ...c2, parent: "1".repeat(40) }), "PARENT_NOT_FOUND");
+        await expectGitErrorCode(
+          rGix.commit({ ...c2, parent: "1".repeat(40) }),
+          "PARENT_NOT_FOUND",
+        );
+        await expectGitErrorCode(
+          rGitcl.commit({ ...c2, parent: "1".repeat(40) }),
+          "PARENT_NOT_FOUND",
+        );
         await expectGitErrorCode(
           rGix.extractTree({ commitOid: sha1Gix, prefix: "workbenches/demo", destDir: subGix }),
           "DEST_NOT_EMPTY",
         );
         await expectGitErrorCode(
-          rGitcl.extractTree({ commitOid: sha1Gitcl, prefix: "workbenches/demo", destDir: subGitcl }),
+          rGitcl.extractTree({
+            commitOid: sha1Gitcl,
+            prefix: "workbenches/demo",
+            destDir: subGitcl,
+          }),
           "DEST_NOT_EMPTY",
         );
         await expectGitErrorCode(
@@ -460,7 +493,8 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
           if (step % 7 === 0 && ltGix !== null && ltGix.length > 0) {
             const exDirGix = path.join(root, `ex-gix-${seed}-${step}`);
             const exDirGitcl = path.join(root, `ex-gitcl-${seed}-${step}`);
-            const onlyPaths = ltGix.length > 2 ? [ltGix[0]!.rel, ltGix[ltGix.length - 1]!.rel] : undefined;
+            const onlyPaths =
+              ltGix.length > 2 ? [ltGix[0]!.rel, ltGix[ltGix.length - 1]!.rel] : undefined;
             const [resGix, resGitcl] = await Promise.all([
               rGix.extractTree({ commitOid: tip, prefix, destDir: exDirGix, onlyPaths }),
               rGitcl.extractTree({ commitOid: tip, prefix, destDir: exDirGitcl, onlyPaths }),
@@ -513,7 +547,10 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
                     kind: "replace",
                     files: [
                       { rel: "main.txt", source: { kind: "file", path: fPath } },
-                      { rel: `f${step % 3}.txt`, source: { kind: "bytes", body: Buffer.from(`v${step}`) } },
+                      {
+                        rel: `f${step % 3}.txt`,
+                        source: { kind: "bytes", body: Buffer.from(`v${step}`) },
+                      },
                     ],
                   },
             message: `interleave ${step}\n`,
@@ -522,7 +559,10 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
             when: { seconds: ts, offset: 480 },
           };
 
-          const [mixedSha, oracleSha] = await Promise.all([writer.commit(input), oracle.commit(input)]);
+          const [mixedSha, oracleSha] = await Promise.all([
+            writer.commit(input),
+            oracle.commit(input),
+          ]);
           expect(mixedSha).toBe(oracleSha);
           tip = mixedSha;
 
@@ -536,9 +576,9 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
           expect(await reader.listTree(tip, prefix, { withSize: true })).toEqual(
             await oracle.listTree(tip, prefix, { withSize: true }),
           );
-          expect(await reader.walkHistory({ fromCommit: tip, prefix, limit: 20, maxWalk: 50 })).toEqual(
-            await oracle.walkHistory({ fromCommit: tip, prefix, limit: 20, maxWalk: 50 }),
-          );
+          expect(
+            await reader.walkHistory({ fromCommit: tip, prefix, limit: 20, maxWalk: 50 }),
+          ).toEqual(await oracle.walkHistory({ fromCommit: tip, prefix, limit: 20, maxWalk: 50 }));
         }
 
         expect(runGitSync(mixedDir, ["fsck", "--strict"]).status).toBe(0);

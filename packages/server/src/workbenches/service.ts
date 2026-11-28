@@ -132,7 +132,9 @@ import {
   readFolder,
   readLoadedSource,
   readState,
-  isSourcePath, restoreSource, restoreSourceFromDir,
+  isSourcePath,
+  restoreSource,
+  restoreSourceFromDir,
   STATE_FILE,
   UI_DIR,
   workbenchesDir,
@@ -410,7 +412,10 @@ export class WorkbenchService implements Workbenches {
    */
   private async migrate(projectId: string, agentId: string): Promise<void> {
     await this.held.get(`${projectId}/${agentId}`);
-    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId), this.engines.current());
+    return migrateWorkbenches(
+      agentDir(this.paths.root, projectId, agentId),
+      this.engines.current(),
+    );
   }
 
   setup(ctx: ClassCtx) {

@@ -1476,5 +1476,6 @@ describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
       } finally {
         await t.cleanup();
       }
-  });
+    },
+  );
 });

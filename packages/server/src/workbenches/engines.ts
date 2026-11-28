@@ -90,8 +90,9 @@ export class EngineChoice implements AgentStateEngines {
       if (engine !== undefined) return engine;
     }
     const why =
-      this.order.map((id) => `${id} ${this.without.get(id) ?? "has not answered yet"}`).join(", ") ||
-      "none contributed";
+      this.order
+        .map((id) => `${id} ${this.without.get(id) ?? "has not answered yet"}`)
+        .join(", ") || "none contributed";
     throw new Error(`no Agent State engine is ready (${why})`);
   }
 }

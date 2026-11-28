@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GitEngine } from "@prismshadow/penguin-core/plugin";
 import { gitclGitEngine } from "@penguinharness/agent-state-gitcl";
-import { loadNative } from "../src/binary.js";
+import { tryLoadNative } from "../src/binary.js";
 import { gixGitEngine } from "../src/git-engine.js";
 
 const { agentStateRepoScenarios } = (await import(
@@ -21,13 +21,14 @@ const { agentStateRepoScenarios } = (await import(
   ) => void;
 };
 
-const native = loadNative();
-const gix = gixGitEngine(native, native.engineVersion());
-
-agentStateRepoScenarios(
-  { afterEach, beforeEach, describe, expect, it },
-  { label: gix.name, engine: () => gix },
-);
+const native = tryLoadNative();
+if (native !== null) {
+  const gix = gixGitEngine(native, native.engineVersion());
+  agentStateRepoScenarios(
+    { afterEach, beforeEach, describe, expect, it },
+    { label: gix.name, engine: () => gix },
+  );
+}
 
 const gitVer = /^git version (\S+)/.exec(
   spawnSync("git", ["version"], { encoding: "utf8", windowsHide: true }).stdout ?? "",

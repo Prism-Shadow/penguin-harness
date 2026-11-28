@@ -29,7 +29,7 @@ export { keptFiles, locateGit, pinFor } from "./binary.js";
         title: "Native Git for Agent State",
         titleZh: "Agent State 原生 Git",
         descriptionZh:
-          "PenguinHarness 的 Agent State 历史原生 Git：以 GitHub Desktop 的 dugite 构建写入与读回 Workbench 版本，应用越大越比内置引擎快。",
+          "PenguinHarness 的 Agent State 历史原生 Git：以 GitHub Desktop 的 dugite 构建记录 Workbench 版本并读回。",
         shortDescription: "Record workbench versions with native Git.",
         shortDescriptionZh: "以原生 Git 记录 Workbench 版本。",
         icon: "icon.svg",

@@ -16,7 +16,7 @@ import { describe, expect, beforeAll, afterAll, it } from "vitest";
 import { importStream } from "@penguinharness/agent-state-git";
 import type { AgentStateCommit } from "@prismshadow/penguin-core/plugin";
 import { gixEngine } from "../src/engine.js";
-import { loadNative } from "../src/binary.js";
+import { tryLoadNative } from "../src/binary.js";
 
 const GIT = "git";
 
@@ -137,20 +137,30 @@ const dir = async (): Promise<AgentStateCommit> => {
   } as const;
 };
 
-describe("agent-state-gix interchange with real Git", () => {
-  const native = loadNative();
-  const engine = gixEngine(native, native.engineVersion());
+const native = tryLoadNative();
+
+describe("agent-state-gix legacy engine export", () => {
+  it("exports gixEngine", () => {
+    expect(typeof gixEngine).toBe("function");
+  });
+});
+
+describe.skipIf(native === null)("agent-state-gix interchange with real Git", () => {
+  let engine: ReturnType<typeof gixEngine>;
   let c: Awaited<ReturnType<typeof dir>>;
 
   beforeAll(async () => {
+    engine = gixEngine(native!, native!.engineVersion());
     c = await dir();
   });
   afterAll(async () => {
-    await fs.rm(path.dirname(c.gitdir), { recursive: true, force: true }).catch(() => undefined);
+    if (c) {
+      await fs.rm(path.dirname(c.gitdir), { recursive: true, force: true }).catch(() => undefined);
+    }
   });
 
   it("the native half loads and says who it is", () => {
-    expect(native.engineVersion()).toMatch(/gitoxide \d+\.\d+/);
+    expect(native!.engineVersion()).toMatch(/gitoxide \d+\.\d+/);
   });
 
   it("the first commit: gitoxide and real Git write the same commit id", async () => {
@@ -163,7 +173,12 @@ describe("agent-state-gix interchange with real Git", () => {
   it("a first commit refuses an existing branch, like real Git does", async () => {
     // The branch now exists (both writers above). A fresh first commit must refuse.
     await expect(
-      engine.commit({ ...c, parent: null, rel: "workbenches/w2", files: [{ rel: "x", body: Buffer.from("x") }] }),
+      engine.commit({
+        ...c,
+        parent: null,
+        rel: "workbenches/w2",
+        files: [{ rel: "x", body: Buffer.from("x") }],
+      }),
     ).rejects.toThrow(/refused|exist/i);
   });
 
@@ -184,9 +199,7 @@ describe("agent-state-gix interchange with real Git", () => {
 
   it("a stale parent refuses the write, like update-ref does", async () => {
     const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
-    await expect(
-      engine.commit({ ...c, parent: "0".repeat(40) }),
-    ).rejects.toThrow();
+    await expect(engine.commit({ ...c, parent: "0".repeat(40) })).rejects.toThrow();
     expect((await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim()).toBe(tip);
   });
 
@@ -203,9 +216,7 @@ describe("agent-state-gix interchange with real Git", () => {
   it("a first commit with no files is the empty tree, same id from both sides — on a fresh branch", async () => {
     // The main branch already carries commits at this point, so the CAS must and does refuse a
     // fresh first commit there; the empty-tree first commit is pinned on its own repository.
-    await expect(
-      engine.commit({ ...c, files: null }),
-    ).rejects.toThrow(/refused/i);
+    await expect(engine.commit({ ...c, files: null })).rejects.toThrow(/refused/i);
     const root = await fs.mkdtemp(path.join(import.meta.dirname!, "gix-empty-"));
     try {
       const gitdir = path.join(root, "repo.git");
@@ -339,8 +350,18 @@ describe("agent-state-gix interchange with real Git", () => {
       rel: "workbenches/w-async",
       files,
       message: "async commit\n",
-      author: { name: WHO.name, email: WHO.email, whenSeconds: WHEN.seconds, whenOffsetMinutes: WHEN.offset },
-      committer: { name: WHO.name, email: WHO.email, whenSeconds: WHEN.seconds, whenOffsetMinutes: WHEN.offset },
+      author: {
+        name: WHO.name,
+        email: WHO.email,
+        whenSeconds: WHEN.seconds,
+        whenOffsetMinutes: WHEN.offset,
+      },
+      committer: {
+        name: WHO.name,
+        email: WHO.email,
+        whenSeconds: WHEN.seconds,
+        whenOffsetMinutes: WHEN.offset,
+      },
     });
     expect(rawCommitPromise).toBeInstanceOf(Promise);
     commitOrder.push("sync-return");

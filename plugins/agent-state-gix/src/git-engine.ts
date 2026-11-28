@@ -16,7 +16,12 @@ import type {
   GitTreeEntry,
   GitWalkHistoryOptions,
 } from "@prismshadow/penguin-core/plugin";
-import { loadNative, type Native, type NativeRepo, type NativeRepoCommitFileInput } from "./binary.js";
+import {
+  loadNative,
+  type Native,
+  type NativeRepo,
+  type NativeRepoCommitFileInput,
+} from "./binary.js";
 
 const GIT_ERROR_RE = /^GIT_ERROR:([A-Z_]+):(.*)$/s;
 
@@ -51,7 +56,11 @@ function wrapRepo(handle: NativeRepo): GitRepo {
       }
     },
 
-    async listTree(commitOid: string, prefix: string, opts?: { withSize?: boolean }): Promise<GitTreeEntry[] | null> {
+    async listTree(
+      commitOid: string,
+      prefix: string,
+      opts?: { withSize?: boolean },
+    ): Promise<GitTreeEntry[] | null> {
       try {
         const entries = await handle.listTree(commitOid, prefix, opts?.withSize === true);
         if (entries === null || entries === undefined) return null;
@@ -71,7 +80,12 @@ function wrapRepo(handle: NativeRepo): GitRepo {
 
     async walkHistory(opts: GitWalkHistoryOptions): Promise<GitHistoryEntry[]> {
       try {
-        const rows = await handle.walkHistory(opts.fromCommit, opts.prefix, opts.limit, opts.maxWalk);
+        const rows = await handle.walkHistory(
+          opts.fromCommit,
+          opts.prefix,
+          opts.limit,
+          opts.maxWalk,
+        );
         return rows.map((r) => ({
           commit: r.commit,
           tree: r.tree,

@@ -83,13 +83,16 @@ describe("the engine that records versions", () => {
       },
       line: "[agent-state] dugite: not started (no platform)",
     },
-  ])("leaves the deployment without an engine when the source $how, and says so", async ({ source, line }) => {
-    const { choice, logged } = choose(["dugite.engine", source]);
-    await settle();
+  ])(
+    "leaves the deployment without an engine when the source $how, and says so",
+    async ({ source, line }) => {
+      const { choice, logged } = choose(["dugite.engine", source]);
+      await settle();
 
-    expect(() => choice.current()).toThrow(/no Agent State engine is ready.*dugite/);
-    expect(logged).toEqual([line]);
-  });
+      expect(() => choice.current()).toThrow(/no Agent State engine is ready.*dugite/);
+      expect(logged).toEqual([line]);
+    },
+  );
 
   it("of several, is the first ready in contribution order", async () => {
     const first = deferred();
@@ -106,9 +109,15 @@ describe("the engine that records versions", () => {
 
   it("the error to ask with names why each contribution has none", async () => {
     const first = deferred();
-    const { choice } = choose(["first.engine", first.source], ["second.engine", () => {
-      throw new Error("no platform");
-    }]);
+    const { choice } = choose(
+      ["first.engine", first.source],
+      [
+        "second.engine",
+        () => {
+          throw new Error("no platform");
+        },
+      ],
+    );
     await settle();
 
     expect(() => choice.current()).toThrow(

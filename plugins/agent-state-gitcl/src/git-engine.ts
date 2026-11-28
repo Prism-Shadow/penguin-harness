@@ -74,7 +74,7 @@ interface RawTreeEntry {
 
 function parseTree(oid: string, body: Buffer): RawTreeEntry[] {
   const out: RawTreeEntry[] = [];
-  for (let at = 0; at < body.length; ) {
+  for (let at = 0; at < body.length;) {
     const space = body.indexOf(0x20, at);
     const nul = space === -1 ? -1 : body.indexOf(0, space);
     if (nul === -1 || nul + 21 > body.length) {
@@ -154,10 +154,7 @@ class CatFileBatch {
       if (this.waiting.length > 0) {
         const msg = Buffer.concat(stderr).toString("utf8").trim();
         this.failAll(
-          gitError(
-            "IO_ERROR",
-            `cat-file --batch closed unexpectedly (${signal ?? code}): ${msg}`,
-          ),
+          gitError("IO_ERROR", `cat-file --batch closed unexpectedly (${signal ?? code}): ${msg}`),
         );
       }
     });
@@ -318,7 +315,13 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
     files: readonly GitCommitFile[],
   ): Promise<Array<{ rel: string; oid: string; mode: GitFileMode }>> {
     const out: Array<{ rel: string; oid: string; mode: GitFileMode }> = new Array(files.length);
-    const fileItems: Array<{ idx: number; rel: string; filePath: string; mode: GitFileMode; expectedSize: number }> = [];
+    const fileItems: Array<{
+      idx: number;
+      rel: string;
+      filePath: string;
+      mode: GitFileMode;
+      expectedSize: number;
+    }> = [];
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i]!;
@@ -333,7 +336,13 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
         } catch (err) {
           throw gitError("IO_ERROR", `cannot stat ${f.source.path}`, err);
         }
-        fileItems.push({ idx: i, rel: f.rel, filePath: f.source.path, mode, expectedSize: st.size });
+        fileItems.push({
+          idx: i,
+          rel: f.rel,
+          filePath: f.source.path,
+          mode,
+          expectedSize: st.size,
+        });
       } else {
         const res = await runGit(git, gitdir, ["hash-object", "-w", "--stdin"], {
           input: f.source.body,
@@ -355,7 +364,10 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
       }
       const oids = res.stdout.toString("utf8").trim().split(/\r?\n/);
       if (oids.length !== fileItems.length) {
-        throw gitError("IO_ERROR", `hash-object returned ${oids.length} oids for ${fileItems.length} files`);
+        throw gitError(
+          "IO_ERROR",
+          `hash-object returned ${oids.length} oids for ${fileItems.length} files`,
+        );
       }
       for (let j = 0; j < fileItems.length; j++) {
         const item = fileItems[j]!;
@@ -376,12 +388,18 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
       return resolveHeadFs(gitdir);
     },
 
-    async listTree(commitOid: string, prefix: string, opts?: { withSize?: boolean }): Promise<GitTreeEntry[] | null> {
+    async listTree(
+      commitOid: string,
+      prefix: string,
+      opts?: { withSize?: boolean },
+    ): Promise<GitTreeEntry[] | null> {
       ensureOpen();
       if (!isHexOid(commitOid)) throw gitError("INVALID_OID", `invalid commit oid: ${commitOid}`);
       const tree = await subtreeOid(commitOid, prefix);
       if (tree === null) return null;
-      const args = opts?.withSize ? ["ls-tree", "-r", "-l", "-z", tree] : ["ls-tree", "-r", "-z", tree];
+      const args = opts?.withSize
+        ? ["ls-tree", "-r", "-l", "-z", tree]
+        : ["ls-tree", "-r", "-z", tree];
       const res = await runGit(git, gitdir, args);
       return parseLsTreeZ(res.stdout, opts?.withSize === true);
     },
@@ -460,7 +478,10 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
       }
       if (selected.length === 0) return { files: [], totalBytes: 0 };
 
-      const tmpIndex = path.join(os.tmpdir(), `penguin-gitcl-idx-${crypto.randomBytes(8).toString("hex")}`);
+      const tmpIndex = path.join(
+        os.tmpdir(),
+        `penguin-gitcl-idx-${crypto.randomBytes(8).toString("hex")}`,
+      );
       try {
         const indexInfo = selected.map((e) => `${e.mode} ${e.oid}\t${e.rel}\0`).join("");
         await runGit(git, gitdir, ["update-index", "-z", "--index-info"], {
@@ -493,7 +514,10 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
         }
       }
 
-      const tmpIndex = path.join(os.tmpdir(), `penguin-gitcl-idx-${crypto.randomBytes(8).toString("hex")}`);
+      const tmpIndex = path.join(
+        os.tmpdir(),
+        `penguin-gitcl-idx-${crypto.randomBytes(8).toString("hex")}`,
+      );
       let treeOid: string;
       let commitOid: string;
       try {

@@ -33,9 +33,7 @@ export interface GitTimestamp {
 }
 
 /** Source of a file's bytes for a commit: direct filesystem path for bulk/large files, bytes for tests or tiny generated files. */
-export type GitFileSource =
-  | { kind: "file"; path: string }
-  | { kind: "bytes"; body: Uint8Array };
+export type GitFileSource = { kind: "file"; path: string } | { kind: "bytes"; body: Uint8Array };
 
 export interface GitCommitFile {
   rel: GitRelPath;
@@ -171,6 +169,4 @@ export interface GitEngineHost {
   log(line: string): void;
 }
 
-export type GitEngineSource = (
-  host: GitEngineHost,
-) => GitEngine | Promise<GitEngine>;
+export type GitEngineSource = (host: GitEngineHost) => GitEngine | Promise<GitEngine>;

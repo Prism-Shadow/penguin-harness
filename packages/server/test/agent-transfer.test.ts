@@ -176,7 +176,8 @@ describe("agent export/import", () => {
       );
       expect((await pathsUnder(state)).filter((rel) => rel.split("/").some(isGitName))).toEqual([]);
       expect(await history.listed()).toEqual([history.commit]);
-  });
+    },
+  );
 
   it("an export of an Agent whose workbenches were never migrated migrates them first", async () => {
     const dir = agentDir(t.root, projectId, "default_agent");

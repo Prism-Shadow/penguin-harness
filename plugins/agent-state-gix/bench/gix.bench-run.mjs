@@ -133,9 +133,11 @@ const filesOf = (n, run) =>
 let salt = 0;
 
 const oidsOf = (gitdir, commit) =>
-  [...run(gitdir, ["ls-tree", "-r", commit]).toString().matchAll(/blob ([0-9a-f]{40})\t/g)].map(
-    (m) => m[1],
-  );
+  [
+    ...run(gitdir, ["ls-tree", "-r", commit])
+      .toString()
+      .matchAll(/blob ([0-9a-f]{40})\t/g),
+  ].map((m) => m[1]);
 
 const median = (xs) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 const ms = (t0) => Math.round(performance.now() - t0);
@@ -185,11 +187,23 @@ const root = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-state-bench-"));
 try {
   const native = loadNative();
   const results = [];
-  results.push(await benchEngine("gitoxide", (c) => gixEngine(native, "gitoxide").commit(c), (g, o) => gixEngine(native, "gitoxide").readObjects(g, o), root));
+  results.push(
+    await benchEngine(
+      "gitoxide",
+      (c) => gixEngine(native, "gitoxide").commit(c),
+      (g, o) => gixEngine(native, "gitoxide").readObjects(g, o),
+      root,
+    ),
+  );
   const dugite = await openGitEngine({ cacheDir: path.join(root, "cache"), log: () => {} });
   if (dugite !== null) {
     results.push(
-      await benchEngine("dugite-fast-import", (c) => dugite.commit(c), (g, o) => dugite.readObjects(g, o), root),
+      await benchEngine(
+        "dugite-fast-import",
+        (c) => dugite.commit(c),
+        (g, o) => dugite.readObjects(g, o),
+        root,
+      ),
     );
   } else {
     console.log("dugite: not available on this host, skipped");

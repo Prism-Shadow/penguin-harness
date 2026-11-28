@@ -265,7 +265,10 @@ describe("moving workbenches into Agent State", { skip: testEngine === null }, (
     await fs.writeFile(inState(agent, "Demo", "package.json"), "mine");
     const lines: string[] = [];
     for (let run = 0; run < 2; run++) {
-      await migrateWorkbenchesIntoState(agent, { engine: testEngine!, log: (line) => lines.push(line) });
+      await migrateWorkbenchesIntoState(agent, {
+        engine: testEngine!,
+        log: (line) => lines.push(line),
+      });
     }
     expect(await fs.readFile(inState(agent, "Demo", "package.json"), "utf8")).toBe("mine");
     expect(await fs.readFile(oldPlace(agent, "demo", "index.ts"), "utf8")).toBe(EDIT);
@@ -369,7 +372,10 @@ describe("moving workbenches into Agent State", { skip: testEngine === null }, (
 
   it("gives two callers at once one finished migration, each version recorded once", async () => {
     await oldLayout(agent);
-    await Promise.all([migrateWorkbenches(agent, testEngine!), migrateWorkbenches(agent, testEngine!)]);
+    await Promise.all([
+      migrateWorkbenches(agent, testEngine!),
+      migrateWorkbenches(agent, testEngine!),
+    ]);
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     expect(await history(agent)).toHaveLength(2);
   });
@@ -398,7 +404,10 @@ describe("moving workbenches into Agent State", { skip: testEngine === null }, (
       const index = path.join(agent, "workbenches-history", "demo", "versions.json");
       await fs.writeFile(index, rewrite(JSON.parse(await fs.readFile(index, "utf8")) as unknown[]));
       const lines: string[] = [];
-      await migrateWorkbenchesIntoState(agent, { engine: testEngine!, log: (line) => lines.push(line) });
+      await migrateWorkbenchesIntoState(agent, {
+        engine: testEngine!,
+        log: (line) => lines.push(line),
+      });
       expect(await history(agent)).toHaveLength(listedAfter);
       expect(lines.filter((line) => line.includes("demo"))).toHaveLength(reported);
       expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
@@ -410,7 +419,10 @@ describe("moving workbenches into Agent State", { skip: testEngine === null }, (
     await fs.mkdir(agentStateRepoDir(agent), { recursive: true });
     await fs.writeFile(path.join(agentStateRepoDir(agent), "HEAD"), "not a ref\n");
     const lines: string[] = [];
-    await migrateWorkbenchesIntoState(agent, { engine: testEngine!, log: (line) => lines.push(line) });
+    await migrateWorkbenchesIntoState(agent, {
+      engine: testEngine!,
+      log: (line) => lines.push(line),
+    });
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     expect(await fs.stat(backedUp(copies[0]!))).toBeTruthy();
     expect(lines.join("\n")).toContain("demo: old versions not imported");

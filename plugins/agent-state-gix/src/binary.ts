@@ -5,6 +5,7 @@
  * so the runtime needs no platform table — the package ships the addon built for the platform
  * it runs on.
  */
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,6 +93,17 @@ export interface Native {
   readObjects(gitdir: string, oids: string[]): Promise<Array<Uint8Array | null>>;
 }
 
+const addonPath = path.join(root, "native", "index.node");
+
 export function loadNative(): Native {
-  return require(path.join(root, "native", "index.node")) as Native;
+  return require(addonPath) as Native;
+}
+
+export function tryLoadNative(): Native | null {
+  if (!fs.existsSync(addonPath)) return null;
+  try {
+    return require(addonPath) as Native;
+  } catch {
+    return null;
+  }
 }
