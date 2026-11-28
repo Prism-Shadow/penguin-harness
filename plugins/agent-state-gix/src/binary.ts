@@ -24,8 +24,8 @@ export interface Native {
     message: string;
     author: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
     committer: { name: string; email: string; whenSeconds: number; whenOffsetMinutes: number };
-  }): string;
-  readObjects(gitdir: string, oids: string[]): Array<Uint8Array | null>;
+  }): Promise<string>;
+  readObjects(gitdir: string, oids: string[]): Promise<Array<Uint8Array | null>>;
 }
 
 export function loadNative(): Native {

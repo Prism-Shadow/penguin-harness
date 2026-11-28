@@ -8,11 +8,14 @@
 //! already exists. Reading a version back is `find_object` per id, the in-process shape of
 //! `git cat-file --batch`.
 //!
+//! Both I/O operations run on Node's libuv worker pool via `AsyncTask`, so disk reads, zlib
+//! compression/decompression, and object-database writes never block the JavaScript event loop.
+//!
 //! Every step writes the same bytes as the real-Git engines: files `100644`, trees in git's
 //! order, the message whole, both identity lines from the harness's zone — so the same input is
 //! the same commit under either, and the interchange tests pin that.
-use napi::bindgen_prelude::Buffer;
-use napi::{Error, Result, Status};
+use napi::bindgen_prelude::{AsyncTask, Buffer};
+use napi::{Env, Error, Result, Status, Task};
 use napi_derive::napi;
 
 /// git's zone: `+hhmm` east of UTC, from the harness's offset in minutes.
@@ -91,13 +94,7 @@ pub struct CommitInput {
     pub committer: IdentityInput,
 }
 
-/// Writes the commit's objects and moves the branch from `parent` to it; answers the commit id.
-///
-/// The branch moves only from the parent the commit names (a branch another writer moved
-/// meanwhile refuses the write), and a branch's first commit refuses a branch that already
-/// exists — the same refusal `git update-ref` and `git push` give.
-#[napi]
-pub fn commit(input: CommitInput) -> Result<String> {
+fn commit_sync(input: &CommitInput) -> Result<String> {
     let repo = gix::open(&input.gitdir)
         .map_err(|e| refuse(format!("gitoxide cannot open {}: {e}", input.gitdir)))?;
 
@@ -108,7 +105,12 @@ pub fn commit(input: CommitInput) -> Result<String> {
     let foundation: gix::hash::ObjectId = match parent {
         Some(id) => repo
             .find_commit(id)
-            .map_err(|e| refuse(format!("parent {} is not in the repository: {e}", input.parent.as_deref().unwrap_or(""))))?
+            .map_err(|e| {
+                refuse(format!(
+                    "parent {} is not in the repository: {e}",
+                    input.parent.as_deref().unwrap_or("")
+                ))
+            })?
             .tree_id()
             .map_err(|e| refuse(format!("parent has no tree: {e}")))?
             .detach(),
@@ -177,24 +179,74 @@ pub fn commit(input: CommitInput) -> Result<String> {
     Ok(id.detach().to_string())
 }
 
-/// The raw content of these objects (a blob's bytes, a tree's entries, a commit's headers —
-/// whatever each id names), in the order asked; an id that is not in the repository answers
-/// None.
+pub struct CommitTask {
+    input: CommitInput,
+}
+
+impl Task for CommitTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        commit_sync(&self.input)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Writes the commit's objects and moves the branch from `parent` to it on the libuv worker pool;
+/// resolves to the commit id.
+///
+/// The branch moves only from the parent the commit names (a branch another writer moved
+/// meanwhile refuses the write), and a branch's first commit refuses a branch that already
+/// exists — the same refusal `git update-ref` and `git push` give.
 #[napi]
-pub fn read_objects(gitdir: String, oids: Vec<String>) -> Result<Vec<Option<Buffer>>> {
-    let repo = gix::open(&gitdir)
+pub fn commit(input: CommitInput) -> AsyncTask<CommitTask> {
+    AsyncTask::new(CommitTask { input })
+}
+
+fn read_objects_sync(gitdir: &str, oids: &[String]) -> Result<Vec<Option<Vec<u8>>>> {
+    let repo = gix::open(gitdir)
         .map_err(|e| refuse(format!("gitoxide cannot open {gitdir}: {e}")))?;
     let mut out = Vec::with_capacity(oids.len());
-    for hex in &oids {
+    for hex in oids {
         let id = oid_of(hex)?;
         match repo.find_object(id) {
-            Ok(object) => out.push(Some(Buffer::from(object.data.to_vec()))),
+            Ok(mut object) => out.push(Some(std::mem::take(&mut object.data))),
             // Absent, exactly as cat-file --batch answers "missing": the caller decides
             // whether an absent object is its answer or its error.
             Err(_) => out.push(None),
         }
     }
     Ok(out)
+}
+
+pub struct ReadObjectsTask {
+    gitdir: String,
+    oids: Vec<String>,
+}
+
+impl Task for ReadObjectsTask {
+    type Output = Vec<Option<Vec<u8>>>;
+    type JsValue = Vec<Option<Buffer>>;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        read_objects_sync(&self.gitdir, &self.oids)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output.into_iter().map(|opt| opt.map(Buffer::from)).collect())
+    }
+}
+
+/// The raw content of these objects (a blob's bytes, a tree's entries, a commit's headers —
+/// whatever each id names), read on the libuv worker pool in the order asked; an id that is not
+/// in the repository answers None.
+#[napi]
+pub fn read_objects(gitdir: String, oids: Vec<String>) -> AsyncTask<ReadObjectsTask> {
+    AsyncTask::new(ReadObjectsTask { gitdir, oids })
 }
 
 /// Who the native half runs as, for the engine's log line.

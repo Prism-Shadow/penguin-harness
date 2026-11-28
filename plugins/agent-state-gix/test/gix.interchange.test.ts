@@ -322,4 +322,63 @@ describe("agent-state-gix interchange with real Git", () => {
     const fsck = run(c.gitdir, ["fsck", "--strict"]);
     expect(fsck.status).toBe(0);
   });
+
+  it("native commit and readObjects run off the event loop (AsyncTask)", async () => {
+    const tip = (await fs.readFile(path.join(c.gitdir, c.ref), "utf8")).trim();
+    const files = Array.from({ length: 200 }, (_, i) => ({
+      rel: `dir${i % 10}/file-${String(i).padStart(4, "0")}.txt`,
+      body: Buffer.from(`payload ${i}\n${"x".repeat(8192)}\n`),
+    }));
+
+    // Commit must return a Promise and settle in a later libuv turn (never blocking the JS tick).
+    const commitOrder: string[] = [];
+    const rawCommitPromise = native.commit({
+      gitdir: c.gitdir,
+      refName: c.ref,
+      parent: tip,
+      rel: "workbenches/w-async",
+      files,
+      message: "async commit\n",
+      author: { name: WHO.name, email: WHO.email, whenSeconds: WHEN.seconds, whenOffsetMinutes: WHEN.offset },
+      committer: { name: WHO.name, email: WHO.email, whenSeconds: WHEN.seconds, whenOffsetMinutes: WHEN.offset },
+    });
+    expect(rawCommitPromise).toBeInstanceOf(Promise);
+    commitOrder.push("sync-return");
+    queueMicrotask(() => commitOrder.push("microtask"));
+    const sha = await rawCommitPromise.then((id) => {
+      commitOrder.push("settled");
+      return id;
+    });
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(commitOrder).toEqual(["sync-return", "microtask", "settled"]);
+
+    const ls = run(c.gitdir, ["ls-tree", "-r", sha]);
+    expect(ls.status).toBe(0);
+    const oids = [...ls.stdout.toString().matchAll(/blob ([0-9a-f]{40})\t/g)].map((m) => m[1]!);
+    expect(oids.length).toBeGreaterThanOrEqual(200);
+
+    // readObjects must likewise return a Promise and settle in a later libuv turn.
+    const readOrder: string[] = [];
+    const rawReadPromise = native.readObjects(c.gitdir, oids);
+    expect(rawReadPromise).toBeInstanceOf(Promise);
+    readOrder.push("sync-return");
+    queueMicrotask(() => readOrder.push("microtask"));
+    const readBack = await rawReadPromise.then((res) => {
+      readOrder.push("settled");
+      return res;
+    });
+    expect(readOrder).toEqual(["sync-return", "microtask", "settled"]);
+    expect(readBack).toHaveLength(oids.length);
+
+    // Concurrent readObjects calls execute safely in parallel on the libuv worker pool.
+    const parallel = await Promise.all(
+      Array.from({ length: 8 }, () => engine.readObjects(c.gitdir, oids)),
+    );
+    for (const batch of parallel) {
+      expect(batch).toHaveLength(oids.length);
+      for (let i = 0; i < oids.length; i++) {
+        expect(Buffer.from(batch[i]!).equals(Buffer.from(readBack[i]!))).toBe(true);
+      }
+    }
+  });
 });
