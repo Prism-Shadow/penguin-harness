@@ -432,7 +432,7 @@ export function PluginBatchInstallModal({
     .filter((i) => states[batchItemKey(i)]?.status === "failed")
     .map((i) => ({
       specifier: i.specifier,
-      error: states[batchItemKey(i)]?.error ?? S.common.failed,
+      error: states[batchItemKey(i)]?.error ?? B.statusFailed,
     }));
 
   const currentOrdinal = Math.min(items.length, doneCount + 1);
@@ -497,7 +497,7 @@ export function PluginBatchInstallModal({
                   status: "failed",
                   stage: null,
                   progress: null,
-                  error: res.loadError ?? S.common.failed,
+                  error: res.loadError ?? B.statusFailed,
                 },
               }));
             } else {
@@ -862,7 +862,7 @@ export function PluginBatchInstallModal({
                       data-testid="batch-failure-manual-config"
                       onClick={onOpenSources}
                     >
-                      {words.openPluginSources}
+                      {words.sourcesSettings}
                     </Button>
                   )}
                   {onConfigureWithAi && (
@@ -873,7 +873,7 @@ export function PluginBatchInstallModal({
                       data-testid="batch-failure-agent-config"
                       onClick={() => onConfigureWithAi(failedItems)}
                     >
-                      {words.askAgentToConfigureSources}
+                      {words.configureWithAi}
                     </Button>
                   )}
                   {onImportFile && (
@@ -884,7 +884,7 @@ export function PluginBatchInstallModal({
                       data-testid="batch-failure-import-file"
                       onClick={onImportFile}
                     >
-                      {words.importInstead}
+                      {words.importFromFile}
                     </Button>
                   )}
                 </div>
@@ -962,7 +962,7 @@ export function PluginBatchInstallModal({
                   className="rounded-xs"
                   onClick={() => onClose({ dontAskAgain: false })}
                 >
-                  {S.common.done}
+                  {words.finish}
                 </Button>
               </div>
             )}
