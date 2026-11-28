@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const ALLOWED_DIR = "lib/shortcuts";
 
 /**
@@ -30,20 +31,41 @@ const EXCUSED_FILES = new Set([
   "lib/workbench-theme.ts",
 ]);
 
+/**
+ * The roots the guard scans: the app's own `src/`, and each library domain's web half the app
+ * compiles in — a moved file must keep its coverage, and the exceptions below name both
+ * spellings (src-relative for the app's own, repo-relative for a library web half's).
+ */
+const SCAN_ROOTS: ReadonlyArray<readonly [root: string, base: string]> = [
+  [WEB_SRC, ""],
+  ...fs
+    .readdirSync(path.join(REPO_ROOT, "library"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => fs.existsSync(path.join(REPO_ROOT, "library", entry.name, "src", "web")))
+    .map(
+      (entry) =>
+        [
+          path.join(REPO_ROOT, "library", entry.name, "src", "web"),
+          `library/${entry.name}/src/web/`,
+        ] as const,
+    ),
+];
+
 /** Every `.ctrlKey` / `.metaKey` read outside a comment, as `file:line`. */
 function modifierReads(): { allowed: string[]; elsewhere: string[] } {
   const allowed: string[] = [];
   const elsewhere: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = (root: string, dir: string, base: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        walk(full);
+        walk(root, full, base);
         continue;
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
-      const rel = path.relative(WEB_SRC, full).replaceAll(path.sep, "/");
-      if (EXCUSED_FILES.has(rel)) continue;
+      const rel = path.relative(root, full).replaceAll(path.sep, "/");
+      const key = `${base}${rel}`;
+      if (EXCUSED_FILES.has(key)) continue;
       const code = fs
         .readFileSync(full, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
@@ -53,11 +75,13 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         );
       code.split("\n").forEach((line, i) => {
         if (!/\.(ctrlKey|metaKey)\b/.test(line)) return;
-        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`src/${rel}:${i + 1}`);
+        // The app's shortcut library is the one place a read belongs; nothing else is.
+        const inShortcuts = base === "" && rel.startsWith(ALLOWED_DIR);
+        (inShortcuts ? allowed : elsewhere).push(`${key}:${i + 1}`);
       });
     }
   };
-  walk(WEB_SRC);
+  for (const [root, base] of SCAN_ROOTS) walk(root, root, base);
   return { allowed, elsewhere };
 }
 

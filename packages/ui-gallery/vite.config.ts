@@ -27,6 +27,8 @@
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
@@ -41,7 +43,15 @@ import { deepPagePaths } from "./src/lib/page-paths";
 const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 function watchPackageSources(): Plugin {
-  const roots = [at("../ui/src/"), at("../web/src/")];
+  // The app's sources include the library domains' web halves (the alias table compiles them
+  // in), so a new file there invalidates the sheets too.
+  const libraries = path.resolve(at("../../"), "library");
+  const libraryWebRoots = fs
+    .readdirSync(libraries, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(libraries, entry.name, "src", "web"))
+    .filter((web) => fs.existsSync(web));
+  const roots = [at("../ui/src/"), at("../web/src/"), ...libraryWebRoots];
   const stylesheets = [
     at("./src/styles.css"),
     at("./src/app/app.css"),

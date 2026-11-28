@@ -7,6 +7,9 @@
     "useDefineForClassFields": true,
     "paths": {
       "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"],
+      "@prismshadow/penguin-server/model-catalog": [
+        "../../library/model/src/model-catalog/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": ["./src/internal.ts"],
       "@prismshadow/penguin-web/internal-hub": ["./src/internal-hub.ts"],
       "@prismshadow/penguin-library-agent/web": ["../../library/agent/src/web/index.ts"],

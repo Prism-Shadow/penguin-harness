@@ -104,6 +104,22 @@ function katexWoff2Only(): Plugin {
  */
 const LIBRARY_WEB_DOMAINS = ["agent", "model", "project", "trace"] as const;
 
+/**
+ * The server's `model-catalog` subpath is a re-export of the model domain's catalog, so the two
+ * names must land on one module: the library files read the catalog's source and the app's own
+ * code reads the server subpath, and two copies of the provider table would disagree the moment
+ * one of them is patched. Alias the subpath to the catalog's TypeScript source (the same file the
+ * server's bundle inlines); the tsconfig `paths` mirror it.
+ */
+const serverModelCatalogAliases = [
+  {
+    find: /^@prismshadow\/penguin-server\/model-catalog$/,
+    replacement: fileURLToPath(
+      new URL("../../library/model/src/model-catalog/index.ts", import.meta.url),
+    ),
+  },
+];
+
 /** The alias table above, as vite's `resolve.alias` entries (shared with vitest.config.ts). */
 export const libraryWebAliases = [
   {
@@ -126,6 +142,7 @@ export const libraryWebAliases = [
       replacement: fileURLToPath(new URL(`../../library/${domain}/src/web/$1`, import.meta.url)),
     },
   ]),
+  ...serverModelCatalogAliases,
 ];
 
 export default defineConfig({

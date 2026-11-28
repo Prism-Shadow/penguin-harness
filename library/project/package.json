@@ -21,7 +21,11 @@
   "exports": {
     "./package.json": "./package.json",
     "./web": "./src/web/index.ts",
-    "./web/*": "./src/web/*",
+    "./web/projects/project-dialogs/create-project-dialog": "./src/web/projects/project-dialogs/create-project-dialog.tsx",
+    "./web/projects/project-dialogs/project-settings-dialog": "./src/web/projects/project-dialogs/project-settings-dialog.tsx",
+    "./web/projects/project-dialogs/security-policy-section": "./src/web/projects/project-dialogs/security-policy-section.tsx",
+    "./web/projects/project-settings-layer": "./src/web/projects/project-settings-layer.tsx",
+    "./web/projects/project-switcher": "./src/web/projects/project-switcher.tsx",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

@@ -20,7 +20,7 @@
  * baseline line that no longer occurs. The list can only shrink: whoever removes a violation
  * deletes its line in the same change.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -28,6 +28,26 @@ import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const BASELINE = fileURLToPath(new URL("./module-boundaries.baseline.txt", import.meta.url));
+/** The repo root: the base of the domains' library packages the app compiles in. */
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+/**
+ * The library domains' web halves (`library/<domain>/src/web/`), keyed by domain: the app
+ * compiles that TypeScript source in (vite.config.ts's alias table), so the same rules hold
+ * there — one wave of moves must not take a guard's subject out of its scan.
+ */
+const LIBRARY_ROOTS: Readonly<Record<string, string>> = (() => {
+  const libraries = join(REPO_ROOT, "library");
+  if (!existsSync(libraries)) return {};
+  const roots: Record<string, string> = {};
+  for (const entry of readdirSync(libraries, { withFileTypes: true })) {
+    const web = join(libraries, entry.name, "src", "web");
+    if (entry.isDirectory() && existsSync(web) && statSync(web).isDirectory()) {
+      roots[entry.name] = web;
+    }
+  }
+  return roots;
+})();
 
 /** Every `.ts`/`.tsx` under `dir`, as POSIX paths relative to it. */
 function sourceFiles(dir: string, rel = ""): string[] {
@@ -125,34 +145,81 @@ interface Scan {
   unresolved: string[];
 }
 
-/** Applies the rules to a set of files; `read` and `isFile` take src-relative paths. */
+/**
+ * The rules a scanned root is held to, spelled for that root's layout: the app's `src/` and
+ * each library web half share the shape (module directories with an `index.ts`, one composition
+ * root), but their names differ.
+ */
+interface ScanRules {
+  /** The one file that may import module classes. */
+  compositionRoot: string;
+  /** The module directory a file belongs to, `null` for a library file of the root. */
+  moduleDirOf(file: string): string | null;
+  /** Whether a library file of the root may import into the module directory at all. */
+  libraryMayImport(other: string): boolean;
+  /** Whether a module directory's public surface (its `index.ts`) may reach another module directory at all. */
+  isIndexFile(target: string): boolean;
+  /** Whether the composition root may import a module directory's `index.ts` (the library entries list their modules). */
+  compositionRootMayImportIndex: boolean;
+}
+
+/** The app's `src/` spelling of the rules. */
+const SRC_RULES: ScanRules = {
+  compositionRoot: COMPOSITION_ROOT,
+  moduleDirOf,
+  libraryMayImport: (other) => other === "web-app",
+  isIndexFile: (target) => /^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target),
+  compositionRootMayImportIndex: false,
+};
+
+/** A library web half's spelling: its modules sit one level down, the entry `index.ts` is the composition root. */
+const libraryRules = (): ScanRules => ({
+  compositionRoot: "index.ts",
+  moduleDirOf: (file) => {
+    const match = /^([^/]+)\//.exec(file);
+    return match === null ? null : match[1]!;
+  },
+  libraryMayImport: () => false,
+  isIndexFile: (target) => /^([^/]+)\/index\.tsx?$/.test(target),
+  compositionRootMayImportIndex: true,
+});
+
+/** Applies the rules to a set of files; `read` and `isFile` take root-relative paths. */
 function scan(
   files: readonly string[],
   read: (rel: string) => string,
   isFile: (rel: string) => boolean,
+  rules: ScanRules = SRC_RULES,
 ): Scan {
   const violations = new Set<string>();
   const unresolved: string[] = [];
   const featureEdges = new Map<string, Set<string>>();
   for (const file of files) {
-    const own = moduleDirOf(file);
+    const own = rules.moduleDirOf(file);
     for (const spec of specifiers(read(file))) {
       const target = resolveImport(file, spec, isFile);
       if (target === undefined) unresolved.push(`${file}: ${spec}`);
       if (target == null || !/\.tsx?$/.test(target)) continue;
-      if (isModuleFile(target) && file !== COMPOSITION_ROOT) {
+      if (isModuleFile(target) && file !== rules.compositionRoot) {
         violations.add(`${file} -> ${target}`);
         continue;
       }
-      const other = moduleDirOf(target);
+      const other = rules.moduleDirOf(target);
       if (other === null || other === own) continue;
-      if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
-      if (own === null) {
-        // A library may use WebApp's public surface (the router's types); never a feature.
-        if (other !== "web-app") violations.add(`${file} -> ${target}`);
+      if (file === rules.compositionRoot && isModuleFile(target)) continue;
+      if (
+        file === rules.compositionRoot &&
+        rules.compositionRootMayImportIndex &&
+        rules.isIndexFile(target)
+      ) {
         continue;
       }
-      if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target)) {
+      if (own === null) {
+        // A library may use WebApp's public surface (the router's types); never a feature.
+        if (!rules.libraryMayImport(other)) violations.add(`${file} -> ${target}`);
+        continue;
+      }
+      if (!rules.isIndexFile(target)) {
         violations.add(`${file} -> ${target}`);
       }
       const set = featureEdges.get(own) ?? new Set<string>();
@@ -173,6 +240,32 @@ function scanSrc(): Scan {
     }
   };
   return scan(sourceFiles(SRC), (rel) => readFileSync(join(SRC, rel), "utf8"), isFile);
+}
+
+/** The prefix that names a library web half's file in the findings, unambiguous against `src/`'s. */
+const libraryPrefix = (domain: string) => `library/${domain}/src/web/`;
+
+/** Applies the module rules to a library web half; its findings carry the {@link libraryPrefix}. */
+function scanLibrary(domain: string): Scan {
+  const root = LIBRARY_ROOTS[domain]!;
+  const isFile = (rel: string): boolean => {
+    try {
+      return statSync(join(root, rel)).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const result = scan(
+    sourceFiles(root),
+    (rel) => readFileSync(join(root, rel), "utf8"),
+    isFile,
+    libraryRules(),
+  );
+  const prefix = libraryPrefix(domain);
+  return {
+    violations: result.violations.map((line) => prefix + line),
+    unresolved: result.unresolved.map((line) => prefix + line),
+  };
 }
 
 function baseline(): string[] {
@@ -282,9 +375,20 @@ describe("the import scan", () => {
   });
 });
 
-describe("module boundaries in packages/web/src", () => {
-  const actual = scanSrc();
+describe("module boundaries in packages/web/src and the library web halves", () => {
+  const actual = (() => {
+    const src = scanSrc();
+    const libraries = Object.keys(LIBRARY_ROOTS).map(scanLibrary);
+    return {
+      violations: [...src.violations, ...libraries.flatMap((s) => s.violations)].sort(),
+      unresolved: [...src.unresolved, ...libraries.flatMap((s) => s.unresolved)].sort(),
+    };
+  })();
   const recorded = baseline();
+
+  it("scans the library web halves the app compiles in", () => {
+    expect(Object.keys(LIBRARY_ROOTS).sort()).toEqual(["agent", "model", "project", "trace"]);
+  });
 
   it("resolves every relative import", () => {
     expect(actual.unresolved).toEqual([]);

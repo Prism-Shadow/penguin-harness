@@ -62,7 +62,8 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "src/features/*/test/**/*.test.ts"],
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,
-    // `vitest run --coverage`: branch and line coverage of the app's own source.
-    coverage: { provider: "v8", include: ["src/**"] },
+    // `vitest run --coverage`: branch and line coverage of the app's own source, including the
+    // library web halves it compiles in (their moved feature code stays reported).
+    coverage: { provider: "v8", include: ["src/**", "../library/*/src/web/**"] },
   },
 });

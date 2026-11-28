@@ -53,7 +53,7 @@ routing table — MMSP owns routing and the environment-key rule.
 ## What a change touches
 
 Adding a model touches the catalog test's exact-order assertions,
-`packages/web/src/features/models/protocol-path.ts` when the client's request path is not
+`library/model/src/web/models/protocol-path.ts` when the client's request path is not
 `/chat/completions`, the provider glyph map, and the bilingual `models` / `configuration` docs.
 
 Provider glyphs are one monochrome family: 24×24, `currentColor`, pure paths, no external assets.
