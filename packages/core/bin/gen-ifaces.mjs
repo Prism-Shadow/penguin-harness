@@ -189,6 +189,7 @@ const manifests = {};
  * it. Absent for a package that has no such default export (the harness itself).
  */
 let pluginDecl = null;
+let browserDecl = null;
 
 // Per-project symbol → manifest name (rebound each project; read after the loop for the
 // last project's symbols) and class name → manifest name, across ALL projects: a module class one package imports from
@@ -559,6 +560,33 @@ for (const project of projects) {
         }
       }
       if (!isPlugin) continue;
+      // VS Code-style `browser` entry in package.json (or `exports["."].browser`):
+      // never scanned recursively — only the exact declared browser entry file is separated
+      // into the `browser` section of the single `ifaces.json`.
+      const browserEntryRaw = (() => {
+        const pkgFile = path.join(process.cwd(), "package.json");
+        if (!fs.existsSync(pkgFile)) return null;
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgFile, "utf8"));
+          const raw =
+            typeof pkg.browser === "string"
+              ? pkg.browser
+              : pkg.exports?.["."]?.browser && typeof pkg.exports["."].browser === "string"
+                ? pkg.exports["."].browser
+                : null;
+          if (typeof raw !== "string") return null;
+          return path.resolve(process.cwd(), raw) === path.resolve(sf.fileName) ? raw : null;
+        } catch {
+          return null;
+        }
+      })();
+      if (browserEntryRaw !== null) {
+        const normalized = browserEntryRaw.startsWith("./")
+          ? browserEntryRaw
+          : `./${browserEntryRaw}`;
+        browserDecl = { entry: normalized, modules: lists.modules, replaces: lists.replaces };
+        continue;
+      }
       if (pluginDecl !== null) {
         errors.push(
           `${path.relative(process.cwd(), sf.fileName)}: a second default export names modules — a package has one plugin declaration`,
@@ -1433,6 +1461,7 @@ const body = {
   types: sortKeys(types),
   modules: sortKeys(manifests),
   ...(pluginDecl === null ? {} : { plugin: pluginDecl }),
+  ...(browserDecl === null ? {} : { browser: browserDecl }),
 };
 const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
 const text = `${JSON.stringify({ hash, ...body }, null, 1)}\n`;

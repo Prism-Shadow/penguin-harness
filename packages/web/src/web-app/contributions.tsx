@@ -23,6 +23,7 @@ import { webAppDeps } from "./deps";
 import { FramePage } from "./frame-page";
 import { parentedPagesOf, removedPagesOf, windowFrameOf, type WebAppPage } from "./page-table";
 import { windowRedirectFor } from "./window-redirect";
+import { RuntimeLayersContext, useRuntimeWebPlugins } from "./runtime-plugins";
 
 /** What the store holds for the current user. */
 export interface ContributionsState {
@@ -310,6 +311,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const signedIn = useAuth().user?.userId ?? null;
   const userId = useSafeMode() ? null : signedIn;
   const [store] = useState(() => createContributionsStore(api.getContributions));
+  const [pluginsRevision, setPluginsRevision] = useState(0);
   useEffect(() => store.setUser(userId), [store, userId]);
   const state = useSyncExternalStore(store.subscribe, store.current, store.current);
   // Until the effect above has told the store about a new user, the state is the last user's:
@@ -317,17 +319,36 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const current = state.user === userId;
   const answer = current ? state.answer : null;
   const pending = current ? state.pending : userId !== null;
+  const runtimeModulesKey = (answer?.modules ?? []).join(",");
+  const runtimePlugins = useRuntimeWebPlugins(
+    userId !== null,
+    `${pluginsRevision}:${runtimeModulesKey}`,
+  );
+  const allCompiled = useMemo(() => {
+    if (runtimePlugins.pages.length === 0) return compiled;
+    const keys = new Set(compiled.map((p) => p.key));
+    const extras = runtimePlugins.pages.filter(
+      (p) => !keys.has(p.key) && (p.gatedBy === undefined || contributionShown(p.gatedBy)),
+    );
+    return extras.length === 0 ? compiled : [...compiled, ...extras];
+  }, [compiled, runtimePlugins.pages]);
+  const mergedRenderers = useMemo(() => {
+    if (runtimePlugins.pageRenderers.size === 0) return pageRenderers;
+    const map = new Map(pageRenderers);
+    for (const [k, v] of runtimePlugins.pageRenderers) if (!map.has(k)) map.set(k, v);
+    return map;
+  }, [pageRenderers, runtimePlugins.pageRenderers]);
   const value = useMemo<WebAppPagesValue>(
     () => ({
-      pages: pageTableFor(compiled, answer, pageRenderers),
-      workbenchHost: { pageRenderers, userEvents },
-      pending,
+      pages: pageTableFor(allCompiled, answer, mergedRenderers),
+      workbenchHost: { pageRenderers: mergedRenderers, userEvents },
+      pending: pending || runtimePlugins.loading,
       // A mocked or older server may leave these out.
       quickStarts: [],
       startMetrics: startMetricsOf(answer),
       refresh: store.refresh,
     }),
-    [compiled, answer, pageRenderers, userEvents, pending, store],
+    [allCompiled, answer, mergedRenderers, userEvents, pending, runtimePlugins.loading, store],
   );
   const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
   // The server re-assembled (a plugin came or went), or the stream lost events: ask again.
@@ -335,6 +356,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
     () =>
       subscribeUserEvents((ev) => {
         if (ev.type === "contributions_changed" || ev.type === "resync_required") {
+          setPluginsRevision((n) => n + 1);
           void store.refresh();
         }
       }),
@@ -346,11 +368,13 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   // Signed out or in safe mode, every gate is shut.
   useEffect(() => setRunningServerModules(runningModulesFor(userId, answer)), [userId, answer]);
   return (
-    <PagesContext.Provider value={value}>
-      <FileRendererRulesContext.Provider value={rules}>
-        {children}
-      </FileRendererRulesContext.Provider>
-    </PagesContext.Provider>
+    <RuntimeLayersContext.Provider value={runtimePlugins.layers}>
+      <PagesContext.Provider value={value}>
+        <FileRendererRulesContext.Provider value={rules}>
+          {children}
+        </FileRendererRulesContext.Provider>
+      </PagesContext.Provider>
+    </RuntimeLayersContext.Provider>
   );
 }
 

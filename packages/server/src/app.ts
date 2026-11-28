@@ -74,7 +74,14 @@ import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
-import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
+import { PLUGINS_RESOURCE_ID, pluginHostFrom, type PluginHost } from "./plugin/host.js";
+import {
+  getCachedPluginWebState,
+  MODULES_MANIFEST_PATH,
+  MODULES_STATIC_PREFIX,
+  parsePluginStaticPath,
+  resolveStaticModuleFile,
+} from "./plugin/web-compile.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
@@ -552,10 +559,15 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // triggers — without this, a request landing right after a restart (before any
   // /api/hmr/* call warms the host up) would miss a restored version entirely and
   // silently fall back to the packaged webDist.
-  registerStaticRoutes(app, async () => {
-    await deps.hmr.ensure();
-    return deps.hmr.resolveWebSource() ?? { kind: "dir", dir: deps.config.webDist };
-  });
+  registerStaticRoutes(
+    app,
+    async () => {
+      await deps.hmr.ensure();
+      return deps.hmr.resolveWebSource() ?? { kind: "dir", dir: deps.config.webDist };
+    },
+    () => pluginHostFrom(deps.hmr.resources),
+    path.join(deps.config.root, ".cache", "plugin-web"),
+  );
 
   return app;
 }
@@ -590,6 +602,7 @@ export type WebSource = { kind: "mem"; files: Map<string, Buffer> } | { kind: "d
  *   very next load anywhere picks the new app up.
  */
 function cacheControlFor(servedPath: string): string {
+  if (servedPath === "assets/modules.json") return "no-cache";
   return servedPath.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache";
 }
 
@@ -800,7 +813,12 @@ function withWorkbenchManifestLink(content: Buffer, reqPath: string, machineId?:
   return rewritten === html ? content : Buffer.from(rewritten, "utf8");
 }
 
-function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
+function registerStaticRoutes(
+  app: Hono<AppEnv>,
+  resolveSource: () => Promise<WebSource>,
+  resolvePluginHost?: () => PluginHost,
+  pluginWebCacheDir?: string,
+): void {
   // The machine query rides the app page's URL (`/app/...?machine=<id>`) and must reach the
   // manifest-link rewrite; the request path alone does not carry it.
   const machineOf = (c: { req: { query(name: string): string | undefined } }) => {
@@ -811,6 +829,45 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
     const reqPath = decodeURIComponent(c.req.path);
     if (reqPath.startsWith("/api/")) {
       return c.json(errorBody("not_found", "Endpoint does not exist."), 404);
+    }
+    if (
+      resolvePluginHost !== undefined &&
+      pluginWebCacheDir !== undefined &&
+      (reqPath === MODULES_MANIFEST_PATH || reqPath.startsWith(`${MODULES_STATIC_PREFIX}/`))
+    ) {
+      const source = await resolveSource();
+      const host = resolvePluginHost();
+      if (reqPath === MODULES_MANIFEST_PATH) {
+        const state = await getCachedPluginWebState(host, source, pluginWebCacheDir);
+        const body = Buffer.from(JSON.stringify(state.manifest), "utf8");
+        return staticResponse(c, body, "assets/modules.json", etagOfBuffer(body));
+      }
+      const parsed = parsePluginStaticPath(reqPath);
+      if (parsed === null) {
+        return c.json(errorBody("not_found", "Resource does not exist."), 404);
+      }
+      const assetFile = await resolveStaticModuleFile(
+        host,
+        source,
+        pluginWebCacheDir,
+        parsed.specifier,
+        parsed.hash,
+        parsed.relPath,
+      );
+      if (assetFile === null) {
+        return c.json(errorBody("not_found", "Resource does not exist."), 404);
+      }
+      try {
+        const content = await fsp.readFile(assetFile);
+        return staticResponse(
+          c,
+          content,
+          `assets/modules/${parsed.specifier}/${parsed.hash}/${parsed.relPath}`,
+          `"${parsed.hash}:${parsed.relPath}"`,
+        );
+      } catch {
+        return c.json(errorBody("not_found", "Resource does not exist."), 404);
+      }
     }
     const rel = reqPath.replace(/^\/+/, "") || "index.html";
     // Resolved per request: the hot host may retarget it between requests.

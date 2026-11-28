@@ -130,6 +130,7 @@
     "micromark-extension-gfm-task-list-item": "^2.1.0",
     "minimatch": "^10.2.6",
     "node-pty": "^1.1.0",
+    "parse5": "^8.0.1",
     "remark-parse": "^11.0.0",
     "smol-toml": "^1.9.1",
     "tar": "^7.5.21",

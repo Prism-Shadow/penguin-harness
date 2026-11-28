@@ -1213,6 +1213,9 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
+      parse5:
+        specifier: ^8.0.1
+        version: 8.0.1
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0(supports-color@10.2.2)
@@ -8643,6 +8646,7 @@ snapshots:
       micromark-extension-gfm-task-list-item: 2.1.0
       minimatch: 10.2.6
       node-pty: 1.1.0
+      parse5: 8.0.1
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
       smol-toml: 1.9.1
@@ -8706,6 +8710,7 @@ snapshots:
       micromark-extension-gfm-task-list-item: 2.1.0
       minimatch: 10.2.6
       node-pty: 1.1.0
+      parse5: 8.0.1
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
       smol-toml: 1.9.1
@@ -8769,6 +8774,7 @@ snapshots:
       micromark-extension-gfm-task-list-item: 2.1.0
       minimatch: 10.2.6
       node-pty: 1.1.0
+      parse5: 8.0.1
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
       smol-toml: 1.9.1

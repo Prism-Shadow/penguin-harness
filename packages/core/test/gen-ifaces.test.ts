@@ -280,3 +280,84 @@ export default { modules: [DemoPlugin] } satisfies Plugin;
     SPAWN_BUDGET,
   );
 });
+
+describe("a plugin with both main and browser entries in one tsconfig", () => {
+  it("keeps one ifaces.json with both modules and separates browser metadata from plugin", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gen-ifaces-web-")));
+    try {
+      const coreDist = path.resolve(import.meta.dirname, "..");
+      fs.writeFileSync(
+        path.join(dir, "package.json"),
+        JSON.stringify({
+          name: "@test/dual-entry",
+          version: "0.0.1",
+          type: "module",
+          main: "./dist/index.js",
+          browser: "./src/web/index.ts",
+          exports: {
+            ".": { import: "./dist/index.js" },
+          },
+        }),
+      );
+      fs.writeFileSync(
+        path.join(dir, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            target: "ES2022",
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
+            paths: {
+              "@prismshadow/penguin-core/kernel": [
+                path.join(coreDist, "dist", "kernel", "index.d.ts"),
+              ],
+            },
+          },
+          include: ["src"],
+        }),
+      );
+      fs.mkdirSync(path.join(dir, "src", "web"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "src", "index.ts"),
+        `import { Module } from "@prismshadow/penguin-core/kernel";
+@Module()
+export class DualServerModule {}
+export default { modules: [DualServerModule] };
+`,
+      );
+      fs.writeFileSync(
+        path.join(dir, "src", "web", "index.ts"),
+        `import { Module } from "@prismshadow/penguin-core/kernel";
+@Module()
+export class DualWebModule {}
+export default { modules: [DualWebModule] };
+`,
+      );
+      const res = spawnSync(
+        process.execPath,
+        [BIN, "--project", "tsconfig.json", "--out", "ifaces.json"],
+        {
+          cwd: dir,
+          encoding: "utf8",
+        },
+      );
+      expect(res.status, res.stderr).toBe(0);
+      const table = JSON.parse(fs.readFileSync(path.join(dir, "ifaces.json"), "utf8")) as {
+        modules: Record<string, unknown>;
+        plugin: { modules: string[]; replaces: string[] };
+        browser: { entry: string; modules: string[]; replaces: string[] };
+      };
+      expect(Object.keys(table.modules).sort()).toEqual(["DualServerModule", "DualWebModule"]);
+      expect(table.plugin).toEqual({ modules: ["DualServerModule"], replaces: [] });
+      expect(table.browser).toEqual({
+        entry: "./src/web/index.ts",
+        modules: ["DualWebModule"],
+        replaces: [],
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
