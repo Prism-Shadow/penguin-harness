@@ -95,7 +95,7 @@ export function ManagedBrowserPages({
       <ul aria-label={S.builtinBrowser.panelTitle} className="flex flex-col gap-1">
         {tabs?.map((tab) => (
           <li key={tab.id} className="flex min-w-0 items-center justify-between gap-2">
-            <span className="min-w-0 break-all" title={tab.url}>
+            <span className="min-w-0 break-all" data-tooltip={tab.url}>
               {tab.title || tab.url}
             </span>
             <Button

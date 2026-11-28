@@ -48,18 +48,18 @@ const EXCUSED_FILES = new Set([
 function modifierReads(): { allowed: string[]; elsewhere: string[] } {
   const allowed: string[] = [];
   const elsewhere: string[] = [];
-  const walk = (prefix: string, dir: string): void => {
+  const walk = (prefix: string, root: string, dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        walk(prefix, full);
+        walk(prefix, root, full);
         continue;
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
-      const rel = path
-        .join(prefix, path.relative(dir, full))
-        .replaceAll(path.sep, "/");
-      if (EXCUSED_FILES.has(rel)) continue;
+      // `key` is the file's path under its root — the space EXCUSED_FILES and ALLOWED_DIR
+      // speak; the finding reports it under the root's repo-relative prefix.
+      const key = path.relative(root, full).replaceAll(path.sep, "/");
+      if (EXCUSED_FILES.has(key)) continue;
       const code = fs
         .readFileSync(full, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
@@ -69,11 +69,11 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         );
       code.split("\n").forEach((line, i) => {
         if (!/\.(ctrlKey|metaKey)\b/.test(line)) return;
-        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`${rel}:${i + 1}`);
+        (key.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`${prefix}/${key}:${i + 1}`);
       });
     }
   };
-  for (const [prefix, dir] of ROOTS) walk(prefix, dir);
+  for (const [prefix, dir] of ROOTS) walk(prefix, dir, dir);
   return { allowed, elsewhere };
 }
 

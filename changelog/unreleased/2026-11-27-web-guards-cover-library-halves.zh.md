@@ -16,4 +16,5 @@ Web App 的结构性测试现在连同 workbench 与 organization 两个 web 半
 - web 与 ui-gallery 的样式表为两个 web 半补上 `@source` 条目，Tailwind 继续产出搬走页面用到的类名。
 - 模块边界测试解析裸的 `@prismshadow` 别名并扫描两个 web 半。它的 baseline 把搬家前的 cycle 记录保留在当初记录它们的条目名下，清单仍只缩不涨。
 - 表单提交守卫、原生 title 守卫、菜单样式守卫、快捷键守卫、clipboard 测试与 highlighter worker 测试都把两个 web 半纳入扫描。web 半的页面本来就满足这些规则。
+- managed-browser 页的标签页 URL 提示改走共享 tooltip（`data-tooltip`），不再用原生 `title`——这是 title 守卫扩大扫描后找到的唯一一处。
 - Vitest 覆盖率统计 web 半的源码，ui-gallery 的 dev server 也监视它们：改 web 半会触发 gallery 重建，覆盖率里也看得到。
