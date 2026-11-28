@@ -86,15 +86,140 @@ async function backUp(source: string, dir: string): Promise<string> {
   return dest;
 }
 
+const LINK_PENDING_FILE = "link-pending";
+const PENDING_HISTORY_DIR = "pending-history";
+
+async function createCompatibilityLink(
+  old: string,
+  target: string,
+  linkPending: string,
+  once: (key: string, line: string) => void,
+): Promise<void> {
+  await fs.mkdir(target, { recursive: true });
+  try {
+    // A junction needs no privilege on Windows and takes an absolute target; elsewhere a
+    // relative one keeps the link valid wherever the data root is moved.
+    if (process.platform === "win32") await fs.symlink(target, old, "junction");
+    else await fs.symlink(path.join("agent_state", "workbenches"), old, "dir");
+    await fs.rm(linkPending, { force: true }).catch(() => undefined);
+  } catch (err) {
+    if (codeOf(err) === "EEXIST") {
+      const existing = await fs.lstat(old).catch(() => null);
+      if (existing?.isSymbolicLink()) {
+        await fs.rm(linkPending, { force: true }).catch(() => undefined);
+      }
+      return;
+    }
+    await fs.mkdir(old, { recursive: true }).catch(() => undefined);
+    once(`link:${old}`, `[workbenches] ${old} not linked to ${target}: ${messageOf(err)}`);
+  }
+}
+
 /**
  * Keeps the old place's link leading somewhere: while `<agentDir>/workbenches` is a link, its
- * target exists. For whatever replaces `agent_state/` wholesale.
+ * target exists. Also repairs a compatibility link interrupted between `rmdir` and `symlink`.
+ * For whatever replaces `agent_state/` wholesale.
  */
 export async function ensureWorkbenchLinkTarget(agentDir: string): Promise<void> {
-  const kind = await fs.lstat(path.join(agentDir, "workbenches")).catch(() => null);
+  const old = path.join(agentDir, "workbenches");
+  const target = path.join(agentDir, "agent_state", "workbenches");
+  const linkPending = path.join(agentDir, ".workbench-migration", LINK_PENDING_FILE);
+  const kind = await fs.lstat(old).catch(() => null);
   if (kind?.isSymbolicLink()) {
-    await fs.mkdir(path.join(agentDir, "agent_state", "workbenches"), { recursive: true });
+    await fs.mkdir(target, { recursive: true });
+    await fs.rm(linkPending, { force: true }).catch(() => undefined);
+    return;
   }
+  if (kind === null && (await exists(linkPending))) {
+    await createCompatibilityLink(old, target, linkPending, () => undefined);
+  }
+}
+
+/**
+ * Retries importing backed-up legacy history recorded in `.workbench-migration/pending-history/`
+ * when the Git engine was temporarily unready or failed during the live workbench move (Major #6).
+ */
+async function retryPendingHistoryImports(
+  agentDir: string,
+  target: string,
+  journal: string,
+  opts: StateMigrationOptions,
+  log: (line: string) => void,
+): Promise<void> {
+  const pendingDir = path.join(journal, PENDING_HISTORY_DIR);
+  const stat = await fs.lstat(pendingDir).catch(() => null);
+  if (!stat || !stat.isDirectory()) return;
+
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(pendingDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  if (entries.length === 0) {
+    await fs.rmdir(pendingDir).catch(() => undefined);
+    return;
+  }
+
+  let repo: AgentStateRepo | null = null;
+  let engineErr: unknown = null;
+  try {
+    const resolvedEngine = typeof opts.engine === "function" ? opts.engine() : opts.engine;
+    repo = new AgentStateRepo({
+      gitdir: agentStateRepoDir(agentDir),
+      now: () => new Date(),
+      log: (line) => log(`[workbenches] ${line}`),
+      engine: resolvedEngine,
+    });
+  } catch (err) {
+    engineErr = err;
+  }
+
+  const resolvedAgent = path.resolve(agentDir);
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isFile() || !isWorkbenchId(entry.name)) continue;
+    const id = entry.name;
+    const markerPath = path.join(pendingDir, id);
+    // A deleted workbench lists no history: clear the pending marker if the live folder is gone.
+    if (!(await exists(path.join(target, id)))) {
+      await fs.rm(markerPath, { force: true }).catch(() => undefined);
+      continue;
+    }
+    let backupSource: string;
+    try {
+      backupSource = (await fs.readFile(markerPath, "utf8")).trim();
+    } catch {
+      continue;
+    }
+    const resolvedSource = path.resolve(agentDir, backupSource);
+    if (
+      !resolvedSource.startsWith(`${resolvedAgent}${path.sep}`) ||
+      !(await exists(resolvedSource))
+    ) {
+      await fs.rm(markerPath, { force: true }).catch(() => undefined);
+      continue;
+    }
+    if (repo === null) {
+      const key = `pending-engine:${markerPath}`;
+      if (!reported.has(key)) {
+        reported.add(key);
+        log(`[workbenches] ${id}: old versions not imported: ${messageOf(engineErr)}`);
+      }
+      continue;
+    }
+    try {
+      await importVersions(repo, id, resolvedSource, log);
+    } catch (err) {
+      const key = `pending-retry:${markerPath}:${messageOf(err)}`;
+      if (!reported.has(key)) {
+        reported.add(key);
+        log(`[workbenches] ${id}: old versions not imported: ${messageOf(err)}`);
+      }
+      continue;
+    }
+    await fs.rm(markerPath, { force: true }).catch(() => undefined);
+  }
+  await fs.rmdir(pendingDir).catch(() => undefined);
 }
 
 export async function migrateWorkbenchesIntoState(
@@ -103,25 +228,45 @@ export async function migrateWorkbenchesIntoState(
 ): Promise<void> {
   const old = path.join(agentDir, "workbenches");
   const target = path.join(agentDir, "agent_state", "workbenches");
-  let kind: import("node:fs").Stats;
-  try {
-    kind = await fs.lstat(old);
-  } catch (err) {
-    if (codeOf(err) === "ENOENT") return;
-    throw err;
-  }
-  if (kind.isSymbolicLink()) {
-    await fs.mkdir(target, { recursive: true });
-    return;
-  }
-  if (!kind.isDirectory()) return;
-
+  const journal = path.join(agentDir, ".workbench-migration");
+  const backupDir = path.join(journal, "backup");
+  const linkPending = path.join(journal, LINK_PENDING_FILE);
   const log = opts.log ?? ((line: string) => console.log(line));
   const once = (key: string, line: string) => {
     if (reported.has(key)) return;
     reported.add(key);
     log(line);
   };
+
+  let kind: import("node:fs").Stats | null;
+  try {
+    kind = await fs.lstat(old);
+  } catch (err) {
+    if (codeOf(err) === "ENOENT") {
+      kind = null;
+    } else {
+      throw err;
+    }
+  }
+
+  if (kind === null) {
+    // Repair a compatibility link interrupted between `rmdir(old)` and `symlink` (Minor #11).
+    if (await exists(linkPending)) {
+      await createCompatibilityLink(old, target, linkPending, once);
+    }
+    await retryPendingHistoryImports(agentDir, target, journal, opts, log);
+    return;
+  }
+  if (kind.isSymbolicLink()) {
+    await fs.mkdir(target, { recursive: true });
+    await fs.rm(linkPending, { force: true }).catch(() => undefined);
+    await retryPendingHistoryImports(agentDir, target, journal, opts, log);
+    return;
+  }
+  if (!kind.isDirectory()) {
+    await retryPendingHistoryImports(agentDir, target, journal, opts, log);
+    return;
+  }
   const taken = new Set(
     (await fs.readdir(target).catch(() => [] as string[])).map((name) => folded(name)),
   );
@@ -148,7 +293,6 @@ export async function migrateWorkbenchesIntoState(
     ready.push(folder);
   }
 
-  const backupDir = path.join(agentDir, ".workbench-migration", "backup");
   for (const other of others) {
     try {
       const kept = await backUp(other, path.join(backupDir, "workbenches"));
@@ -174,11 +318,17 @@ export async function migrateWorkbenchesIntoState(
       engineErr = err;
     }
     for (const folder of ready) {
+      let imported = false;
+      const copies = path.join(history, folder.id);
+      const hasHistory = await exists(copies);
       try {
         if (repo !== null) {
-          await importVersions(repo, folder, path.join(history, folder.id), log);
-        } else if (await exists(path.join(history, folder.id, "versions.json"))) {
+          await importVersions(repo, folder.id, copies, log);
+          imported = true;
+        } else if (await exists(path.join(copies, "versions.json"))) {
           log(`[workbenches] ${folder.id}: old versions not imported: ${messageOf(engineErr)}`);
+        } else {
+          imported = true;
         }
       } catch (err) {
         log(`[workbenches] ${folder.id}: old versions not imported: ${messageOf(err)}`);
@@ -189,40 +339,51 @@ export async function migrateWorkbenchesIntoState(
         log(`[workbenches] ${folder.dir} not moved: ${messageOf(err)}`);
         continue;
       }
-      const copies = path.join(history, folder.id);
-      if (!(await exists(copies))) continue;
-      await backUp(copies, path.join(backupDir, "workbenches-history")).catch((err) => {
+      if (!hasHistory) continue;
+      let keptPath = copies;
+      try {
+        keptPath = await backUp(copies, path.join(backupDir, "workbenches-history"));
+      } catch (err) {
         log(`[workbenches] ${copies} kept in place: ${messageOf(err)}`);
-      });
+      }
+      // Persist pending history import marker so a temporarily unready engine automatically
+      // completes the import on a later access even after `workbenches` is linked (Major #6).
+      if (!imported) {
+        const pendingDir = path.join(journal, PENDING_HISTORY_DIR);
+        await fs.mkdir(pendingDir, { recursive: true }).catch(() => undefined);
+        const relSource = path.relative(agentDir, keptPath);
+        await fs
+          .writeFile(path.join(pendingDir, folder.id), `${relSource}\n`)
+          .catch(() => undefined);
+      }
     }
     await fs.rmdir(history).catch(() => undefined);
   }
-  await linkOldPlace(old, target, once);
+  await linkOldPlace(old, target, journal, linkPending, once);
+  await retryPendingHistoryImports(agentDir, target, journal, opts, log);
 }
 
 /** Replaces the emptied old directory with a link to the new one; a real directory otherwise. */
 async function linkOldPlace(
   old: string,
   target: string,
+  journal: string,
+  linkPending: string,
   once: (key: string, line: string) => void,
 ): Promise<void> {
   if (reported.has(`link:${old}`)) return;
+  // Record link intent BEFORE removing `old` so an interruption between `rmdir` and `symlink`
+  // is repaired on the next access instead of permanently omitting the link (Minor #11).
+  await fs.mkdir(journal, { recursive: true });
+  await fs.writeFile(linkPending, "1\n");
   try {
     // Fails while anything is left in it, which then waits for a later access.
     await fs.rmdir(old);
   } catch {
+    await fs.rm(linkPending, { force: true }).catch(() => undefined);
     return;
   }
-  await fs.mkdir(target, { recursive: true });
-  try {
-    // A junction needs no privilege on Windows and takes an absolute target; elsewhere a
-    // relative one keeps the link valid wherever the data root is moved.
-    if (process.platform === "win32") await fs.symlink(target, old, "junction");
-    else await fs.symlink(path.join("agent_state", "workbenches"), old, "dir");
-  } catch (err) {
-    await fs.mkdir(old, { recursive: true });
-    once(`link:${old}`, `[workbenches] ${old} not linked to ${target}: ${messageOf(err)}`);
-  }
+  await createCompatibilityLink(old, target, linkPending, once);
 }
 
 /**
@@ -255,23 +416,28 @@ async function entrySettled(file: string): Promise<boolean> {
  */
 async function importVersions(
   repo: AgentStateRepo,
-  folder: WorkbenchFolder,
+  id: string,
   historyDir: string,
   log: (line: string) => void,
 ): Promise<void> {
-  const rel = `workbenches/${folder.id}`;
-  // A run cut short committed some of the same versions; they are not recorded twice.
-  const recorded = new Set((await repo.history(rel)).map((v) => v.revision));
-  for (const version of await oldVersions(historyDir, folder.id, log)) {
+  const rel = `workbenches/${id}`;
+  const versions = await oldVersions(historyDir, id, log);
+  if (versions.length === 0) return;
+  // Deduplicate against the full recorded history rather than the 50-entry UI display cap (Minor #10).
+  const recorded = new Set(
+    (await repo.history(rel, { limit: 1_000_000, walk: 1_000_000 })).map((v) => v.revision),
+  );
+  for (const version of versions) {
     if (recorded.has(version.folder.revision)) continue;
     const files = await readLoadedSource(version.folder);
     if (files === null) {
       log(`[workbenches] ${version.folder.dir} changed while it was read; not imported`);
       continue;
     }
-    await repo.commitPath(rel, files, `workbench ${folder.id} @${version.folder.revision}`, {
+    await repo.commitPath(rel, files, `workbench ${id} @${version.folder.revision}`, {
       at: version.at,
     });
+    recorded.add(version.folder.revision);
   }
 }
 

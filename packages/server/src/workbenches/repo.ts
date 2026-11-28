@@ -242,8 +242,8 @@ export class AgentStateRepo {
    * The versions of `rel`, newest first: at most HISTORY_LIMIT, found within HISTORY_WALK
    * commits. The version HEAD has is always listed, even when it is older than the walk.
    */
-  async history(rel: string): Promise<RecordedVersion[]> {
-    const rows = await this.versions(rel);
+  async history(rel: string, opts?: { limit?: number; walk?: number }): Promise<RecordedVersion[]> {
+    const rows = await this.versions(rel, opts);
     return rows.map((v) => ({
       revision: v.tree.slice(0, SHORT),
       commit: v.commit.slice(0, SHORT),
@@ -367,7 +367,7 @@ export class AgentStateRepo {
   private holdsExactly(listed: readonly GitTreeEntry[], files: SourceFile[]): boolean {
     if (listed.length !== files.length) return false;
     const want = new Map(files.map((f) => [f.rel, blobOid(f.body)] as const));
-    return listed.every((f) => want.get(f.rel) === f.oid);
+    return listed.every((f) => f.mode === "100644" && want.get(f.rel) === f.oid);
   }
 
   private commitOf(
@@ -426,7 +426,10 @@ export class AgentStateRepo {
     }
   }
 
-  private async versions(rel: string): Promise<GitHistoryEntry[]> {
+  private async versions(
+    rel: string,
+    opts?: { limit?: number; walk?: number },
+  ): Promise<GitHistoryEntry[]> {
     if (!(await this.exists())) return [];
     return this.withRepo(async (repo) => {
       const head = await repo.resolveHead();
@@ -434,8 +437,8 @@ export class AgentStateRepo {
       return repo.walkHistory({
         fromCommit: head.commit,
         prefix: rel,
-        limit: this.limit,
-        maxWalk: this.walk,
+        limit: opts?.limit ?? this.limit,
+        maxWalk: opts?.walk ?? this.walk,
       });
     });
   }

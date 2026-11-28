@@ -99,6 +99,15 @@ impl napi::bindgen_prelude::FromNapiValue for SafeBytes {
         if status != napi::sys::Status::napi_ok {
             return Err(git_err("INVALID_PATH", "failed to inspect file body buffer"));
         }
+        // Reject wider typed arrays (e.g. Uint16Array) where `byte_len` is element count, not bytes (Minor #8).
+        if ta_type != napi::sys::TypedarrayType::uint8_array
+            && ta_type != napi::sys::TypedarrayType::uint8_clamped_array
+        {
+            return Err(git_err(
+                "INVALID_PATH",
+                "expected Buffer or Uint8Array for file body",
+            ));
+        }
         // Node-API `napi_is_arraybuffer` returns true ONLY for non-shared ArrayBuffer (false for SharedArrayBuffer).
         let mut is_ab = false;
         let ab_status = napi::sys::napi_is_arraybuffer(env, arraybuffer, &mut is_ab);
@@ -166,6 +175,19 @@ fn is_safe_rel_path(rel: &str) -> bool {
     }
     true
 }
+#[cfg(windows)]
+fn is_win32_extractable_path(rel: &str) -> bool {
+    // Reject characters forbidden by Win32 filesystems before writing any entry (Minor #5).
+    !rel.bytes().any(|b| {
+        b < 0x20 || matches!(b, b'<' | b'>' | b'"' | b'|' | b'?' | b'*')
+    })
+}
+
+#[cfg(not(windows))]
+fn is_win32_extractable_path(_rel: &str) -> bool {
+    true
+}
+
 fn join_prefix(prefix: &str, rel: &str) -> String {
     if prefix.is_empty() {
         rel.to_string()
@@ -303,6 +325,33 @@ fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash:
             format!("{path} metadata changed during read"),
         ));
     }
+    // Check pathname replacement parity with CLI/Dugite (Minor #7): reject if the pathname now
+    // points to a different inode, non-regular file, missing path, or modified metadata.
+    let post_lstat = fs::symlink_metadata(path).map_err(|e| {
+        git_err(
+            "SOURCE_CHANGED",
+            format!("{path} disappeared during read: {e}"),
+        )
+    })?;
+    if !post_lstat.file_type().is_file()
+        || post_lstat.len() != expected
+        || (before_mtime.is_some() && post_lstat.modified().ok() != before_mtime)
+    {
+        return Err(git_err(
+            "SOURCE_CHANGED",
+            format!("{path} replaced during read"),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if post_lstat.dev() != before.dev() || post_lstat.ino() != before.ino() {
+            return Err(git_err(
+                "SOURCE_CHANGED",
+                format!("{path} inode replaced during read"),
+            ));
+        }
+    }
     Ok(oid)
 }
 
@@ -322,30 +371,33 @@ fn subtree_oid(
         .tree_id()
         .map_err(|e| git_err("REPO_CORRUPT", format!("commit {commit_id} has no tree: {e}")))?
         .detach();
-    if prefix.is_empty() {
-        return Ok(Some(tree_id));
-    }
-    for segment in prefix.split('/') {
-        let tree = repo
-            .find_tree(tree_id)
-            .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} missing: {e}")))?;
-        let decoded = tree
-            .decode()
-            .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} malformed: {e}")))?;
-        let mut found = None;
-        for entry in decoded.entries {
-            if entry.filename == segment.as_bytes() {
-                if entry.mode.is_tree() {
-                    found = Some(entry.oid.to_owned());
+    if !prefix.is_empty() {
+        for segment in prefix.split('/') {
+            let tree = repo
+                .find_tree(tree_id)
+                .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} missing: {e}")))?;
+            let decoded = tree
+                .decode()
+                .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} malformed: {e}")))?;
+            let mut found = None;
+            for entry in decoded.entries {
+                if entry.filename == segment.as_bytes() {
+                    if entry.mode.is_tree() {
+                        found = Some(entry.oid.to_owned());
+                    }
+                    break;
                 }
-                break;
+            }
+            match found {
+                Some(next) => tree_id = next,
+                None => return Ok(None),
             }
         }
-        match found {
-            Some(next) => tree_id = next,
-            None => return Ok(None),
-        }
     }
+    // Validate that the final subtree OID actually exists as a tree object (Major #9).
+    let _final_tree = repo
+        .find_tree(tree_id)
+        .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} missing or corrupt: {e}")))?;
     Ok(Some(tree_id))
 }
 
@@ -357,8 +409,6 @@ pub struct NativeTreeEntry {
     pub size: Option<f64>,
 }
 
-const MAX_TREE_DEPTH: usize = 256;
-
 fn collect_tree_entries(
     repo: &gix::Repository,
     tree_id: gix::hash::ObjectId,
@@ -366,18 +416,21 @@ fn collect_tree_entries(
     with_size: bool,
     out: &mut Vec<NativeTreeEntry>,
 ) -> Result<()> {
-    // Frame-based iterative DFS that preserves exact depth-first Git entry order:
-    let mut frames: Vec<(Vec<EitherEntry>, usize)> = Vec::new();
+    // Heap-iterative DFS preserving exact depth-first Git entry order with no artificial depth cap
+    // (Minor #9); active-path cycle detection guards against corrupt self-referencing trees.
+    let mut frames: Vec<(gix::hash::ObjectId, Vec<EitherEntry>)> = Vec::new();
+    let mut active_trees: HashSet<gix::hash::ObjectId> = HashSet::new();
+
     let push_tree = |repo: &gix::Repository,
                      tid: gix::hash::ObjectId,
                      b: String,
-                     d: usize,
-                     frames: &mut Vec<(Vec<EitherEntry>, usize)>|
+                     frames: &mut Vec<(gix::hash::ObjectId, Vec<EitherEntry>)>,
+                     active_trees: &mut HashSet<gix::hash::ObjectId>|
      -> Result<()> {
-        if d > MAX_TREE_DEPTH {
+        if !active_trees.insert(tid) {
             return Err(git_err(
                 "REPO_CORRUPT",
-                format!("tree nesting exceeds maximum depth {MAX_TREE_DEPTH}"),
+                format!("cyclic tree reference detected at {tid}"),
             ));
         }
         let tree = repo
@@ -388,25 +441,35 @@ fn collect_tree_entries(
             .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tid} malformed: {e}")))?;
         let mut items = Vec::with_capacity(decoded.entries.len());
         for entry in decoded.entries {
-            let name = std::str::from_utf8(entry.filename.as_ref())
-                .map_err(|_| {
-                    git_err("INVALID_PATH", format!("non-UTF-8 tree entry name in tree {tid}"))
-                })?
-                .to_owned();
-            let rel = if b.is_empty() {
-                name
-            } else {
-                format!("{b}/{name}")
-            };
-            match entry.mode.kind() {
+            // Check entry mode BEFORE decoding filename so non-UTF-8 submodules/symlinks are skipped
+            // per contract (Minor #4).
+            let kind = entry.mode.kind();
+            match kind {
                 gix::object::tree::EntryKind::Tree => {
-                    items.push(EitherEntry::Tree(entry.oid.to_owned(), rel, d + 1));
+                    let name = std::str::from_utf8(entry.filename.as_ref())
+                        .map_err(|_| {
+                            git_err("INVALID_PATH", format!("non-UTF-8 tree entry name in tree {tid}"))
+                        })?
+                        .to_owned();
+                    let rel = if b.is_empty() {
+                        name
+                    } else {
+                        format!("{b}/{name}")
+                    };
+                    items.push(EitherEntry::Tree(entry.oid.to_owned(), rel));
                 }
                 gix::object::tree::EntryKind::Blob | gix::object::tree::EntryKind::BlobExecutable => {
-                    let mode_str = if matches!(
-                        entry.mode.kind(),
-                        gix::object::tree::EntryKind::BlobExecutable
-                    ) {
+                    let name = std::str::from_utf8(entry.filename.as_ref())
+                        .map_err(|_| {
+                            git_err("INVALID_PATH", format!("non-UTF-8 tree entry name in tree {tid}"))
+                        })?
+                        .to_owned();
+                    let rel = if b.is_empty() {
+                        name
+                    } else {
+                        format!("{b}/{name}")
+                    };
+                    let mode_str = if matches!(kind, gix::object::tree::EntryKind::BlobExecutable) {
                         "100755"
                     } else {
                         "100644"
@@ -436,20 +499,22 @@ fn collect_tree_entries(
             }
         }
         items.reverse();
-        frames.push((items, d));
+        frames.push((tid, items));
         Ok(())
     };
 
-    push_tree(repo, tree_id, base.to_string(), 0, &mut frames)?;
-    while let Some((items, _d)) = frames.last_mut() {
+    push_tree(repo, tree_id, base.to_string(), &mut frames, &mut active_trees)?;
+    while let Some((tid, items)) = frames.last_mut() {
         let Some(item) = items.pop() else {
+            let done_tid = *tid;
             frames.pop();
+            active_trees.remove(&done_tid);
             continue;
         };
         match item {
             EitherEntry::Blob(entry) => out.push(entry),
-            EitherEntry::Tree(child_id, child_rel, child_depth) => {
-                push_tree(repo, child_id, child_rel, child_depth, &mut frames)?;
+            EitherEntry::Tree(child_id, child_rel) => {
+                push_tree(repo, child_id, child_rel, &mut frames, &mut active_trees)?;
             }
         }
     }
@@ -458,7 +523,7 @@ fn collect_tree_entries(
 
 enum EitherEntry {
     Blob(NativeTreeEntry),
-    Tree(gix::hash::ObjectId, String, usize),
+    Tree(gix::hash::ObjectId, String),
 }
 
 #[napi(object)]
@@ -477,7 +542,10 @@ fn resolve_head_sync(repo: &gix::Repository) -> Result<NativeHeadInfo> {
             format!("{} has a detached HEAD", repo.git_dir().display()),
         ));
     };
-    let ref_name = referent.as_bstr().to_string();
+    // Reject non-UTF-8 symbolic referents instead of looking up a lossy U+FFFD spelling (Major #15).
+    let ref_name = std::str::from_utf8(referent.as_bstr().as_ref())
+        .map_err(|_| git_err("INVALID_REF", "HEAD symbolic referent is not valid UTF-8"))?
+        .to_owned();
     if head.is_unborn() {
         return Ok(NativeHeadInfo {
             ref_name,
@@ -588,7 +656,35 @@ impl Drop for ExtractLockGuard {
     }
 }
 
-const EXTRACT_LOCK_NAME: &str = ".penguin-extract.lock";
+fn extract_lock_path_for(dest: &Path) -> Result<std::path::PathBuf> {
+    let canonical = fs::canonicalize(dest)
+        .map_err(|e| git_err("IO_ERROR", format!("cannot canonicalize {}: {e}", dest.display())))?;
+    #[allow(unused_mut)]
+    let mut key_str = canonical.to_string_lossy().into_owned();
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        key_str = key_str.to_lowercase();
+    }
+    let mut hasher = gix::hash::hasher(gix::hash::Kind::Sha1);
+    hasher.update(key_str.as_bytes());
+    let digest = hasher
+        .try_finalize()
+        .map_err(|e| git_err("IO_ERROR", format!("cannot hash lock key: {e}")))?
+        .to_string();
+    let mut lock_dir = std::env::temp_dir();
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::geteuid() };
+        lock_dir.push(format!("penguin-extract-locks-{uid}"));
+    }
+    #[cfg(not(unix))]
+    {
+        lock_dir.push("penguin-extract-locks");
+    }
+    fs::create_dir_all(&lock_dir)
+        .map_err(|e| git_err("IO_ERROR", format!("cannot create lock dir {}: {e}", lock_dir.display())))?;
+    Ok(lock_dir.join(format!("{digest}.lock")))
+}
 
 fn extract_tree_sync(
     repo: &gix::Repository,
@@ -634,8 +730,9 @@ fn extract_tree_sync(
         }
     }
 
-    // Reserve destination directory exclusively so concurrent extractions cannot interleave (Major #12).
-    let lock_path = dest.join(EXTRACT_LOCK_NAME);
+    // Reserve destination outside the extracted namespace so tracked files named
+    // `.penguin-extract.lock` never collide with extraction's own lock (Major #14).
+    let lock_path = extract_lock_path_for(dest)?;
     fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -651,11 +748,8 @@ fn extract_tree_sync(
 
     let mut rd = fs::read_dir(dest)
         .map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
-    while let Some(ent) = rd.next() {
-        let ent = ent.map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
-        if ent.file_name() != EXTRACT_LOCK_NAME {
-            return Err(git_err("DEST_NOT_EMPTY", format!("{dest_dir} is not empty")));
-        }
+    if rd.next().is_some() {
+        return Err(git_err("DEST_NOT_EMPTY", format!("{dest_dir} is not empty")));
     }
 
     let Some(tree_id) = subtree_oid(repo, commit_id, prefix)? else {
@@ -668,23 +762,30 @@ fn extract_tree_sync(
     let mut entries = Vec::new();
     collect_tree_entries(repo, tree_id, "", false, &mut entries)?;
 
-    let mut files = Vec::new();
-    let mut total_bytes: u64 = 0;
-    // Track exact relative directory spellings created in this run so case-insensitive FS merges fail loudly (Major #13).
-    let mut created_dirs: HashSet<String> = HashSet::new();
+    let selected: Vec<NativeTreeEntry> = match only_set {
+        Some(ref set) => entries
+            .into_iter()
+            .filter(|e| set.contains(e.rel.as_str()))
+            .collect(),
+        None => entries,
+    };
 
-    for entry in entries {
-        if let Some(ref set) = only_set {
-            if !set.contains(entry.rel.as_str()) {
-                continue;
-            }
-        }
-        if !is_safe_rel_path(&entry.rel) {
+    // Preflight all selected paths against destination platform constraints BEFORE writing (Minor #5).
+    for entry in &selected {
+        if !is_safe_rel_path(&entry.rel) || !is_win32_extractable_path(&entry.rel) {
             return Err(git_err(
                 "INVALID_PATH",
-                format!("tree entry has unsafe path: {}", entry.rel),
+                format!("tree entry has unsafe or unextractable path: {}", entry.rel),
             ));
         }
+    }
+
+    let mut files = Vec::new();
+    let mut total_bytes: u64 = 0;
+    // Track exact relative directory spellings created in this run so case-insensitive FS merges fail loudly.
+    let mut created_dirs: HashSet<String> = HashSet::new();
+
+    for entry in selected {
         let blob_id = oid_of(&entry.oid).map_err(|e| git_err("REPO_CORRUPT", e.reason))?;
         let obj = repo
             .find_object(blob_id)
@@ -887,11 +988,10 @@ fn prepare_commit_sync(
             format!("unsafe prefix: {}", input.prefix),
         ));
     }
+    // Contract reserves branch creation strictly for null/None; empty string is INVALID_OID (Minor #6).
     let parent = match input.parent.as_deref() {
-        Some(hex) if !hex.is_empty() => {
-            Some(oid_of(hex).map_err(|e| git_err("INVALID_OID", e.reason))?)
-        }
-        _ => None,
+        Some(hex) => Some(oid_of(hex).map_err(|e| git_err("INVALID_OID", e.reason))?),
+        None => None,
     };
     let parent_tree: gix::hash::ObjectId = match parent {
         Some(id) => repo
@@ -908,6 +1008,53 @@ fn prepare_commit_sync(
     } else {
         parent_tree
     };
+
+    // Reject scoped edits that would silently evict a tracked file ancestor outside `prefix` (Major #13).
+    let writing_under_prefix = match input.change_kind.as_str() {
+        "replace" => input.files.as_ref().map_or(false, |xs| !xs.is_empty()),
+        "patch" => input.files.as_ref().map_or(false, |xs| !xs.is_empty()),
+        _ => false,
+    };
+    if parent.is_some() && !input.prefix.is_empty() && writing_under_prefix {
+        let segs: Vec<&str> = input.prefix.split('/').collect();
+        let check_len = if input.change_kind == "patch" {
+            segs.len()
+        } else {
+            segs.len().saturating_sub(1)
+        };
+        let mut cur_tree_id = parent_tree;
+        let mut anc_path = String::new();
+        for seg in &segs[..check_len] {
+            if !anc_path.is_empty() {
+                anc_path.push('/');
+            }
+            anc_path.push_str(seg);
+            let tree = repo
+                .find_tree(cur_tree_id)
+                .map_err(|e| git_err("REPO_CORRUPT", format!("tree {cur_tree_id} missing: {e}")))?;
+            let decoded = tree
+                .decode()
+                .map_err(|e| git_err("REPO_CORRUPT", format!("tree {cur_tree_id} malformed: {e}")))?;
+            let mut next_tree = None;
+            for entry in decoded.entries {
+                if entry.filename == seg.as_bytes() {
+                    if entry.mode.is_tree() {
+                        next_tree = Some(entry.oid.to_owned());
+                    } else {
+                        return Err(git_err(
+                            "INVALID_PATH",
+                            format!("scoped edit under {} conflicts with tracked file at {anc_path}", input.prefix),
+                        ));
+                    }
+                    break;
+                }
+            }
+            match next_tree {
+                Some(tid) => cur_tree_id = tid,
+                None => break,
+            }
+        }
+    }
 
     let mut editor = repo
         .edit_tree(foundation)
@@ -1056,7 +1203,7 @@ fn cas_ref_sync(
     let new_id = oid_of(new_commit).map_err(|e| git_err("INVALID_OID", e.reason))?;
 
     match expected_parent {
-        Some(hex) if !hex.is_empty() => {
+        Some(hex) => {
             let old_id = oid_of(hex).map_err(|e| git_err("INVALID_OID", e.reason))?;
             let edit = RefEdit::update(
                 full_name,

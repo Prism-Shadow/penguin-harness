@@ -13,6 +13,7 @@
  *   all admitted operations and retired batch child processes before resolving `close()`.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
@@ -39,7 +40,18 @@ import { runGit, startGit } from "./plumbing-git.js";
 const ZERO_OID = "0".repeat(40);
 const OID_RE = /^[0-9a-f]{40}$/;
 const MAX_BATCH_HEADER_BYTES = 1024;
-const EXTRACT_LOCK_NAME = ".penguin-extract.lock";
+async function extractLockPathFor(destDir: string): Promise<string> {
+  const canonical = await fs.realpath(destDir);
+  const keyStr =
+    process.platform === "win32" || process.platform === "darwin"
+      ? canonical.toLowerCase()
+      : canonical;
+  const digest = createHash("sha1").update(keyStr, "utf8").digest("hex");
+  const uidSuffix = typeof process.geteuid === "function" ? `-${process.geteuid()}` : "";
+  const lockDir = path.join(os.tmpdir(), `penguin-extract-locks${uidSuffix}`);
+  await fs.mkdir(lockDir, { recursive: true });
+  return path.join(lockDir, `${digest}.lock`);
+}
 const RESERVED_WIN_NAMES = new Set([
   "CON",
   "PRN",
@@ -103,6 +115,25 @@ function isSafeRelPath(rel: string): boolean {
   return true;
 }
 
+function isWin32ExtractablePath(rel: string): boolean {
+  if (process.platform !== "win32") return true;
+  for (let i = 0; i < rel.length; i += 1) {
+    const ch = rel.charCodeAt(i);
+    if (
+      ch < 0x20 ||
+      ch === 0x3c || // <
+      ch === 0x3e || // >
+      ch === 0x22 || // "
+      ch === 0x7c || // |
+      ch === 0x3f || // ?
+      ch === 0x2a // *
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function validateIdentity(who: GitIdentity, role: string): void {
   for (const [field, val] of [
     ["name", who.name],
@@ -131,14 +162,27 @@ function zoneOf(offsetMinutes: number): string {
 
 function classifyUpdateRefError(refName: string, stderr: string, status: number): GitError {
   const detail = stderr || `exit ${status}`;
-  if (/not a valid refname|invalid ref|fatal: .*refname|bad ref/i.test(detail)) {
+  // Strip single-quoted path/ref arguments when inspecting diagnostic reasons so a pathname
+  // containing e.g. "already exists" cannot hijack error classification (Major #10).
+  const normalized = detail.replace(/'[^']*'/g, "''");
+  if (/not a valid refname|invalid ref|bad ref|refname '' is not valid/i.test(normalized)) {
     return gitError("INVALID_REF", `invalid ref ${refName}: ${detail}`);
   }
-  // Explicit CAS / lock contention patterns ONLY; storage failures (ENOSPC, EROFS, EACCES, EIO) map to IO_ERROR (Major #22).
   if (
-    /is at [0-9a-f]+ but expected|but expected|reference already exists|already exists|Unable to create '.*\.lock': File exists|cannot create '.*': .*exists|cannot lock ref '.*': is at|cannot lock ref '.*': reference already exists|cannot lock ref '.*': '.*' exists/i.test(
-      detail,
+    /Permission denied|Read-only file system|No space left on device|Input\/output error|Too many open files/i.test(
+      normalized,
     )
+  ) {
+    return gitError("IO_ERROR", `ref storage error for ${refName}: ${detail}`);
+  }
+  if (
+    /cannot lock ref '': (?:is at [0-9a-f]+ but expected|reference already exists|reference is missing|unable to resolve reference|'' exists)/i.test(
+      normalized,
+    ) ||
+    /Unable to create '': File exists/i.test(normalized) ||
+    /cannot create '': (?:'' exists|reference already exists)/i.test(normalized) ||
+    /is at [0-9a-f]+ but expected [0-9a-f]+/i.test(normalized) ||
+    /unable to resolve reference ''/i.test(normalized)
   ) {
     return gitError("CAS_CONFLICT", `ref update refused for ${refName}: ${detail}`);
   }
@@ -269,13 +313,14 @@ class BatchCheck {
     }
     const line = this.buf.subarray(0, nl).toString("utf8");
     this.buf = this.buf.subarray(nl + 1);
-    this.pending = null;
     if (line.endsWith(" missing") || line.endsWith(" ambiguous")) {
+      this.pending = null;
       p.resolve(null);
       return;
     }
     const parts = line.split(" ");
     if (parts.length !== 3 || !OID_RE.test(parts[0]!)) {
+      // Keep `this.pending` intact so `retire()` rejects it cleanly (Minor #1).
       this.retire(gen, gitError("REPO_CORRUPT", `unexpected batch-check header: ${line}`));
       return;
     }
@@ -284,6 +329,7 @@ class BatchCheck {
       this.retire(gen, gitError("REPO_CORRUPT", `invalid batch-check size: ${line}`));
       return;
     }
+    this.pending = null;
     p.resolve({ oid: parts[0]!, type: parts[1]!, size });
   }
 
@@ -366,7 +412,10 @@ class BatchCatFile {
       act.fh = null;
       const doneErr = err ?? gitError("IO_ERROR", "cat-file --batch terminated");
       if (fh) {
-        void fh.close().finally(() => act.reject(doneErr));
+        void fh
+          .close()
+          .catch(() => undefined)
+          .then(() => act.reject(doneErr));
       } else {
         act.reject(doneErr);
       }
@@ -527,15 +576,20 @@ class BatchCatFile {
       const fh = act.fh;
       act.fh = null;
       const total = act.totalSize;
-      this.active = null;
       if (fh) {
+        // Retain ownership of `this.active` until `fh.close()` settles so close errors reject
+        // the extraction cleanly rather than leaving it and `GitRepo.close()` hanging (Major #12).
+        act.writing = true;
         proc.stdout.pause();
         void fh.close().then(
           () => {
-            if (gen === this.generation && this.child === proc) proc.stdout.resume();
+            if (gen !== this.generation || this.active !== act) return;
+            this.active = null;
+            if (this.child === proc) proc.stdout.resume();
             act.resolve(total);
           },
           (err: Error) => {
+            if (gen !== this.generation || this.active !== act) return;
             this.retire(
               gen,
               gitError("IO_ERROR", `cannot close ${act.targetPath}: ${err.message}`, err),
@@ -543,6 +597,7 @@ class BatchCatFile {
           },
         );
       } else {
+        this.active = null;
         act.resolve(total);
       }
     }
@@ -698,7 +753,10 @@ async function hashDiskFileSafely(
             if (totalRead > fdBefore.size) {
               throw gitError("SOURCE_CHANGED", `source grew during read: ${filePath}`);
             }
-            const part = chunkBuf.subarray(0, bytesRead);
+            // Copy into an owned per-chunk Buffer so the next fh.read() cannot overwrite bytes
+            // still queued inside child.stdin (Major #11).
+            const part = Buffer.allocUnsafe(bytesRead);
+            chunkBuf.copy(part, 0, 0, bytesRead);
             if (!child.stdin.write(part)) {
               await new Promise<void>((res, rej) => {
                 const onDrain = () => {
@@ -771,15 +829,16 @@ function parseLsTreeZ(buf: Buffer, withSize: boolean, stripPrefix: string): GitT
       throw gitError("REPO_CORRUPT", "malformed git ls-tree -z record (missing TAB)");
     }
     const header = record.subarray(0, tab).toString("ascii");
-    const rawRel = decodeStrictUtf8(record.subarray(tab + 1), "ls-tree path");
     const parts = header.trim().split(/\s+/);
     const mode = parts[0];
     const type = parts[1];
     const oid = parts[2];
+    // Filter ignored entries (submodules/symlinks/trees) BEFORE decoding UTF-8 names (Minor #4).
     if (type !== "blob" || (mode !== "100644" && mode !== "100755")) continue;
     if (!oid || !OID_RE.test(oid)) {
       throw gitError("REPO_CORRUPT", `invalid oid in ls-tree output: ${header}`);
     }
+    const rawRel = decodeStrictUtf8(record.subarray(tab + 1), "ls-tree path");
     const rel =
       stripPrefix !== "" && rawRel.startsWith(`${stripPrefix}/`)
         ? rawRel.slice(stripPrefix.length + 1)
@@ -799,6 +858,7 @@ function parseLsTreeZ(buf: Buffer, withSize: boolean, stripPrefix: string): GitT
 
 function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
   const hookScope = new AsyncLocalStorage<symbol>();
+  const activeHooks = new Set<symbol>();
   const batchCheck = new BatchCheck(git, gitdir);
   const batchCat = new BatchCatFile(git, gitdir);
   let closing = false;
@@ -961,45 +1021,68 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
         const first = await resolveCommit();
         if (first !== null) return { ref, commit: first };
 
-        // Distinguish unborn branch vs broken loose/packed ref vs first-commit race (Major #15).
+        // Distinguish unborn branch vs broken loose/packed ref vs concurrent first-commit race (Major #8).
+        const checkLooseAndRetry = async (): Promise<{ ref: string; commit: string } | null> => {
+          const loosePath = path.join(gitdir, ...ref.split("/"));
+          let looseExists = false;
+          try {
+            await fs.lstat(loosePath);
+            looseExists = true;
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code !== "ENOENT") {
+              throw gitError(
+                "IO_ERROR",
+                `cannot stat loose ref ${ref}: ${(err as Error).message}`,
+                err,
+              );
+            }
+          }
+          if (looseExists) {
+            // A concurrent first commit may have published the loose ref just before lstat: retry peel!
+            const retried = await resolveCommit();
+            if (retried !== null) return { ref, commit: retried };
+            throw gitError("INVALID_REF", `loose ref ${ref} exists but is invalid or empty`);
+          }
+          return null;
+        };
+
         const existsRes = await runGit(git, gitdir, ["show-ref", "--exists", ref], {
           allowNonZero: true,
         });
         if (existsRes.status === 2) {
-          // Git 2.43+ exit code 2 means the ref genuinely does not exist in loose OR packed-refs.
-          // Double-check for a corrupt empty/unreadable loose file at the exact path.
-          const loosePath = path.join(gitdir, ...ref.split("/"));
-          try {
-            await fs.lstat(loosePath);
-            throw gitError("INVALID_REF", `loose ref ${ref} exists but is invalid or empty`);
-          } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-              return { ref, commit: null };
-            }
-            throw err;
-          }
+          const raced = await checkLooseAndRetry();
+          if (raced !== null) return raced;
+          return { ref, commit: null };
         }
         if (existsRes.status === 0) {
-          // Ref exists! Retry commit peel once in case a concurrent first commit just published it.
           const retried = await resolveCommit();
           if (retried !== null) return { ref, commit: retried };
           throw gitError("INVALID_REF", `ref ${ref} exists but does not resolve to a valid commit`);
         }
-        // Fallback for older Git lacking `show-ref --exists`: retry commit peel, else inspect loose/packed refs.
+        // Fallback for older Git lacking `show-ref --exists`: retry peel, then inspect loose + packed refs.
         const retried = await resolveCommit();
         if (retried !== null) return { ref, commit: retried };
-        const loosePath = path.join(gitdir, ...ref.split("/"));
+        const raced = await checkLooseAndRetry();
+        if (raced !== null) return raced;
+        let packed = "";
         try {
-          await fs.lstat(loosePath);
-          throw gitError("INVALID_REF", `ref ${ref} exists but is invalid`);
+          packed = await fs.readFile(path.join(gitdir, "packed-refs"), "utf8");
         } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw gitError(
+              "IO_ERROR",
+              `cannot read packed-refs for ${ref}: ${(err as Error).message}`,
+              err,
+            );
+          }
         }
-        const packed = await fs.readFile(path.join(gitdir, "packed-refs"), "utf8").catch(() => "");
         for (const line of packed.split(/\r?\n/)) {
           if (line.length === 0 || line.startsWith("#") || line.startsWith("^")) continue;
           const sp = line.indexOf(" ");
           if (sp !== -1 && line.slice(sp + 1) === ref) {
+            const retriedPacked = await resolveCommit();
+            if (retriedPacked !== null) return { ref, commit: retriedPacked };
             throw gitError(
               "INVALID_REF",
               `packed ref ${ref} exists but its target commit is invalid`,
@@ -1084,7 +1167,11 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
             return resolveSubtreeOid(row.commit, opts.prefix);
           }
           const sub = await batchCheck.query(`${row.rootTree}:${opts.prefix}`);
-          if (sub === null || sub.type !== "tree") return null;
+          if (sub === null) {
+            // Confirm genuine absence vs dangling/missing subtree object (Major #9).
+            return resolveSubtreeOid(row.commit, opts.prefix);
+          }
+          if (sub.type !== "tree") return null;
           return sub.oid;
         };
 
@@ -1154,8 +1241,9 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
           await fs.mkdir(opts.destDir, { recursive: true });
         }
 
-        // Reserve destination directory atomically via exclusive lockfile (Major #12).
-        const lockPath = path.join(opts.destDir, EXTRACT_LOCK_NAME);
+        // Reserve destination outside the extracted namespace so tracked files named
+        // `.penguin-extract.lock` never collide with extraction's own lock (Major #14).
+        const lockPath = await extractLockPathFor(opts.destDir);
         let lockFh: fs.FileHandle;
         try {
           lockFh = await fs.open(lockPath, "wx");
@@ -1169,7 +1257,7 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
 
         try {
           const existing = await fs.readdir(opts.destDir);
-          if (existing.some((name) => name !== EXTRACT_LOCK_NAME)) {
+          if (existing.length > 0) {
             throw gitError("DEST_NOT_EMPTY", `${opts.destDir} is not empty`);
           }
 
@@ -1183,14 +1271,21 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
             return { files: [], totalBytes: 0 };
           }
 
+          // Preflight ALL selected paths against destination platform constraints BEFORE writing (Minor #5).
+          for (const entry of selected) {
+            if (!isSafeRelPath(entry.rel) || !isWin32ExtractablePath(entry.rel)) {
+              throw gitError(
+                "INVALID_PATH",
+                `unsafe or unextractable tree entry path: ${entry.rel}`,
+              );
+            }
+          }
+
           const files: string[] = [];
           let totalBytes = 0;
           const createdDirs = new Set<string>();
 
           for (const entry of selected) {
-            if (!isSafeRelPath(entry.rel)) {
-              throw gitError("INVALID_PATH", `unsafe tree entry path: ${entry.rel}`);
-            }
             // Create parent dirs non-recursively so case-insensitive FS directory merges fail loudly (Major #13).
             const parts = entry.rel.split("/");
             let curDir = opts.destDir;
@@ -1300,23 +1395,59 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
           }
 
           const indexLines: string[] = [];
-          const listIndexedUnder = async (targetPrefix: string): Promise<string[]> => {
+          let cachedIndexEntries: Buffer[] | null = null;
+          const getRawIndexEntries = async (): Promise<Buffer[]> => {
+            if (cachedIndexEntries !== null) return cachedIndexEntries;
             const ls = await runGit(git, gitdir, ["ls-files", "-z"], { env: indexEnv });
-            const out: string[] = [];
-            const slash = `${targetPrefix}/`;
+            const rawList: Buffer[] = [];
             let pos = 0;
             while (pos < ls.stdout.length) {
               const nul = ls.stdout.indexOf(0, pos);
               if (nul === -1) break;
               const raw = ls.stdout.subarray(pos, nul);
               pos = nul + 1;
-              if (raw.length === 0) continue;
-              const name = decodeStrictUtf8(raw, "ls-files");
-              if (name === targetPrefix || name.startsWith(slash)) {
-                out.push(name);
+              if (raw.length > 0) rawList.push(raw);
+            }
+            cachedIndexEntries = rawList;
+            return rawList;
+          };
+          const listIndexedUnder = async (targetPrefix: string): Promise<string[]> => {
+            const targetBuf = Buffer.from(targetPrefix, "utf8");
+            const slashBuf = Buffer.from(`${targetPrefix}/`, "utf8");
+            const out: string[] = [];
+            // Match raw path bytes BEFORE decoding UTF-8 so unrelated non-UTF-8 entries outside
+            // `targetPrefix` never break a scoped edit (Minor #4).
+            for (const raw of await getRawIndexEntries()) {
+              const exact = raw.length === targetBuf.length && raw.equals(targetBuf);
+              const under =
+                raw.length > slashBuf.length && raw.subarray(0, slashBuf.length).equals(slashBuf);
+              if (exact || under) {
+                out.push(decodeStrictUtf8(raw, "ls-files"));
               }
             }
             return out;
+          };
+          const assertNoTrackedAncestorFile = async (includeSelf: boolean): Promise<void> => {
+            if (!loadParent || prefix === "") return;
+            const segs = prefix.split("/");
+            const limit = includeSelf ? segs.length : segs.length - 1;
+            if (limit <= 0) return;
+            const ancestors: Array<{ name: string; buf: Buffer }> = [];
+            let acc = "";
+            for (let i = 0; i < limit; i += 1) {
+              acc = acc === "" ? segs[i]! : `${acc}/${segs[i]!}`;
+              ancestors.push({ name: acc, buf: Buffer.from(acc, "utf8") });
+            }
+            for (const raw of await getRawIndexEntries()) {
+              for (const anc of ancestors) {
+                if (raw.length === anc.buf.length && raw.equals(anc.buf)) {
+                  throw gitError(
+                    "INVALID_PATH",
+                    `scoped edit under ${prefix} conflicts with tracked file at ${anc.name}`,
+                  );
+                }
+              }
+            }
           };
 
           if (change.kind === "replace") {
@@ -1326,6 +1457,7 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
               }
             }
             if (change.files !== null) {
+              if (change.files.length > 0) await assertNoTrackedAncestorFile(false);
               const hashed = await hashCommitFiles(change.files);
               for (const f of hashed) {
                 indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
@@ -1342,6 +1474,7 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
                 indexLines.push(`0 ${ZERO_OID}\t${full}\0`);
               }
             }
+            if (change.upsert.length > 0) await assertNoTrackedAncestorFile(true);
             const hashed = await hashCommitFiles(change.upsert);
             for (const f of hashed) {
               indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
@@ -1394,7 +1527,13 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
 
         if (beforeMoveRef !== undefined) {
           const frozenSnapshot = Object.freeze({ commit: commitOid, tree: treeOid });
-          await hookScope.run(Symbol("beforeMoveRef"), () => beforeMoveRef(frozenSnapshot));
+          const token = Symbol("beforeMoveRef");
+          activeHooks.add(token);
+          try {
+            await hookScope.run(token, () => beforeMoveRef(frozenSnapshot));
+          } finally {
+            activeHooks.delete(token);
+          }
         }
 
         const expectedOld = expectedParent ?? ZERO_OID;
@@ -1414,7 +1553,8 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
     },
 
     close(): Promise<void> {
-      if (hookScope.getStore() !== undefined) {
+      const activeHook = hookScope.getStore();
+      if (activeHook !== undefined && activeHooks.has(activeHook)) {
         return Promise.reject(
           gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
         );

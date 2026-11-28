@@ -55,14 +55,19 @@ const bulkWaiters: Array<() => void> = [];
 async function withBulkSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (activeBulk >= MAX_CONCURRENT_BULK) {
     await new Promise<void>((resolve) => bulkWaiters.push(resolve));
+  } else {
+    activeBulk += 1;
   }
-  activeBulk += 1;
   try {
     return await fn();
   } finally {
-    activeBulk -= 1;
     const next = bulkWaiters.shift();
-    if (next) next();
+    if (next) {
+      // Direct permit transfer: `activeBulk` remains accounted for the woken waiter (Minor #2).
+      next();
+    } else {
+      activeBulk -= 1;
+    }
   }
 }
 
@@ -110,6 +115,7 @@ function toNativeFile(f: GitCommitFile): NativeRepoCommitFileInput {
 
 function wrapRepo(handle: NativeRepo): GitRepo {
   const hookScope = new AsyncLocalStorage<symbol>();
+  const activeHooks = new Set<symbol>();
   let closing = false;
   let closed = false;
   let inFlight = 0;
@@ -259,9 +265,15 @@ function wrapRepo(handle: NativeRepo): GitRepo {
         }
 
         if (beforeMoveRef !== undefined) {
-          // Run hook inside an AsyncLocalStorage scope so re-entrant close() is rejected instead of deadlocking.
+          // Guard re-entrant close() ONLY while this specific hook invocation is active (Minor #3).
           const frozenSnapshot = Object.freeze({ commit: preparedCommit, tree: preparedTree });
-          await hookScope.run(Symbol("beforeMoveRef"), () => beforeMoveRef(frozenSnapshot));
+          const token = Symbol("beforeMoveRef");
+          activeHooks.add(token);
+          try {
+            await hookScope.run(token, () => beforeMoveRef(frozenSnapshot));
+          } finally {
+            activeHooks.delete(token);
+          }
         }
 
         try {
@@ -274,7 +286,8 @@ function wrapRepo(handle: NativeRepo): GitRepo {
     },
 
     close(): Promise<void> {
-      if (hookScope.getStore() !== undefined) {
+      const activeHook = hookScope.getStore();
+      if (activeHook !== undefined && activeHooks.has(activeHook)) {
         return Promise.reject(
           gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
         );

@@ -144,7 +144,12 @@ export interface GitRepo {
     opts?: { withSize?: boolean },
   ): Promise<GitTreeEntry[] | null>;
 
-  /** Walks first-parent history from `fromCommit`, recording commits where `prefix`'s subtree changed. */
+  /**
+   * Walks first-parent history from `fromCommit`, recording up to `limit` commits within `maxWalk`
+   * steps where `prefix`'s subtree changed. Stops at the first ancestor where `prefix` is absent.
+   * When `prefix` exists at `fromCommit` and remained unchanged across all `maxWalk` inspected
+   * commits, returns a single representative entry for the oldest inspected commit.
+   */
   walkHistory(opts: GitWalkHistoryOptions): Promise<GitHistoryEntry[]>;
 
   /** Extracts `prefix` (or `onlyPaths` subset) from `commitOid` directly onto the filesystem at empty `destDir`. */

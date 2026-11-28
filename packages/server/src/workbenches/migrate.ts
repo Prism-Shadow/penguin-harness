@@ -22,7 +22,7 @@ const pairs = [
   ["workflows-history", "workbenches-history"],
 ] as const;
 const exists = async (file: string) =>
-  fs.stat(file).then(
+  fs.lstat(file).then(
     () => true,
     (e: NodeJS.ErrnoException) => {
       if (e.code === "ENOENT") return false;
@@ -43,6 +43,8 @@ function convert(text: string): string {
 }
 
 async function convertTree(dir: string): Promise<void> {
+  const rootStat = await fs.lstat(dir);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) return;
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name);
     if (entry.isSymbolicLink() || entry.name === "node_modules" || entry.name === "state.json")
@@ -142,7 +144,18 @@ export async function convertWorkflows(agentDir: string): Promise<boolean> {
     await fs.mkdir(path.join(journal, "staged"), { recursive: true });
     for (const [old, current] of pairs) {
       const source = path.join(agentDir, old);
-      if (!(await exists(source))) continue;
+      let sourceStat: import("node:fs").Stats;
+      try {
+        sourceStat = await fs.lstat(source);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw e;
+      }
+      if (sourceStat.isSymbolicLink() || !sourceStat.isDirectory()) {
+        throw new Error(
+          `Cannot migrate: ${source} is a symbolic link or not a real directory. Replace it with a real directory before retrying; the original files are unchanged.`,
+        );
+      }
       const target = path.join(journal, "staged", current);
       await fs.cp(source, target, { recursive: true });
       await convertTree(target);
