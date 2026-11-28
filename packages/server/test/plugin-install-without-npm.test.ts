@@ -70,8 +70,8 @@
  *   words (a 400 from the route), never a raw error.
  * - A directory that cannot be moved (something holds it) refuses an upgrade and leaves the
  *   installed version as it was.
- * - With npm on the machine, every operation (a name, a zip, a channel, a removal) goes to npm,
- *   and nothing is fetched.
+ * - With npm on the machine, a name, a zip and a removal go to npm without fetching; a channel
+ *   is downloaded and sha512-verified by the server first, then its local archive is handed to npm.
  * - Removing a name never installed, from a prefix never created, is not an error.
  * - The tarball reader: a plain tar, pax and GNU long names, a global header, GNU's magic and
  *   base-256 sizes read; a global header's size applies to later entries, a lone zero block is
@@ -1493,17 +1493,6 @@ describe("installing without npm", () => {
       "pack",
     ],
     [
-      "a channel",
-      (p, root) =>
-        p.installChannel(root, {
-          name: "@acme/channels",
-          version: "1.0.0",
-          integrity: integrityOf(new Uint8Array([1])),
-          url: "https://releases.example/x.tgz",
-        }),
-      "install",
-    ],
-    [
       "a removal",
       async (p, root) => {
         await fs.mkdir(prefixOf(root), { recursive: true });
@@ -1527,6 +1516,33 @@ describe("installing without npm", () => {
     await run(packages, root).catch(() => undefined);
     expect(runs[0]).toContain(verb);
     expect(fake.calls).toEqual([]);
+  });
+
+  it("downloads a channel itself and hands the verified archive to npm when the machine has npm", async () => {
+    const root = await tempRoot();
+    const asset = new Uint8Array([1, 2, 3, 4]);
+    const url = "https://releases.example/x.tgz";
+    const fake = serving(new Map([[url, () => new Response(asset, { status: 200 })]]));
+    const runs: string[][] = [];
+    const packages = new NpmPluginPackages({
+      locate: () => ({ found: true }),
+      npm: async (_prefix, args) => {
+        runs.push([...args]);
+        throw new PluginInstallError("npm stand-in: no network here");
+      },
+      fetch: () => fake.fetch,
+    });
+    await packages
+      .installChannel(root, {
+        name: "@acme/channels",
+        version: "1.0.0",
+        integrity: integrityOf(asset),
+        url,
+      })
+      .catch(() => undefined);
+    expect(fake.calls.map((c) => c.url)).toEqual([url]);
+    expect(runs[0]).toContain("install");
+    expect(runs[0]).toContain("./archives/-acme-channels-1.0.0.tgz");
   });
 
   it("removes a name never installed, from a prefix never created or one that lists others, without an error", async () => {

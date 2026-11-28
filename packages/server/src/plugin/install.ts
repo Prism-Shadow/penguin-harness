@@ -886,9 +886,11 @@ async function downloadChannelAsset(
   prefix: string,
   address: string,
   file: string,
+  expectedDigest: string,
   onProgress: ((received: number, total: number | null) => void) | undefined,
   stallMs: number,
-): Promise<string> {
+  fetchImpl: typeof fetch,
+): Promise<void> {
   const staging = path.join(prefix, STAGING_DIR);
   const partial = path.join(staging, `${file}.part`);
   const dest = path.join(prefix, ARCHIVES_DIR, file);
@@ -896,28 +898,37 @@ async function downloadChannelAsset(
   await fs.mkdir(path.dirname(dest), { recursive: true });
   const controller = new AbortController();
   const hash = createHash("sha512");
-  let lastByte = Date.now();
   let received = 0;
   let reported = 0;
   let total: number | null = null;
-  // The stall watchdog: every second, is the download still moving? A silent one is cut at
-  // its window — the abort carries the error, and the fetch and the body loop are what feel it.
-  const watchdog = setInterval(() => {
-    if (Date.now() - lastByte > stallMs) {
-      controller.abort(
-        new PluginInstallError(
-          `the release asset download went ${Math.round(stallMs / 1000)} s without a byte and was cut`,
-        ),
+  let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  // The stall watchdog: reset on headers and every chunk. A download that goes `stallMs`
+  // without a byte is cut — aborting the fetch AND cancelling the active body reader so both
+  // real network streams and synthetic ReadableStreams stop promptly.
+  const armWatchdog = () => {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    watchdog = setTimeout(() => {
+      const cut = new PluginInstallError(
+        `the release asset download went ${Math.round(stallMs / 1000)} s without a byte and was cut`,
       );
-    }
-  }, 1_000);
+      controller.abort(cut);
+      void activeReader?.cancel(cut).catch(() => undefined);
+    }, stallMs);
+  };
+  armWatchdog();
   const stream = createWriteStream(partial);
+  let streamError: Error | null = null;
+  stream.on("error", (err) => {
+    streamError = err;
+  });
   try {
-    const response = await fetch(address, {
+    const response = await fetchImpl(address, {
       signal: controller.signal,
       redirect: "follow",
       headers: { "User-Agent": userAgent() },
     });
+    armWatchdog();
     if (!response.ok || response.body === null) {
       throw new PluginInstallError(
         `the release asset's address answered ${response.status}${response.body === null ? " with no body" : ""}`,
@@ -926,11 +937,21 @@ async function downloadChannelAsset(
     const length = response.headers.get("content-length");
     total = length === null || !/^\d+$/.test(length) ? null : Number(length);
     onProgress?.(0, total);
-    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-      lastByte = Date.now();
-      received += chunk.byteLength;
-      hash.update(chunk);
-      if (!stream.write(chunk)) {
+    const reader = response.body.getReader();
+    activeReader = reader;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (controller.signal.aborted) {
+        const cut = controller.signal.reason;
+        throw cut instanceof Error
+          ? cut
+          : new PluginInstallError("the release asset download was aborted");
+      }
+      if (done) break;
+      armWatchdog();
+      received += value.byteLength;
+      hash.update(value);
+      if (!stream.write(value)) {
         await once(stream, "drain");
       }
       if (received - reported >= 256 * 1024) {
@@ -938,18 +959,32 @@ async function downloadChannelAsset(
         onProgress?.(received, total);
       }
     }
-    onProgress?.(received, total);
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    if (streamError !== null) throw streamError;
+    stream.end();
     await once(stream, "finish");
     if (total !== null && received !== total) {
       throw new PluginInstallError(
         `the release asset's answer ended after ${received} of the ${total} bytes its header named`,
       );
     }
+    const digest = hash.digest("base64");
+    if (!sameDigest(digest, expectedDigest)) {
+      throw new PluginInstallError(
+        "the release asset does not match the sha512 the index entry pins; it is not installed",
+      );
+    }
+    onProgress?.(received, total);
     await fs.rename(partial, dest);
-    return hash.digest("base64");
+  } catch (err) {
+    const cut = controller.signal.reason;
+    if (controller.signal.aborted && cut instanceof PluginInstallError) throw cut;
+    throw err;
   } finally {
-    clearInterval(watchdog);
-    stream.destroy();
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    if (!stream.closed && !stream.destroyed) {
+      stream.destroy();
+    }
     await fs.rm(partial, { force: true });
   }
 }
@@ -979,6 +1014,7 @@ export async function installPluginChannel(
   channel: IndexChannel,
   {
     npm: runNpm = npm,
+    fetch: fetchImpl = globalThis.fetch,
     install: run = undefined,
     uninstall: remove = (prefix, name) => runNpmUninstall(prefix, name, runNpm),
     onProgress = undefined,
@@ -987,6 +1023,8 @@ export async function installPluginChannel(
   }: {
     /** The npm the default install and uninstall run; the real one unless a caller stands in. */
     npm?: NpmRun;
+    /** The fetch used to download the release asset; globalThis.fetch unless a caller stands in. */
+    fetch?: typeof fetch;
     /** Stand npm's own install in for the download-then-install default; tests only. */
     install?: (prefix: string, spec: string) => Promise<void>;
     /** What takes a refused install out of the prefix; npm's uninstall by default. */
@@ -1017,23 +1055,18 @@ export async function installPluginChannel(
   // the next address; so does an install whose post-check refuses it (a tampered tarball,
   // another package's manifest). All of them failed: the error names the addresses that
   // were tried and the failure it ended on.
+  const expectedDigest = run === undefined ? pinnedDigest(channel.integrity) : null;
+  if (run === undefined && expectedDigest === null) {
+    throw new PluginInstallError(
+      "the index entry pins no readable sha512 for its release asset; it cannot be installed",
+    );
+  }
   let lastError: unknown = null;
   for (const address of addresses) {
     try {
       if (run === undefined) {
-        const expected = pinnedDigest(channel.integrity);
-        if (expected === null) {
-          throw new PluginInstallError(
-            "the index entry pins no readable sha512 for its release asset; it cannot be installed",
-          );
-        }
         const file = assetFileName(channel);
-        const digest = await downloadChannelAsset(prefix, address, file, onProgress, stallMs);
-        if (!sameDigest(digest, expected)) {
-          throw new PluginInstallError(
-            "the release asset does not match the sha512 the index entry pins; it is not installed",
-          );
-        }
+        await downloadChannelAsset(prefix, address, file, expectedDigest!, onProgress, stallMs, fetchImpl);
         await runNpmInstallSpec(prefix, `./${ARCHIVES_DIR}/${file}`, timeoutMs, runNpm);
       } else {
         await run(prefix, address);

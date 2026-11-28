@@ -98,19 +98,30 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
   // movement check when `stallMs` is — every byte and the headers themselves count as
   // movement, and a fetch that goes the window without one is cut, its abort carrying the
   // AddressError the catches below hand on.
-  let lastMove = Date.now();
-  const watchdog =
-    limits.stallMs === undefined
-      ? setTimeout(() => controller.abort(), limits.timeoutMs)
-      : setInterval(() => {
-          if (Date.now() - lastMove > limits.stallMs) {
-            controller.abort(
-              new AddressError(
-                `went ${Math.round(limits.stallMs / 1000)} s without a byte and was cut`,
-              ),
-            );
-          }
-        }, 1_000);
+  const stallMs = limits.stallMs;
+  let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const armWatchdog = () => {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    if (stallMs === undefined) {
+      watchdog = setTimeout(() => {
+        controller.abort();
+        void activeReader?.cancel().catch(() => undefined);
+      }, limits.timeoutMs);
+    } else {
+      watchdog = setTimeout(() => {
+        const cut = new AddressError(
+          `went ${Math.round(stallMs / 1000)} s without a byte and was cut`,
+        );
+        controller.abort(cut);
+        void activeReader?.cancel(cut).catch(() => undefined);
+      }, stallMs);
+    }
+  };
+  const touch = () => {
+    if (stallMs !== undefined) armWatchdog();
+  };
+  armWatchdog();
   try {
     let res: Response;
     // Redirects are followed by hand, each hop held to the same rule as the address itself:
@@ -130,7 +141,7 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
           redirect: "manual",
           signal: controller.signal,
         });
-        lastMove = Date.now();
+        touch();
       } catch (err) {
         const cut = controller.signal.reason;
         if (cut instanceof AddressError) throw cut;
@@ -164,11 +175,17 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
     const chunks: Uint8Array[] = [];
     let received = 0;
     const reader = res.body?.getReader();
+    activeReader = reader ?? null;
     try {
       while (reader !== undefined) {
         const { done, value } = await reader.read();
+        if (controller.signal.aborted) {
+          const cut = controller.signal.reason;
+          if (cut instanceof AddressError) throw cut;
+          throw new AddressError(`did not finish within ${Math.round(limits.timeoutMs / 1000)} s`);
+        }
         if (done) break;
-        lastMove = Date.now();
+        touch();
         received += value.byteLength;
         if (received > limits.maxBytes) {
           await reader.cancel().catch(() => undefined);
@@ -195,7 +212,7 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
     }
     return body;
   } finally {
-    clearTimeout(watchdog);
+    if (watchdog !== undefined) clearTimeout(watchdog);
   }
 }
 

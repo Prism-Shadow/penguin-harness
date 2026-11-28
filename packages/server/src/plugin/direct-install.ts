@@ -345,7 +345,7 @@ export async function installFromRegistry(
       {
         fetch: io.fetch,
         timeoutMs: io.limits?.timeoutMs ?? TARBALL_STALL_MS,
-        stallMs: io.limits?.stallMs ?? TARBALL_STALL_MS,
+        stallMs: io.limits?.stallMs ?? io.limits?.timeoutMs ?? TARBALL_STALL_MS,
         maxBytes: io.limits?.tarballMaxBytes ?? TARBALL_MAX_BYTES,
         onProgress: io.onProgress,
       },
@@ -394,7 +394,7 @@ export async function installChannel(
       {
         fetch: io.fetch,
         timeoutMs: io.limits?.timeoutMs ?? TARBALL_STALL_MS,
-        stallMs: io.limits?.stallMs ?? TARBALL_STALL_MS,
+        stallMs: io.limits?.stallMs ?? io.limits?.timeoutMs ?? TARBALL_STALL_MS,
         maxBytes: io.limits?.tarballMaxBytes ?? TARBALL_MAX_BYTES,
         onProgress: io.onProgress,
       },

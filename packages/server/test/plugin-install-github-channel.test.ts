@@ -298,16 +298,11 @@ describe("installPluginChannel, the default download path (the server fetches th
       const spec = args[args.length - 1]!;
       specs.push(spec);
       windows.push(window ?? Number.NaN);
-      await fs.mkdir(path.join(pluginsPrefix(prefix), "node_modules", ...channel.name.split("/")), {
+      await fs.mkdir(path.join(prefix, "node_modules", ...channel.name.split("/")), {
         recursive: true,
       });
       await fs.writeFile(
-        path.join(
-          pluginsPrefix(prefix),
-          "node_modules",
-          ...channel.name.split("/"),
-          "package.json",
-        ),
+        path.join(prefix, "node_modules", ...channel.name.split("/"), "package.json"),
         JSON.stringify({ name: channel.name, version: channel.version }),
       );
       return "";
@@ -319,20 +314,21 @@ describe("installPluginChannel, the default download path (the server fetches th
   };
 
   /** Serves the given bytes for exactly the address asked, 404 for everything else. */
-  const serve = (byUrl: Record<string, Uint8Array | ReadableStream<Uint8Array>>) =>
-    vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation((async (input: unknown) => {
-        const answer = byUrl[String(input)];
-        if (answer === undefined) return new Response("no such address", { status: 404 });
-        if (answer instanceof ReadableStream) {
-          return new Response(answer, { status: 200 });
-        }
-        return new Response(answer as unknown as BodyInit, {
-          status: 200,
-          headers: { "content-length": String(answer.byteLength) },
-        });
-      }) as unknown as typeof fetch);
+  const serve = (
+    byUrl: Record<string, Uint8Array | ReadableStream<Uint8Array> | (() => Response)>,
+  ): typeof fetch =>
+    (async (input: unknown) => {
+      const answer = byUrl[String(input)];
+      if (answer === undefined) return new Response("no such address", { status: 404 });
+      if (typeof answer === "function") return answer();
+      if (answer instanceof ReadableStream) {
+        return new Response(answer, { status: 200 });
+      }
+      return new Response(Buffer.from(answer), {
+        status: 200,
+        headers: { "content-length": String(answer.byteLength) },
+      });
+    }) as unknown as typeof fetch;
 
   it("downloads the asset itself, reports byte progress, and npm installs the local file", async () => {
     const root = await tempRoot();
@@ -341,6 +337,7 @@ describe("installPluginChannel, the default download path (the server fetches th
     const progress: Array<{ received: number; total: number | null }> = [];
     const installed = await installPluginChannel(root, { ...channel, integrity: digest(bytes) }, {
       npm: npm.run,
+      fetch: serve({ [channel.url]: bytes }),
       uninstall: npm.uninstall,
       onProgress: (received, total) => progress.push({ received, total }),
     });
@@ -364,50 +361,99 @@ describe("installPluginChannel, the default download path (the server fetches th
 
   it("a stalled download is cut and the next address serves the bytes", async () => {
     const root = await tempRoot();
-    const mirrorUrl = "https://cdn-mirror.example/o/r/releases/download/v0.0.2/x.tgz";
+    const stalledUrl = "https://github.com/o/r/releases/download/v0.0.2/stalled.tgz";
+    const mirrorUrl = "https://cdn-mirror.example/o/r/releases/download/v0.0.2/stalled.tgz";
     const bytes = await packTarball(channel.name, channel.version);
     const npm = npmSpy();
+    const tried: string[] = [];
     // The first address delivers a header and three bytes, then goes quiet: it is cut at
     // the stall window, and the mirror carries the whole file.
-    serve({
-      [channel.url]: new ReadableStream<Uint8Array>({
+    const baseFetch = serve({
+      [stalledUrl]: new ReadableStream<Uint8Array>({
         start(c) {
           c.enqueue(new Uint8Array([1, 2, 3]));
         },
       }),
       [mirrorUrl]: bytes,
     });
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      tried.push(String(input));
+      return baseFetch(input, init);
+    };
     const installed = await installPluginChannel(
       root,
-      { ...channel, integrity: digest(bytes), mirrors: [mirrorUrl] },
-      { npm: npm.run, uninstall: npm.uninstall, stallMs: 50 },
+      { ...channel, url: stalledUrl, integrity: digest(bytes), mirrors: [mirrorUrl] },
+      { npm: npm.run, fetch, uninstall: npm.uninstall, stallMs: 50 },
     );
     expect(installed).toEqual({ name: channel.name, version: channel.version });
+    expect(tried).toEqual([stalledUrl, mirrorUrl]);
     // One local install, of the file the mirror's download verified.
     expect(npm.specs).toEqual([`./archives/${channel.name.replace(/[^a-zA-Z0-9._-]/g, "-")}-${channel.version}.tgz`]);
     expect(npm.uninstalls).toEqual([]);
   });
 
+  it("a slow-but-steady download that outlasts stallMs finishes without being cut", async () => {
+    const root = await tempRoot();
+    const bytes = await packTarball(channel.name, channel.version);
+    const npm = npmSpy();
+    const progress: Array<{ received: number; total: number | null }> = [];
+    // Four chunks spaced 30 ms apart (120 ms total) with an 80 ms stall window: each chunk
+    // resets the watchdog, so the slow stream completes intact.
+    const parts = 4;
+    const size = Math.ceil(bytes.byteLength / parts);
+    const fetch = serve({
+      [channel.url]: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            async start(c) {
+              for (let i = 0; i < bytes.byteLength; i += size) {
+                await new Promise((r) => setTimeout(r, 30));
+                c.enqueue(bytes.subarray(i, Math.min(i + size, bytes.byteLength)));
+              }
+              c.close();
+            },
+          }),
+          { status: 200, headers: { "content-length": String(bytes.byteLength) } },
+        ),
+    });
+    const installed = await installPluginChannel(root, { ...channel, integrity: digest(bytes) }, {
+      npm: npm.run,
+      fetch,
+      uninstall: npm.uninstall,
+      stallMs: 80,
+      onProgress: (received, total) => progress.push({ received, total }),
+    });
+    expect(installed).toEqual({ name: channel.name, version: channel.version });
+    expect(progress[0]).toEqual({ received: 0, total: bytes.byteLength });
+    expect(progress.at(-1)).toEqual({ received: bytes.byteLength, total: bytes.byteLength });
+  });
+
   it("bytes that do not match the entry's sha512 never reach npm — the address is refused", async () => {
     const root = await tempRoot();
     const npm = npmSpy();
-    serve({ [channel.url]: new TextEncoder().encode("tampered bytes") });
     await expect(
-      installPluginChannel(root, channel, { npm: npm.run, uninstall: npm.uninstall }),
+      installPluginChannel(root, channel, {
+        npm: npm.run,
+        fetch: serve({ [channel.url]: new TextEncoder().encode("tampered bytes") }),
+        uninstall: npm.uninstall,
+      }),
     ).rejects.toThrow(/does not match the sha512/);
     expect(npm.specs).toEqual([]);
-    expect(npm.uninstalls).toEqual([channel.name]);
+    expect(npm.uninstalls).toEqual([]);
+    const prefix = pluginsPrefix(root);
+    await expect(fs.readdir(path.join(prefix, "archives"))).resolves.toEqual([]);
+    await expect(fs.readdir(path.join(prefix, ".staging"))).resolves.toEqual([]);
   });
 
   it("an entry whose pin is not a sha512 digest refuses before anything is fetched", async () => {
     const root = await tempRoot();
     const npm = npmSpy();
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const fetchSpy = vi.fn<typeof fetch>();
     await expect(
       installPluginChannel(
         root,
         { ...channel, integrity: "md5-abc" },
-        { npm: npm.run, uninstall: npm.uninstall },
+        { npm: npm.run, fetch: fetchSpy, uninstall: npm.uninstall },
       ),
     ).rejects.toThrow(/pins no readable sha512/);
     expect(fetchSpy).not.toHaveBeenCalled();

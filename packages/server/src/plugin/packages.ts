@@ -112,7 +112,11 @@ export class NpmPluginPackages implements PluginPackages {
   ): Promise<InstalledPackage> {
     const direct = this.withoutNpm({ onProgress: opts.onProgress });
     return direct === null
-      ? installPluginChannel(root, channel, { npm: this.io.npm, onProgress: opts.onProgress })
+      ? installPluginChannel(root, channel, {
+          npm: this.io.npm,
+          fetch: this.io.fetch(),
+          onProgress: opts.onProgress,
+        })
       : installChannelWithoutNpm(root, channel, direct);
   }
 
