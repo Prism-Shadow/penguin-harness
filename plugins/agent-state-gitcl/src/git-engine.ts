@@ -1,18 +1,23 @@
 /**
- * Pure-plumbing Git CLI `GitEngine` / `GitRepo` implementation.
+ * Hardened pure-plumbing `GitEngine` / `GitRepo` over Git CLI.
  *
- * Uses canonical Git plumbing (no hand-rolled HEAD/packed-refs/binary-tree/commit parsers):
- * - `resolveHead`: `git symbolic-ref HEAD` + `git rev-parse --verify --quiet <ref>^{commit}`
- * - `listTree`: `git ls-tree -z -r [-l]`
- * - `walkHistory`: `git rev-list --first-parent --format=...` + exact subtree OID lookup
- * - `extractTree`: `git ls-tree -z -r` + raw blob read via hardened `cat-file --batch` + exclusive `wx` write
- * - `commit`: `git hash-object -w --no-filters` + private `mkdtemp` index + `update-index --replace -z --index-info`
- *   + `write-tree` + `commit-tree` (`@<seconds> <tz>`) + atomic `update-ref` CAS
+ * Guarantees:
+ * - Zero hand-written Git file/tree/commit/packed-refs parsers: uses canonical Git plumbing
+ *   (`symbolic-ref`, `rev-parse`, `show-ref`, `ls-tree -z`, `rev-list`, `cat-file --batch`,
+ *   `cat-file --batch-check`, `hash-object --no-filters`, `update-index`, `write-tree`, `update-ref`).
+ * - True streaming direct-to-FS extraction (`BatchCatFile.streamBlobToFile`) with atomic
+ *   `.penguin-extract.lock` destination reservation and non-recursive `mkdir` case-collision checks.
+ * - Safe FD-based disk hashing (`O_NOFOLLOW | O_NONBLOCK` on Unix + before/after fstat/lstat checks)
+ *   so swapped FIFOs or symlinks never hang Git or silently change source bytes.
+ * - `AsyncLocalStorage` hook scope prevents `close()` deadlock from `beforeMoveRef` while draining
+ *   all admitted operations and retired batch child processes before resolving `close()`.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type {
   GitCommitFile,
   GitCommitInput,
@@ -24,380 +29,794 @@ import type {
   GitExtractTreeResult,
   GitFileMode,
   GitHistoryEntry,
+  GitIdentity,
   GitRepo,
   GitTreeEntry,
   GitWalkHistoryOptions,
 } from "@prismshadow/penguin-core/plugin";
-import type { GitProgram } from "./binary.js";
+import { probeGit, type GitProgram } from "./binary.js";
 import { runGit, startGit } from "./git.js";
-import { probeGit } from "./binary.js";
 
 const ZERO_OID = "0".repeat(40);
-const OID_RE = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
-const WIN_DEVICE_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i;
-const UTF8_STRICT = new TextDecoder("utf-8", { fatal: true });
+const OID_RE = /^[0-9a-f]{40}$/;
+const MAX_BATCH_HEADER_BYTES = 1024;
+const EXTRACT_LOCK_NAME = ".penguin-extract.lock";
+const RESERVED_WIN_NAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9",
+]);
 
-function gitError(code: GitErrorCode, message: string): GitError {
-  return Object.assign(new Error(message), { code });
+// `ignoreBOM: true` preserves leading U+FEFF bytes verbatim in Git filenames (Major #14).
+const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+function gitError(code: GitErrorCode, message: string, cause?: unknown): GitError {
+  return Object.assign(new Error(message, cause !== undefined ? { cause } : undefined), { code });
+}
+
+function decodeStrictUtf8(buf: Uint8Array, context: string): string {
+  try {
+    return UTF8_DECODER.decode(buf);
+  } catch (err) {
+    throw gitError("INVALID_PATH", `non-UTF-8 bytes in ${context}`, err);
+  }
+}
+
+function stripSingleTrailingNewline(s: string): string {
+  if (s.endsWith("\r\n")) return s.slice(0, -2);
+  if (s.endsWith("\n")) return s.slice(0, -1);
+  return s;
 }
 
 function isSafeRelPath(rel: string): boolean {
-  if (
-    rel === "" ||
-    rel.startsWith("/") ||
-    rel.endsWith("/") ||
-    rel.includes("\\") ||
-    rel.includes("\0") ||
-    rel.includes(":")
-  ) {
-    return false;
+  if (rel.length === 0 || rel.startsWith("/") || rel.endsWith("/")) return false;
+  for (let i = 0; i < rel.length; i += 1) {
+    const ch = rel.charCodeAt(i);
+    if (ch === 0 || ch === 0x5c || ch === 0x3a) return false;
   }
-  return rel
-    .split("/")
-    .every((seg) => seg !== "" && seg !== "." && seg !== ".." && !WIN_DEVICE_RE.test(seg));
+  for (const seg of rel.split("/")) {
+    if (seg.length === 0 || seg === "." || seg === "..") return false;
+    if (seg.endsWith(" ") || seg.endsWith(".")) return false;
+    // Reject `.git` (case-insensitive) so `update-index` never silently ignores entries (Major #18).
+    if (seg.toLowerCase() === ".git") return false;
+    const stem = (seg.split(".")[0] ?? seg).toUpperCase();
+    if (RESERVED_WIN_NAMES.has(stem)) return false;
+  }
+  return true;
+}
+
+function validateIdentity(who: GitIdentity, role: string): void {
+  for (const [field, val] of [
+    ["name", who.name],
+    ["email", who.email],
+  ] as const) {
+    if (val.length === 0 || /[\0\r\n<>]/.test(val)) {
+      throw gitError(
+        "INVALID_PATH",
+        `invalid ${role} ${field}: must be non-empty and free of NUL/CR/LF/< / >`,
+      );
+    }
+  }
 }
 
 function joinPrefix(prefix: string, rel: string): string {
-  if (prefix === "") return rel;
-  if (rel === "") return prefix;
-  return `${prefix}/${rel}`;
+  return prefix === "" ? rel : `${prefix}/${rel}`;
 }
 
-function zoneOf(offset: number): string {
-  const truncated = Math.trunc(offset);
-  const abs = Math.abs(truncated);
+function zoneOf(offsetMinutes: number): string {
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const abs = Math.abs(Math.trunc(offsetMinutes));
   const hh = String(Math.floor(abs / 60)).padStart(2, "0");
   const mm = String(abs % 60).padStart(2, "0");
-  return `${truncated < 0 ? "-" : "+"}${hh}${mm}`;
+  return `${sign}${hh}${mm}`;
 }
 
-/** Git C-quoting for line-oriented plumbing stdin protocols (`hash-object --stdin-paths`). */
-function cQuotePath(p: string): string {
-  const buf = Buffer.from(p, "utf8");
-  let out = '"';
-  for (const byte of buf) {
-    if (byte === 0x22) out += '\\"';
-    else if (byte === 0x5c) out += "\\\\";
-    else if (byte === 0x0a) out += "\\n";
-    else if (byte === 0x0d) out += "\\r";
-    else if (byte === 0x09) out += "\\t";
-    else if (byte < 0x20 || byte === 0x7f) out += `\\${byte.toString(8).padStart(3, "0")}`;
-    else out += String.fromCharCode(byte);
+function classifyUpdateRefError(refName: string, stderr: string, status: number): GitError {
+  const detail = stderr || `exit ${status}`;
+  if (/not a valid refname|invalid ref|fatal: .*refname|bad ref/i.test(detail)) {
+    return gitError("INVALID_REF", `invalid ref ${refName}: ${detail}`);
   }
-  return Buffer.from(`${out}"`, "latin1").toString("utf8");
-}
-
-function decodeStrictUtf8(buf: Buffer, context: string): string {
-  try {
-    return UTF8_STRICT.decode(buf);
-  } catch {
-    throw gitError("INVALID_PATH", `non-UTF-8 entry name in ${context}`);
+  // Explicit CAS / lock contention patterns ONLY; storage failures (ENOSPC, EROFS, EACCES, EIO) map to IO_ERROR (Major #22).
+  if (
+    /is at [0-9a-f]+ but expected|but expected|reference already exists|already exists|Unable to create '.*\.lock': File exists|cannot create '.*': .*exists|cannot lock ref '.*': is at|cannot lock ref '.*': reference already exists|cannot lock ref '.*': '.*' exists/i.test(
+      detail,
+    )
+  ) {
+    return gitError("CAS_CONFLICT", `ref update refused for ${refName}: ${detail}`);
   }
+  return gitError("IO_ERROR", `ref storage error for ${refName}: ${detail}`);
 }
 
-interface BatchReply {
+/** Gracefully shut down a child process and ALWAYS wait until `close` fires (drains zombies). */
+function terminateAndDrainChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(killTimer);
+      resolve();
+    };
+    child.once("close", finish);
+    child.once("exit", () => {
+      // Wait briefly for close, fallback resolve if already dead
+      setTimeout(finish, 200);
+    });
+    try {
+      child.stdin.end();
+    } catch {
+      // ignore
+    }
+    const killTimer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+    }, 1500);
+    killTimer.unref();
+  });
+}
+
+interface BatchInfoResult {
   oid: string;
   type: string;
   size: number;
-  body: Buffer;
-}
-
-interface BatchWaiter {
-  expectedOid: string;
-  resolve: (v: BatchReply | null) => void;
-  reject: (err: Error) => void;
-}
-
-interface BatchGen {
-  id: number;
-  child: ChildProcessWithoutNullStreams;
-  queue: BatchWaiter[];
-  chunks: Buffer[];
-  bufferedLen: number;
-  header: { oid: string; type: string; size: number } | null;
-  retired: boolean;
 }
 
 /**
- * Generation-isolated persistent `git cat-file --batch` reader.
- * - Handles `stdin` `EPIPE` errors without crashing Node.
- * - Uses generation tokens so an old closing child can never clear or fail a newer generation.
- * - Strictly validates `<oid> <type> <size>\n`, exact body length, and trailing `\n`.
- * - Recovers cleanly on subsequent requests after a transient helper crash while repo is open.
+ * Persistent `git cat-file --batch-check` helper for zero-subprocess metadata/tree-OID lookups
+ * (eliminates N+1 subprocesses in `walkHistory` and `resolveSubtreeOid`, Minor #1).
  */
-class BatchCatFile {
-  private gen: BatchGen | null = null;
-  private nextGenId = 1;
-  private closed = false;
+class BatchCheck {
   private readonly git: GitProgram;
   private readonly gitdir: string;
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private generation = 0;
+  private closed = false;
+  private buf: Buffer = Buffer.alloc(0);
+  private readonly retired = new Set<Promise<void>>();
+  private pending: {
+    resolve: (v: BatchInfoResult | null) => void;
+    reject: (err: Error) => void;
+  } | null = null;
+  private tail: Promise<unknown> = Promise.resolve();
 
   constructor(git: GitProgram, gitdir: string) {
     this.git = git;
     this.gitdir = gitdir;
   }
 
-  private retire(g: BatchGen, err: Error): void {
-    if (g.retired) return;
-    g.retired = true;
-    if (this.gen === g) {
-      this.gen = null;
+  private retire(gen: number, err?: Error): void {
+    if (gen !== this.generation) return;
+    this.generation += 1;
+    const proc = this.child;
+    this.child = null;
+    this.buf = Buffer.alloc(0);
+    const p = this.pending;
+    this.pending = null;
+    if (p) p.reject(err ?? gitError("IO_ERROR", "cat-file --batch-check terminated"));
+    if (proc) {
+      const drain = terminateAndDrainChild(proc);
+      this.retired.add(drain);
+      void drain.finally(() => this.retired.delete(drain));
     }
-    const pending = g.queue.splice(0);
-    g.chunks.length = 0;
-    g.bufferedLen = 0;
-    g.header = null;
-    try {
-      g.child.stdin.destroy();
-    } catch {
-      // ignore
-    }
-    try {
-      g.child.kill();
-    } catch {
-      // ignore
-    }
-    for (const w of pending) w.reject(err);
   }
 
-  private ensure(): BatchGen {
+  private ensureChild(): { child: ChildProcessWithoutNullStreams; gen: number } {
     if (this.closed) throw gitError("IO_ERROR", "GitRepo has been closed");
-    if (this.gen && !this.gen.retired) return this.gen;
+    if (this.child !== null) return { child: this.child, gen: this.generation };
+    const gen = ++this.generation;
+    const child = startGit(this.git, this.gitdir, ["cat-file", "--batch-check"]);
+    this.child = child;
+    this.buf = Buffer.alloc(0);
 
-    const child = startGit(this.git, this.gitdir, ["cat-file", "--batch"]);
-    const g: BatchGen = {
-      id: this.nextGenId++,
-      child,
-      queue: [],
-      chunks: [],
-      bufferedLen: 0,
-      header: null,
-      retired: false,
-    };
-    this.gen = g;
-
-    child.stdout.on("data", (chunk: Buffer) => {
-      if (g.retired) return;
-      g.chunks.push(chunk);
-      g.bufferedLen += chunk.length;
-      this.drain(g);
-    });
+    const onFail = (err: Error) =>
+      this.retire(gen, gitError("IO_ERROR", `cat-file --batch-check failed: ${err.message}`, err));
+    child.on("error", onFail);
+    child.stdin.on("error", onFail);
+    child.stdout.on("error", onFail);
+    child.stderr.on("error", onFail);
     child.stderr.resume();
-    child.stdin.on("error", (err: NodeJS.ErrnoException) => {
-      this.retire(g, gitError("IO_ERROR", `git cat-file stdin error: ${err.code ?? err.message}`));
-    });
-    child.on("error", (err) => {
-      this.retire(g, gitError("IO_ERROR", `git cat-file error: ${err.message}`));
-    });
     child.on("close", (code, signal) => {
+      if (gen !== this.generation) return;
       this.retire(
-        g,
-        gitError("IO_ERROR", `git cat-file exited unexpectedly (${signal ?? code ?? "eof"})`),
+        gen,
+        gitError(
+          "IO_ERROR",
+          `cat-file --batch-check exited unexpectedly (${signal ?? `code ${code}`})`,
+        ),
       );
     });
-    return g;
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (gen !== this.generation) return;
+      this.buf = this.buf.length === 0 ? chunk : Buffer.concat([this.buf, chunk]);
+      this.drain(gen);
+    });
+    return { child, gen };
   }
 
-  private consume(g: BatchGen, n: number): Buffer {
-    if (n === 0) return Buffer.alloc(0);
-    const merged = g.chunks.length === 1 ? g.chunks[0]! : Buffer.concat(g.chunks, g.bufferedLen);
-    const out = merged.subarray(0, n);
-    const rest = merged.subarray(n);
-    g.chunks = rest.length > 0 ? [rest] : [];
-    g.bufferedLen = rest.length;
-    return out;
-  }
-
-  private findNewline(g: BatchGen): number {
-    let offset = 0;
-    for (const c of g.chunks) {
-      const idx = c.indexOf(0x0a);
-      if (idx !== -1) return offset + idx;
-      offset += c.length;
-    }
-    return -1;
-  }
-
-  private drain(g: BatchGen): void {
-    while (!g.retired && g.queue.length > 0) {
-      if (g.header === null) {
-        const nl = this.findNewline(g);
-        if (nl === -1) {
-          if (g.bufferedLen > 4096) {
-            this.retire(g, gitError("REPO_CORRUPT", "oversized cat-file header line"));
-          }
-          return;
-        }
-        const line = this.consume(g, nl + 1)
-          .subarray(0, nl)
-          .toString("utf8");
-        const waiter = g.queue[0]!;
-        if (line === `${waiter.expectedOid} missing` || line.endsWith(" missing")) {
-          g.queue.shift()!.resolve(null);
-          continue;
-        }
-        const parts = line.split(" ");
-        if (parts.length !== 3) {
-          this.retire(g, gitError("REPO_CORRUPT", `malformed cat-file header: ${line}`));
-          return;
-        }
-        const [oid, type, sizeStr] = parts;
-        const size = Number(sizeStr);
-        if (!OID_RE.test(oid!) || !Number.isSafeInteger(size) || size < 0) {
-          this.retire(g, gitError("REPO_CORRUPT", `invalid cat-file header: ${line}`));
-          return;
-        }
-        g.header = { oid: oid!, type: type!, size };
+  private drain(gen: number): void {
+    const p = this.pending;
+    if (p === null) return;
+    const nl = this.buf.indexOf(0x0a);
+    if (nl === -1) {
+      if (this.buf.length > MAX_BATCH_HEADER_BYTES) {
+        this.retire(gen, gitError("REPO_CORRUPT", "cat-file --batch-check header exceeded limit"));
       }
-
-      const need = g.header.size + 1;
-      if (g.bufferedLen < need) return;
-      const frame = this.consume(g, need);
-      if (frame[g.header.size] !== 0x0a) {
-        this.retire(g, gitError("REPO_CORRUPT", "cat-file body missing trailing LF"));
-        return;
-      }
-      const body = Buffer.from(frame.subarray(0, g.header.size));
-      const { oid, type, size } = g.header;
-      g.header = null;
-      g.queue.shift()!.resolve({ oid, type, size, body });
+      return;
     }
+    const line = this.buf.subarray(0, nl).toString("utf8");
+    this.buf = this.buf.subarray(nl + 1);
+    this.pending = null;
+    if (line.endsWith(" missing") || line.endsWith(" ambiguous")) {
+      p.resolve(null);
+      return;
+    }
+    const parts = line.split(" ");
+    if (parts.length !== 3 || !OID_RE.test(parts[0]!)) {
+      this.retire(gen, gitError("REPO_CORRUPT", `unexpected batch-check header: ${line}`));
+      return;
+    }
+    const size = Number(parts[2]);
+    if (!Number.isSafeInteger(size) || size < 0) {
+      this.retire(gen, gitError("REPO_CORRUPT", `invalid batch-check size: ${line}`));
+      return;
+    }
+    p.resolve({ oid: parts[0]!, type: parts[1]!, size });
   }
 
-  read(oid: string): Promise<BatchReply | null> {
+  query(spec: string): Promise<BatchInfoResult | null> {
+    if (spec.includes("\n") || spec.includes("\r") || spec.includes("\0")) {
+      return Promise.reject(gitError("INVALID_PATH", `invalid object spec: ${spec}`));
+    }
+    const next = this.tail.then(
+      () => this.querySerialized(spec),
+      () => this.querySerialized(spec),
+    );
+    this.tail = next.catch(() => undefined);
+    return next;
+  }
+
+  private querySerialized(spec: string): Promise<BatchInfoResult | null> {
     return new Promise((resolve, reject) => {
-      let g: BatchGen;
+      let handle: { child: ChildProcessWithoutNullStreams; gen: number };
       try {
-        g = this.ensure();
+        handle = this.ensureChild();
       } catch (err) {
         reject(err);
         return;
       }
-      g.queue.push({ expectedOid: oid, resolve, reject });
-      try {
-        g.child.stdin.write(`${oid}\n`, (err) => {
-          if (err) {
-            this.retire(g, gitError("IO_ERROR", `git cat-file write failed: ${err.message}`));
-          }
-        });
-      } catch (err) {
-        this.retire(g, gitError("IO_ERROR", `git cat-file write failed: ${String(err)}`));
-      }
+      this.pending = { resolve, reject };
+      handle.child.stdin.write(`${spec}\n`);
     });
   }
 
   async close(): Promise<void> {
     this.closed = true;
-    const g = this.gen;
-    this.gen = null;
-    if (!g || g.retired) return;
-    g.retired = true;
-    const pending = g.queue.splice(0);
-    for (const w of pending) w.reject(gitError("IO_ERROR", "GitRepo closed"));
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        try {
-          g.child.kill("SIGKILL");
-        } catch {
-          // ignore
-        }
-        done();
-      }, 2000);
-      g.child.once("close", done);
-      try {
-        g.child.stdin.end();
-      } catch {
-        try {
-          g.child.kill();
-        } catch {
-          // ignore
-        }
-        done();
-      }
-    });
+    this.retire(this.generation, gitError("IO_ERROR", "GitRepo has been closed"));
+    if (this.retired.size > 0) {
+      await Promise.allSettled([...this.retired]);
+    }
   }
 }
 
-/** Parse `git ls-tree -z -r` (or `-z -r -l`) binary output strictly. */
-function parseLsTreeZ(stdout: Buffer, withSize: boolean, prefix: string): GitTreeEntry[] {
+/**
+ * Streaming `git cat-file --batch` helper.
+ * Streams blob bytes directly to disk chunks (`streamBlobToFile`) with stdout pause/resume
+ * backpressure so peak JS memory is O(chunk) regardless of blob size (Major #10).
+ */
+class BatchCatFile {
+  private readonly git: GitProgram;
+  private readonly gitdir: string;
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private generation = 0;
+  private closed = false;
+  private buf: Buffer = Buffer.alloc(0);
+  private readonly retired = new Set<Promise<void>>();
+  private active: {
+    state: "header" | "body" | "lf";
+    remaining: number;
+    totalSize: number;
+    targetPath: string;
+    mode: number;
+    fh: fs.FileHandle | null;
+    writing: boolean;
+    resolve: (bytes: number) => void;
+    reject: (err: Error) => void;
+  } | null = null;
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(git: GitProgram, gitdir: string) {
+    this.git = git;
+    this.gitdir = gitdir;
+  }
+
+  private retire(gen: number, err?: Error): void {
+    if (gen !== this.generation) return;
+    this.generation += 1;
+    const proc = this.child;
+    this.child = null;
+    this.buf = Buffer.alloc(0);
+    const act = this.active;
+    this.active = null;
+    if (act) {
+      const fh = act.fh;
+      act.fh = null;
+      const doneErr = err ?? gitError("IO_ERROR", "cat-file --batch terminated");
+      if (fh) {
+        void fh.close().finally(() => act.reject(doneErr));
+      } else {
+        act.reject(doneErr);
+      }
+    }
+    if (proc) {
+      const drain = terminateAndDrainChild(proc);
+      this.retired.add(drain);
+      void drain.finally(() => this.retired.delete(drain));
+    }
+  }
+
+  private ensureChild(): { child: ChildProcessWithoutNullStreams; gen: number } {
+    if (this.closed) throw gitError("IO_ERROR", "GitRepo has been closed");
+    if (this.child !== null) return { child: this.child, gen: this.generation };
+    const gen = ++this.generation;
+    const child = startGit(this.git, this.gitdir, ["cat-file", "--batch"]);
+    this.child = child;
+    this.buf = Buffer.alloc(0);
+
+    const onFail = (err: Error) =>
+      this.retire(gen, gitError("IO_ERROR", `cat-file --batch failed: ${err.message}`, err));
+    child.on("error", onFail);
+    child.stdin.on("error", onFail);
+    child.stdout.on("error", onFail);
+    child.stderr.on("error", onFail);
+    child.stderr.resume();
+    child.on("close", (code, signal) => {
+      if (gen !== this.generation) return;
+      this.retire(
+        gen,
+        gitError("IO_ERROR", `cat-file --batch exited unexpectedly (${signal ?? `code ${code}`})`),
+      );
+    });
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (gen !== this.generation) return;
+      try {
+        this.buf = this.buf.length === 0 ? chunk : Buffer.concat([this.buf, chunk]);
+        this.pump(gen);
+      } catch (err) {
+        this.retire(
+          gen,
+          gitError("IO_ERROR", `cat-file --batch stream error: ${(err as Error).message}`, err),
+        );
+      }
+    });
+    return { child, gen };
+  }
+
+  private pump(gen: number): void {
+    const act = this.active;
+    if (act === null || act.writing || gen !== this.generation) return;
+    const proc = this.child;
+    if (proc === null) return;
+
+    if (act.state === "header") {
+      const nl = this.buf.indexOf(0x0a);
+      if (nl === -1) {
+        if (this.buf.length > MAX_BATCH_HEADER_BYTES) {
+          this.retire(gen, gitError("REPO_CORRUPT", "cat-file header exceeded max size"));
+        }
+        return;
+      }
+      const line = this.buf.subarray(0, nl).toString("utf8");
+      this.buf = this.buf.subarray(nl + 1);
+      if (line.endsWith(" missing")) {
+        this.active = null;
+        act.reject(gitError("REPO_CORRUPT", `missing blob object: ${line}`));
+        return;
+      }
+      const parts = line.split(" ");
+      if (parts.length !== 3 || !OID_RE.test(parts[0]!)) {
+        this.retire(gen, gitError("REPO_CORRUPT", `unexpected cat-file header: ${line}`));
+        return;
+      }
+      if (parts[1] !== "blob") {
+        // Retire child so unread non-blob payload never desynchronizes future reads.
+        this.retire(gen, gitError("REPO_CORRUPT", `expected blob object, got ${parts[1]}`));
+        return;
+      }
+      const size = Number(parts[2]);
+      if (!Number.isSafeInteger(size) || size < 0) {
+        this.retire(gen, gitError("REPO_CORRUPT", `invalid cat-file size: ${line}`));
+        return;
+      }
+      act.totalSize = size;
+      act.remaining = size;
+      act.state = "body";
+      act.writing = true;
+      proc.stdout.pause();
+      void fs.open(act.targetPath, "wx", act.mode).then(
+        (fh) => {
+          if (gen !== this.generation || this.active !== act) {
+            void fh.close().catch(() => undefined);
+            return;
+          }
+          act.fh = fh;
+          act.writing = false;
+          proc.stdout.resume();
+          this.pump(gen);
+        },
+        (err: NodeJS.ErrnoException) => {
+          const mapped =
+            err.code === "EEXIST"
+              ? gitError("INVALID_PATH", `file case or path collision at ${act.targetPath}`, err)
+              : gitError("IO_ERROR", `cannot create ${act.targetPath}: ${err.message}`, err);
+          this.retire(gen, mapped);
+        },
+      );
+      return;
+    }
+
+    if (act.state === "body") {
+      if (act.remaining === 0) {
+        act.state = "lf";
+      } else if (this.buf.length > 0) {
+        const take = Math.min(act.remaining, this.buf.length);
+        const slice = this.buf.subarray(0, take);
+        this.buf = this.buf.subarray(take);
+        act.remaining -= take;
+        act.writing = true;
+        proc.stdout.pause();
+        const fh = act.fh!;
+        void (async () => {
+          let offset = 0;
+          while (offset < slice.length) {
+            const { bytesWritten } = await fh.write(slice, offset, slice.length - offset);
+            if (bytesWritten <= 0) throw new Error("short write while extracting blob");
+            offset += bytesWritten;
+          }
+        })().then(
+          () => {
+            if (gen !== this.generation || this.active !== act) return;
+            act.writing = false;
+            if (act.remaining === 0) act.state = "lf";
+            proc.stdout.resume();
+            this.pump(gen);
+          },
+          (err: Error) => {
+            this.retire(
+              gen,
+              gitError("IO_ERROR", `cannot write ${act.targetPath}: ${err.message}`, err),
+            );
+          },
+        );
+        return;
+      } else {
+        return;
+      }
+    }
+
+    if (act.state === "lf") {
+      if (this.buf.length < 1) return;
+      if (this.buf[0] !== 0x0a) {
+        this.retire(gen, gitError("REPO_CORRUPT", "missing trailing LF after cat-file body"));
+        return;
+      }
+      this.buf = this.buf.subarray(1);
+      const fh = act.fh;
+      act.fh = null;
+      const total = act.totalSize;
+      this.active = null;
+      if (fh) {
+        proc.stdout.pause();
+        void fh.close().then(
+          () => {
+            if (gen === this.generation && this.child === proc) proc.stdout.resume();
+            act.resolve(total);
+          },
+          (err: Error) => {
+            this.retire(
+              gen,
+              gitError("IO_ERROR", `cannot close ${act.targetPath}: ${err.message}`, err),
+            );
+          },
+        );
+      } else {
+        act.resolve(total);
+      }
+    }
+  }
+
+  streamBlobToFile(oid: string, targetPath: string, mode: number): Promise<number> {
+    if (!OID_RE.test(oid)) return Promise.reject(gitError("INVALID_OID", `invalid oid: ${oid}`));
+    const next = this.tail.then(
+      () => this.streamSerialized(oid, targetPath, mode),
+      () => this.streamSerialized(oid, targetPath, mode),
+    );
+    this.tail = next.catch(() => undefined);
+    return next;
+  }
+
+  private streamSerialized(oid: string, targetPath: string, mode: number): Promise<number> {
+    return new Promise((resolve, reject) => {
+      let handle: { child: ChildProcessWithoutNullStreams; gen: number };
+      try {
+        handle = this.ensureChild();
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      this.active = {
+        state: "header",
+        remaining: 0,
+        totalSize: 0,
+        targetPath,
+        mode,
+        fh: null,
+        writing: false,
+        resolve,
+        reject,
+      };
+      handle.child.stdin.write(`${oid}\n`);
+    });
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    this.retire(this.generation, gitError("IO_ERROR", "GitRepo has been closed"));
+    if (this.retired.size > 0) {
+      await Promise.allSettled([...this.retired]);
+    }
+  }
+}
+
+/**
+ * Safely stream a regular disk file directly into `git hash-object -w --no-filters --stdin`
+ * using an already-opened file descriptor (`O_NOFOLLOW | O_NONBLOCK` on Unix) so swapped FIFOs
+ * or symlinks never block Git or silently substitute bytes (Major #11).
+ */
+async function hashDiskFileSafely(
+  git: GitProgram,
+  gitdir: string,
+  filePath: string,
+): Promise<string> {
+  let preLstat;
+  try {
+    preLstat = await fs.lstat(filePath);
+  } catch (err) {
+    throw gitError("IO_ERROR", `cannot stat ${filePath}: ${(err as Error).message}`, err);
+  }
+  if (!preLstat.isFile()) {
+    throw gitError("INVALID_PATH", `source path is not a regular file: ${filePath}`);
+  }
+
+  const openFlags =
+    process.platform === "win32"
+      ? fsSync.constants.O_RDONLY
+      : fsSync.constants.O_RDONLY |
+        (fsSync.constants.O_NOFOLLOW ?? 0) |
+        (fsSync.constants.O_NONBLOCK ?? 0);
+
+  let fh: fs.FileHandle;
+  try {
+    fh = await fs.open(filePath, openFlags);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ELOOP" || code === "ENXIO") {
+      throw gitError("INVALID_PATH", `source path is a symlink or special file: ${filePath}`, err);
+    }
+    throw gitError("IO_ERROR", `cannot open ${filePath}: ${(err as Error).message}`, err);
+  }
+
+  try {
+    const fdBefore = await fh.stat();
+    if (!fdBefore.isFile()) {
+      throw gitError("INVALID_PATH", `source path is not a regular file: ${filePath}`);
+    }
+    if (
+      fdBefore.dev !== preLstat.dev ||
+      fdBefore.ino !== preLstat.ino ||
+      fdBefore.size !== preLstat.size ||
+      fdBefore.mtimeMs !== preLstat.mtimeMs
+    ) {
+      throw gitError("SOURCE_CHANGED", `source changed during open: ${filePath}`);
+    }
+
+    const oid = await new Promise<string>((resolve, reject) => {
+      const child = startGit(git, gitdir, ["hash-object", "-w", "--no-filters", "--stdin"]);
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      let settled = false;
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+        reject(err);
+      };
+      child.stdout.on("data", (c: Buffer) => stdout.push(c));
+      child.stderr.on("data", (c: Buffer) => stderr.push(c));
+      child.stdout.on("error", fail);
+      child.stderr.on("error", fail);
+      child.stdin.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code !== "EPIPE") fail(err);
+      });
+      child.on("error", fail);
+      child.on("close", (code, signal) => {
+        if (settled) return;
+        settled = true;
+        if (signal !== null || code !== 0) {
+          const msg = Buffer.concat(stderr).toString("utf8").trim();
+          reject(
+            gitError(
+              "IO_ERROR",
+              `hash-object failed for ${filePath}: ${msg || signal || `exit ${code}`}`,
+            ),
+          );
+          return;
+        }
+        const out = Buffer.concat(stdout).toString("ascii").trim();
+        if (!OID_RE.test(out)) {
+          reject(gitError("IO_ERROR", `hash-object returned invalid oid: ${out}`));
+          return;
+        }
+        resolve(out);
+      });
+
+      const chunkBuf = Buffer.allocUnsafe(64 * 1024);
+      let totalRead = 0;
+      void (async () => {
+        try {
+          while (true) {
+            const { bytesRead } = await fh.read(chunkBuf, 0, chunkBuf.length, null);
+            if (bytesRead === 0) break;
+            totalRead += bytesRead;
+            if (totalRead > fdBefore.size) {
+              throw gitError("SOURCE_CHANGED", `source grew during read: ${filePath}`);
+            }
+            const part = chunkBuf.subarray(0, bytesRead);
+            if (!child.stdin.write(part)) {
+              await new Promise<void>((res, rej) => {
+                const onDrain = () => {
+                  cleanup();
+                  res();
+                };
+                const onErr = (e: Error) => {
+                  cleanup();
+                  rej(e);
+                };
+                const cleanup = () => {
+                  child.stdin.off("drain", onDrain);
+                  child.stdin.off("error", onErr);
+                };
+                child.stdin.once("drain", onDrain);
+                child.stdin.once("error", onErr);
+              });
+            }
+          }
+          if (totalRead !== fdBefore.size) {
+            throw gitError("SOURCE_CHANGED", `source shrank during read: ${filePath}`);
+          }
+          child.stdin.end();
+        } catch (err) {
+          fail(err instanceof Error ? err : new Error(String(err)));
+        }
+      })();
+    });
+
+    const fdAfter = await fh.stat();
+    if (
+      !fdAfter.isFile() ||
+      fdAfter.size !== fdBefore.size ||
+      fdAfter.mtimeMs !== fdBefore.mtimeMs
+    ) {
+      throw gitError("SOURCE_CHANGED", `source file modified during hash: ${filePath}`);
+    }
+    let postLstat;
+    try {
+      postLstat = await fs.lstat(filePath);
+    } catch (err) {
+      throw gitError("SOURCE_CHANGED", `source disappeared during hash: ${filePath}`, err);
+    }
+    if (
+      !postLstat.isFile() ||
+      postLstat.dev !== fdBefore.dev ||
+      postLstat.ino !== fdBefore.ino ||
+      postLstat.size !== fdBefore.size ||
+      postLstat.mtimeMs !== fdBefore.mtimeMs
+    ) {
+      throw gitError("SOURCE_CHANGED", `source path replaced during hash: ${filePath}`);
+    }
+    return oid;
+  } finally {
+    await fh.close().catch(() => undefined);
+  }
+}
+
+function parseLsTreeZ(buf: Buffer, withSize: boolean, stripPrefix: string): GitTreeEntry[] {
   const entries: GitTreeEntry[] = [];
   let pos = 0;
-  const stripPrefix = prefix === "" ? "" : `${prefix}/`;
-
-  while (pos < stdout.length) {
-    const nul = stdout.indexOf(0, pos);
-    if (nul === -1) {
-      throw gitError("REPO_CORRUPT", "unterminated record in git ls-tree -z");
-    }
-    const record = stdout.subarray(pos, nul);
+  while (pos < buf.length) {
+    const nul = buf.indexOf(0, pos);
+    if (nul === -1) break;
+    const record = buf.subarray(pos, nul);
     pos = nul + 1;
     if (record.length === 0) continue;
-
     const tab = record.indexOf(0x09);
     if (tab === -1) {
-      throw gitError("REPO_CORRUPT", "missing tab separator in git ls-tree -z");
+      throw gitError("REPO_CORRUPT", "malformed git ls-tree -z record (missing TAB)");
     }
-    const meta = record.subarray(0, tab).toString("ascii").trim().split(/\s+/);
-    const fullPath = decodeStrictUtf8(record.subarray(tab + 1), "ls-tree");
+    const header = record.subarray(0, tab).toString("ascii");
+    const rawRel = decodeStrictUtf8(record.subarray(tab + 1), "ls-tree path");
+    const parts = header.trim().split(/\s+/);
+    const mode = parts[0];
+    const type = parts[1];
+    const oid = parts[2];
+    if (type !== "blob" || (mode !== "100644" && mode !== "100755")) continue;
+    if (!oid || !OID_RE.test(oid)) {
+      throw gitError("REPO_CORRUPT", `invalid oid in ls-tree output: ${header}`);
+    }
     const rel =
-      stripPrefix === ""
-        ? fullPath
-        : fullPath.startsWith(stripPrefix)
-          ? fullPath.slice(stripPrefix.length)
-          : fullPath;
-
-    const modeRaw = meta[0] ?? "";
-    const type = meta[1] ?? "";
-    const oid = meta[2] ?? "";
-    if (type !== "blob") continue;
-    if (!OID_RE.test(oid)) {
-      throw gitError("REPO_CORRUPT", `invalid oid in ls-tree: ${oid}`);
-    }
-    const mode: GitFileMode = modeRaw === "100755" ? "100755" : "100644";
-    const entry: GitTreeEntry = { rel, oid, mode };
+      stripPrefix !== "" && rawRel.startsWith(`${stripPrefix}/`)
+        ? rawRel.slice(stripPrefix.length + 1)
+        : rawRel;
+    const entry: GitTreeEntry = { rel, oid, mode: mode as GitFileMode };
     if (withSize) {
-      const sz = Number(meta[3]);
-      if (!Number.isSafeInteger(sz) || sz < 0) {
-        throw gitError("REPO_CORRUPT", `invalid blob size in ls-tree: ${meta[3]}`);
+      const sizeNum = Number(parts[3]);
+      if (!Number.isSafeInteger(sizeNum) || sizeNum < 0) {
+        throw gitError("REPO_CORRUPT", `invalid blob size in ls-tree -l: ${header}`);
       }
-      entry.size = sz;
+      entry.size = sizeNum;
     }
     entries.push(entry);
   }
   return entries;
 }
 
-async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRepo> {
-  // Verify repository via canonical `git rev-parse --git-dir`
-  const probe = await runGit(git, gitdir, ["rev-parse", "--git-dir"], { allowNonZero: true });
-  if (probe.status !== 0) {
-    throw gitError("IO_ERROR", `cannot open git repository ${gitdir}: ${probe.stderr}`);
-  }
-
-  const batch = new BatchCatFile(git, gitdir);
+function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
+  const hookScope = new AsyncLocalStorage<symbol>();
+  const batchCheck = new BatchCheck(git, gitdir);
+  const batchCat = new BatchCatFile(git, gitdir);
   let closing = false;
   let closed = false;
   let inFlight = 0;
-  let hookDepth = 0;
   let closePromise: Promise<void> | null = null;
   const drainWaiters: Array<() => void> = [];
 
   const notifyDrained = () => {
     if (inFlight === 0 && drainWaiters.length > 0) {
       const list = drainWaiters.splice(0);
-      for (const r of list) r();
+      for (const resolve of list) resolve();
     }
   };
 
   async function runAdmitted<T>(fn: () => Promise<T>): Promise<T> {
-    if (closed || (closing && hookDepth === 0)) {
+    if (closed || closing) {
       throw gitError("IO_ERROR", "GitRepo has been closed");
     }
     inFlight += 1;
@@ -409,17 +828,53 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
     }
   }
 
+  /**
+   * Resolve subtree OID at `prefix` under `commitOid`, distinguishing legitimate absence (`null`)
+   * from repository corruption (`REPO_CORRUPT`) (Major #17).
+   */
   async function resolveSubtreeOid(commitOid: string, prefix: string): Promise<string | null> {
-    const rev = prefix === "" ? `${commitOid}^{tree}` : `${commitOid}:${prefix}`;
-    const r = await runGit(git, gitdir, ["rev-parse", "--verify", "--quiet", rev], {
-      allowNonZero: true,
-    });
-    if (r.status !== 0) return null;
-    const oid = r.stdout.toString("ascii").trim();
-    if (!OID_RE.test(oid)) return null;
-    const t = await runGit(git, gitdir, ["cat-file", "-t", oid], { allowNonZero: true });
-    if (t.status !== 0) return null;
-    return t.stdout.toString("ascii").trim() === "tree" ? oid : null;
+    const commitInfo = await batchCheck.query(commitOid);
+    if (commitInfo === null) return null;
+    if (commitInfo.type !== "commit") {
+      throw gitError("INVALID_OID", `${commitOid} is not a commit (${commitInfo.type})`);
+    }
+    const rootTree = await batchCheck.query(`${commitOid}^{tree}`);
+    if (rootTree === null || rootTree.type !== "tree") {
+      throw gitError("REPO_CORRUPT", `commit ${commitOid} references missing or non-tree root`);
+    }
+    if (prefix === "") return rootTree.oid;
+
+    let curTree = rootTree.oid;
+    for (const seg of prefix.split("/")) {
+      const ls = await runGit(git, gitdir, ["ls-tree", "-z", curTree, "--", seg], {
+        allowNonZero: true,
+      });
+      if (ls.status !== 0) {
+        throw gitError("REPO_CORRUPT", `git ls-tree failed on ${curTree}: ${ls.stderr}`);
+      }
+      if (ls.stdout.length === 0) return null;
+      const nul = ls.stdout.indexOf(0);
+      const record = nul === -1 ? ls.stdout : ls.stdout.subarray(0, nul);
+      const tab = record.indexOf(0x09);
+      if (tab === -1) {
+        throw gitError("REPO_CORRUPT", `malformed ls-tree entry in ${curTree}`);
+      }
+      const header = record.subarray(0, tab).toString("ascii").trim().split(/\s+/);
+      const name = decodeStrictUtf8(record.subarray(tab + 1), "ls-tree segment");
+      if (name !== seg) return null;
+      const type = header[1];
+      const oid = header[2];
+      if (type !== "tree") return null;
+      if (!oid || !OID_RE.test(oid)) {
+        throw gitError("REPO_CORRUPT", `invalid subtree oid in ${curTree}`);
+      }
+      const subInfo = await batchCheck.query(oid);
+      if (subInfo === null || subInfo.type !== "tree") {
+        throw gitError("REPO_CORRUPT", `subtree ${oid} at ${prefix} is missing or corrupt`);
+      }
+      curTree = oid;
+    }
+    return curTree;
   }
 
   async function listTreeInternal(
@@ -427,21 +882,12 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
     prefix: string,
     opts?: { withSize?: boolean },
   ): Promise<GitTreeEntry[] | null> {
-    if (!OID_RE.test(commitOid)) throw gitError("INVALID_OID", `invalid commit oid: ${commitOid}`);
+    if (!OID_RE.test(commitOid)) {
+      throw gitError("INVALID_OID", `invalid commitOid: ${commitOid}`);
+    }
     if (prefix !== "" && !isSafeRelPath(prefix)) {
       throw gitError("INVALID_PATH", `unsafe prefix: ${prefix}`);
     }
-    // Verify commit exists & is a commit object
-    const verify = await runGit(
-      git,
-      gitdir,
-      ["rev-parse", "--verify", "--quiet", `${commitOid}^{commit}`],
-      {
-        allowNonZero: true,
-      },
-    );
-    if (verify.status !== 0) return null;
-
     const treeOid = await resolveSubtreeOid(commitOid, prefix);
     if (treeOid === null) return null;
 
@@ -462,213 +908,210 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
     for (const f of files) {
       if (!isSafeRelPath(f.rel)) throw gitError("INVALID_PATH", `unsafe file path: ${f.rel}`);
     }
-
-    const results: Array<{ rel: string; oid: string; mode: GitFileMode } | undefined> = new Array(
-      files.length,
-    );
-    const diskIndices: number[] = [];
-    const diskStats: Array<{
-      path: string;
-      dev: number;
-      ino: number;
-      size: number;
-      mtimeMs: number;
-    }> = [];
-
-    for (let i = 0; i < files.length; i += 1) {
-      const f = files[i]!;
+    const results: Array<{ rel: string; oid: string; mode: GitFileMode }> = [];
+    for (const f of files) {
       const mode: GitFileMode = f.mode ?? "100644";
       if (f.source.kind === "file") {
-        let st;
-        try {
-          st = await fs.lstat(f.source.path);
-        } catch (err) {
-          throw gitError("IO_ERROR", `cannot stat ${f.source.path}: ${(err as Error).message}`);
-        }
-        if (!st.isFile()) {
-          throw gitError("INVALID_PATH", `source path is not a regular file: ${f.source.path}`);
-        }
-        diskIndices.push(i);
-        diskStats.push({
-          path: f.source.path,
-          dev: st.dev,
-          ino: st.ino,
-          size: st.size,
-          mtimeMs: st.mtimeMs,
-        });
+        const oid = await hashDiskFileSafely(git, gitdir, f.source.path);
+        results.push({ rel: f.rel, oid, mode });
       } else {
         const res = await runGit(git, gitdir, ["hash-object", "-w", "--no-filters", "--stdin"], {
           input: f.source.body,
         });
-        results[i] = { rel: f.rel, oid: res.stdout.toString("ascii").trim(), mode };
+        results.push({ rel: f.rel, oid: res.stdout.toString("ascii").trim(), mode });
       }
     }
-
-    if (diskIndices.length > 0) {
-      // Pass C-quoted paths with `--no-filters` so newlines in filenames and .gitattributes never corrupt blobs.
-      const stdinPaths = diskStats.map((s) => `${cQuotePath(s.path)}\n`).join("");
-      const res = await runGit(
-        git,
-        gitdir,
-        ["hash-object", "-w", "--no-filters", "--stdin-paths"],
-        {
-          input: Buffer.from(stdinPaths, "utf8"),
-        },
-      );
-      const oids = res.stdout.toString("ascii").trim().split(/\r?\n/).filter(Boolean);
-      if (oids.length !== diskIndices.length) {
-        throw gitError(
-          "IO_ERROR",
-          `hash-object returned ${oids.length} oids for ${diskIndices.length} files`,
-        );
-      }
-      for (let j = 0; j < diskIndices.length; j += 1) {
-        const before = diskStats[j]!;
-        let after;
-        try {
-          after = await fs.lstat(before.path);
-        } catch (err) {
-          throw gitError(
-            "SOURCE_CHANGED",
-            `source disappeared during hash: ${before.path} (${String(err)})`,
-          );
-        }
-        if (
-          !after.isFile() ||
-          after.dev !== before.dev ||
-          after.ino !== before.ino ||
-          after.size !== before.size ||
-          after.mtimeMs !== before.mtimeMs
-        ) {
-          throw gitError("SOURCE_CHANGED", `source file changed during read: ${before.path}`);
-        }
-        const idx = diskIndices[j]!;
-        const f = files[idx]!;
-        results[idx] = { rel: f.rel, oid: oids[j]!, mode: f.mode ?? "100644" };
-      }
-    }
-
-    return results as Array<{ rel: string; oid: string; mode: GitFileMode }>;
+    return results;
   }
 
   return {
-    resolveHead() {
+    resolveHead(): Promise<{ ref: string; commit: string | null }> {
       return runAdmitted(async () => {
-        // Canonical symbolic-ref resolution (handles chains, loose refs, packed-refs, and reftable).
         const sym = await runGit(git, gitdir, ["symbolic-ref", "HEAD"], { allowNonZero: true });
         if (sym.status !== 0) {
           throw gitError(
             "INVALID_REF",
-            `${gitdir} has a detached or unreadable HEAD: ${sym.stderr}`,
+            `HEAD is detached, unreadable, or corrupt in ${gitdir}: ${sym.stderr}`,
           );
         }
-        const ref = sym.stdout.toString("utf8").trim();
-        if (!ref) {
-          throw gitError("INVALID_REF", `${gitdir} has an empty HEAD symbolic ref`);
+        // Strip ONLY the trailing protocol newline, preserving any valid trailing Unicode spaces (Major #14).
+        const ref = stripSingleTrailingNewline(decodeStrictUtf8(sym.stdout, "symbolic-ref HEAD"));
+        if (!ref.startsWith("refs/")) {
+          throw gitError("INVALID_REF", `HEAD points to non-ref target: ${ref}`);
         }
 
-        const check = await runGit(
-          git,
-          gitdir,
-          ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
-          {
-            allowNonZero: true,
-          },
-        );
-        if (check.status === 0) {
-          const oid = check.stdout.toString("ascii").trim();
-          if (!OID_RE.test(oid)) {
-            throw gitError("INVALID_REF", `${ref} in ${gitdir} is not a commit id`);
+        const resolveCommit = async (): Promise<string | null> => {
+          const rev = await runGit(
+            git,
+            gitdir,
+            ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+            {
+              allowNonZero: true,
+            },
+          );
+          if (rev.status === 0) {
+            const oid = stripSingleTrailingNewline(rev.stdout.toString("ascii"));
+            if (!OID_RE.test(oid)) {
+              throw gitError("INVALID_REF", `ref ${ref} resolved to invalid oid ${oid}`);
+            }
+            return oid;
           }
-          return { ref, commit: oid };
-        }
+          return null;
+        };
 
-        // Distinguish unborn branch (ref absent) from corrupt/non-commit ref (ref exists in show-ref or on disk).
-        const show = await runGit(git, gitdir, ["show-ref", "--verify", "--quiet", ref], {
+        const first = await resolveCommit();
+        if (first !== null) return { ref, commit: first };
+
+        // Distinguish unborn branch vs broken loose/packed ref vs first-commit race (Major #15).
+        const existsRes = await runGit(git, gitdir, ["show-ref", "--exists", ref], {
           allowNonZero: true,
         });
-        if (show.status === 0) {
-          throw gitError("INVALID_REF", `${ref} in ${gitdir} is not a commit id`);
+        if (existsRes.status === 2) {
+          // Git 2.43+ exit code 2 means the ref genuinely does not exist in loose OR packed-refs.
+          // Double-check for a corrupt empty/unreadable loose file at the exact path.
+          const loosePath = path.join(gitdir, ...ref.split("/"));
+          try {
+            await fs.lstat(loosePath);
+            throw gitError("INVALID_REF", `loose ref ${ref} exists but is invalid or empty`);
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+              return { ref, commit: null };
+            }
+            throw err;
+          }
         }
-        // Also check for an empty/corrupt loose ref file (show-ref returns non-zero on empty loose ref).
-        const loose = await fs.lstat(path.join(gitdir, ...ref.split("/"))).catch(() => null);
-        if (loose !== null) {
-          throw gitError("INVALID_REF", `${ref} in ${gitdir} is not a commit id`);
+        if (existsRes.status === 0) {
+          // Ref exists! Retry commit peel once in case a concurrent first commit just published it.
+          const retried = await resolveCommit();
+          if (retried !== null) return { ref, commit: retried };
+          throw gitError("INVALID_REF", `ref ${ref} exists but does not resolve to a valid commit`);
+        }
+        // Fallback for older Git lacking `show-ref --exists`: retry commit peel, else inspect loose/packed refs.
+        const retried = await resolveCommit();
+        if (retried !== null) return { ref, commit: retried };
+        const loosePath = path.join(gitdir, ...ref.split("/"));
+        try {
+          await fs.lstat(loosePath);
+          throw gitError("INVALID_REF", `ref ${ref} exists but is invalid`);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+        const packed = await fs.readFile(path.join(gitdir, "packed-refs"), "utf8").catch(() => "");
+        for (const line of packed.split(/\r?\n/)) {
+          if (line.length === 0 || line.startsWith("#") || line.startsWith("^")) continue;
+          const sp = line.indexOf(" ");
+          if (sp !== -1 && line.slice(sp + 1) === ref) {
+            throw gitError(
+              "INVALID_REF",
+              `packed ref ${ref} exists but its target commit is invalid`,
+            );
+          }
         }
         return { ref, commit: null };
       });
     },
 
-    listTree(commitOid: string, prefix: string, opts?: { withSize?: boolean }) {
+    listTree(
+      commitOid: string,
+      prefix: string,
+      opts?: { withSize?: boolean },
+    ): Promise<GitTreeEntry[] | null> {
       return runAdmitted(() => listTreeInternal(commitOid, prefix, opts));
     },
 
     walkHistory(opts: GitWalkHistoryOptions): Promise<GitHistoryEntry[]> {
       return runAdmitted(async () => {
         if (!OID_RE.test(opts.fromCommit)) {
-          throw gitError("INVALID_OID", `invalid fromCommit oid: ${opts.fromCommit}`);
+          throw gitError("INVALID_OID", `invalid fromCommit: ${opts.fromCommit}`);
         }
         if (opts.prefix !== "" && !isSafeRelPath(opts.prefix)) {
           throw gitError("INVALID_PATH", `unsafe prefix: ${opts.prefix}`);
         }
-        const limit = Math.max(0, Math.trunc(opts.limit));
-        const maxWalk = Math.max(0, Math.trunc(opts.maxWalk));
-        if (limit === 0 || maxWalk === 0) return [];
+        if (opts.limit === 0 || opts.maxWalk === 0) return [];
 
-        const startTree = await resolveSubtreeOid(opts.fromCommit, opts.prefix);
-        if (startTree === null) return [];
-
-        // Fetch first-parent chain metadata via canonical `git rev-list` (maxWalk + 1 to inspect last commit's parent).
-        const rl = await runGit(
+        const revList = await runGit(
           git,
           gitdir,
           [
             "rev-list",
             "--first-parent",
-            `--max-count=${maxWalk + 1}`,
-            "--format=%H %ct",
-            "--no-commit-header",
+            `--max-count=${opts.maxWalk + 1}`,
+            "--format=format:%H %ct %T",
             opts.fromCommit,
           ],
           { allowNonZero: true },
         );
-        if (rl.status !== 0) {
-          throw gitError("REPO_CORRUPT", `git rev-list failed: ${rl.stderr}`);
+        if (revList.status !== 0) {
+          const exists = await batchCheck.query(opts.fromCommit);
+          if (exists === null) return [];
+          throw gitError(
+            "REPO_CORRUPT",
+            `rev-list failed from ${opts.fromCommit}: ${revList.stderr}`,
+          );
         }
-        const chain: Array<{ commit: string; committerTime: number }> = [];
-        for (const line of rl.stdout.toString("ascii").split(/\r?\n/)) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const [commit, ctStr] = trimmed.split(" ");
-          const committerTime = Number(ctStr);
-          if (!commit || !OID_RE.test(commit) || !Number.isSafeInteger(committerTime)) {
-            throw gitError("REPO_CORRUPT", `malformed rev-list line: ${trimmed}`);
+
+        const chain: Array<{ commit: string; committerTime: number; rootTree: string }> = [];
+        for (const line of revList.stdout.toString("utf8").split(/\r?\n/)) {
+          if (!line || line.startsWith("commit ")) continue;
+          const parts = line.split(" ");
+          if (parts.length !== 3 || !OID_RE.test(parts[0]!) || !OID_RE.test(parts[2]!)) {
+            throw gitError("REPO_CORRUPT", `unexpected rev-list line: ${line}`);
           }
-          chain.push({ commit, committerTime });
+          const ts = Number(parts[1]);
+          if (!Number.isSafeInteger(ts)) {
+            throw gitError("REPO_CORRUPT", `invalid committer timestamp in rev-list: ${line}`);
+          }
+          chain.push({ commit: parts[0]!, committerTime: ts, rootTree: parts[2]! });
         }
+        if (chain.length === 0) return [];
+
+        // Resolve subtree OIDs via persistent batch-check (O(1) subprocesses instead of O(N), Minor #1).
+        const subtreeAt = async (row: {
+          commit: string;
+          rootTree: string;
+        }): Promise<string | null> => {
+          if (opts.prefix === "") {
+            const info = await batchCheck.query(row.rootTree);
+            if (info === null || info.type !== "tree") {
+              throw gitError("REPO_CORRUPT", `root tree ${row.rootTree} missing for ${row.commit}`);
+            }
+            return row.rootTree;
+          }
+          const rootInfo = await batchCheck.query(row.rootTree);
+          if (rootInfo === null || rootInfo.type !== "tree") {
+            throw gitError("REPO_CORRUPT", `root tree ${row.rootTree} missing for ${row.commit}`);
+          }
+          if (opts.prefix.includes("\n") || opts.prefix.includes("\r")) {
+            return resolveSubtreeOid(row.commit, opts.prefix);
+          }
+          const sub = await batchCheck.query(`${row.rootTree}:${opts.prefix}`);
+          if (sub === null || sub.type !== "tree") return null;
+          return sub.oid;
+        };
 
         const out: GitHistoryEntry[] = [];
-        let currTree: string | null = startTree;
-        let oldest: { commit: string; committerTime: number } | null = null;
-        const steps = Math.min(maxWalk, chain.length);
+        const startTree = await subtreeAt(chain[0]!);
+        if (startTree === null) return [];
 
-        for (let i = 0; i < steps && currTree !== null && out.length < limit; i += 1) {
-          const item = chain[i]!;
-          oldest = item;
-          const nextCommit = chain[i + 1]?.commit ?? null;
-          const beforeTree =
-            nextCommit !== null ? await resolveSubtreeOid(nextCommit, opts.prefix) : null;
-          if (beforeTree !== currTree) {
+        let currTree: string | null = startTree;
+        const walkCount = Math.min(chain.length, opts.maxWalk);
+        for (let i = 0; i < walkCount && out.length < opts.limit; i += 1) {
+          const curr = chain[i]!;
+          if (currTree === null) break;
+          const next = i + 1 < chain.length ? chain[i + 1]! : null;
+          const nextTree = next !== null ? await subtreeAt(next) : null;
+          if (next === null || nextTree !== currTree) {
             out.push({
-              commit: item.commit,
+              commit: curr.commit,
               tree: currTree,
-              committerTime: item.committerTime,
+              committerTime: curr.committerTime,
             });
           }
-          currTree = beforeTree;
+          currTree = nextTree;
         }
 
-        if (out.length === 0 && oldest !== null) {
+        if (out.length === 0 && startTree !== null && walkCount > 0) {
+          const oldest = chain[walkCount - 1]!;
           out.push({
             commit: oldest.commit,
             tree: startTree,
@@ -696,7 +1139,6 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
           }
         }
 
-        // Validate destination directory without following symlinks.
         let destStat = null;
         try {
           destStat = await fs.lstat(opts.destDir);
@@ -709,69 +1151,121 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
           if (!destStat.isDirectory()) {
             throw gitError("DEST_NOT_EMPTY", `${opts.destDir} exists and is not a real directory`);
           }
-          const existing = await fs.readdir(opts.destDir);
-          if (existing.length > 0) {
-            throw gitError("DEST_NOT_EMPTY", `${opts.destDir} is not empty`);
-          }
         } else {
           await fs.mkdir(opts.destDir, { recursive: true });
         }
 
-        const listed = await listTreeInternal(opts.commitOid, opts.prefix, { withSize: false });
-        if (listed === null || listed.length === 0) {
-          return { files: [], totalBytes: 0 };
-        }
-        const selected = filterSet === null ? listed : listed.filter((e) => filterSet!.has(e.rel));
-        if (selected.length === 0) {
-          return { files: [], totalBytes: 0 };
-        }
-
-        // Extract raw blob bytes directly (never runs checkout/eol filters!) with exclusive `wx` writes.
-        const files: string[] = [];
-        let totalBytes = 0;
-        for (const entry of selected) {
-          if (!isSafeRelPath(entry.rel)) {
-            throw gitError("INVALID_PATH", `unsafe tree entry path: ${entry.rel}`);
+        // Reserve destination directory atomically via exclusive lockfile (Major #12).
+        const lockPath = path.join(opts.destDir, EXTRACT_LOCK_NAME);
+        let lockFh: fs.FileHandle;
+        try {
+          lockFh = await fs.open(lockPath, "wx");
+          await lockFh.close();
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+            throw gitError("DEST_NOT_EMPTY", `${opts.destDir} is currently locked or not empty`);
           }
-          const obj = await batch.read(entry.oid);
-          if (obj === null || obj.type !== "blob") {
-            throw gitError(
-              "REPO_CORRUPT",
-              `missing or non-blob object ${entry.oid} for ${entry.rel}`,
-            );
-          }
-          const target = path.join(opts.destDir, ...entry.rel.split("/"));
-          await fs.mkdir(path.dirname(target), { recursive: true });
-          const fh = await fs.open(target, "wx", entry.mode === "100755" ? 0o777 : 0o666);
-          try {
-            await fh.writeFile(obj.body);
-          } finally {
-            await fh.close();
-          }
-          totalBytes += obj.body.length;
-          files.push(entry.rel);
+          throw gitError("IO_ERROR", `cannot lock ${opts.destDir}: ${(err as Error).message}`, err);
         }
 
-        return { files, totalBytes };
+        try {
+          const existing = await fs.readdir(opts.destDir);
+          if (existing.some((name) => name !== EXTRACT_LOCK_NAME)) {
+            throw gitError("DEST_NOT_EMPTY", `${opts.destDir} is not empty`);
+          }
+
+          const listed = await listTreeInternal(opts.commitOid, opts.prefix, { withSize: false });
+          if (listed === null || listed.length === 0) {
+            return { files: [], totalBytes: 0 };
+          }
+          const selected =
+            filterSet === null ? listed : listed.filter((e) => filterSet!.has(e.rel));
+          if (selected.length === 0) {
+            return { files: [], totalBytes: 0 };
+          }
+
+          const files: string[] = [];
+          let totalBytes = 0;
+          const createdDirs = new Set<string>();
+
+          for (const entry of selected) {
+            if (!isSafeRelPath(entry.rel)) {
+              throw gitError("INVALID_PATH", `unsafe tree entry path: ${entry.rel}`);
+            }
+            // Create parent dirs non-recursively so case-insensitive FS directory merges fail loudly (Major #13).
+            const parts = entry.rel.split("/");
+            let curDir = opts.destDir;
+            let curRel = "";
+            for (let i = 0; i < parts.length - 1; i += 1) {
+              const part = parts[i]!;
+              curRel = curRel === "" ? part : `${curRel}/${part}`;
+              curDir = path.join(curDir, part);
+              if (!createdDirs.has(curRel)) {
+                try {
+                  await fs.mkdir(curDir);
+                } catch (err) {
+                  if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+                    throw gitError("INVALID_PATH", `directory case or path collision at ${curRel}`);
+                  }
+                  throw gitError(
+                    "IO_ERROR",
+                    `cannot create directory ${curRel}: ${(err as Error).message}`,
+                    err,
+                  );
+                }
+                createdDirs.add(curRel);
+              }
+            }
+            const target = path.join(curDir, parts[parts.length - 1]!);
+            const mode = entry.mode === "100755" ? 0o777 : 0o666;
+            // Stream blob bytes straight from cat-file stdout to disk (Major #10).
+            const bytes = await batchCat.streamBlobToFile(entry.oid, target, mode);
+            totalBytes += bytes;
+            files.push(entry.rel);
+          }
+
+          return { files, totalBytes };
+        } finally {
+          await fs.rm(lockPath, { force: true }).catch(() => undefined);
+        }
       });
     },
 
     commit(input: GitCommitInput): Promise<string> {
       return runAdmitted(async () => {
-        if (input.parent !== null && !OID_RE.test(input.parent)) {
-          throw gitError("INVALID_OID", `invalid parent oid: ${input.parent}`);
-        }
-        if (input.prefix !== "" && !isSafeRelPath(input.prefix)) {
-          throw gitError("INVALID_PATH", `unsafe prefix: ${input.prefix}`);
-        }
-        if (!input.ref.startsWith("refs/")) {
-          throw gitError("INVALID_REF", `invalid ref name: ${input.ref}`);
-        }
-        if (!Number.isFinite(input.when.seconds) || input.when.seconds < 0) {
-          throw gitError("INVALID_PATH", `invalid commit timestamp: ${input.when.seconds}`);
-        }
+        // Snapshot mutable operands upfront so beforeMoveRef cannot alter CAS target/parent (Major #2).
+        const refName = String(input.ref);
+        const expectedParent = input.parent === null ? null : String(input.parent);
+        const prefix = String(input.prefix);
+        const message = String(input.message);
+        const author: GitIdentity = {
+          name: String(input.author.name),
+          email: String(input.author.email),
+        };
+        const committer: GitIdentity = {
+          name: String(input.committer.name),
+          email: String(input.committer.email),
+        };
+        const whenSeconds = input.when.seconds;
+        const whenOffset = input.when.offset;
+        const change = input.change;
+        const beforeMoveRef = input.beforeMoveRef;
 
-        // Private per-commit directory for GIT_INDEX_FILE so `.lock` leftovers are always cleaned.
+        if (expectedParent !== null && !OID_RE.test(expectedParent)) {
+          throw gitError("INVALID_OID", `invalid parent oid: ${expectedParent}`);
+        }
+        if (prefix !== "" && !isSafeRelPath(prefix)) {
+          throw gitError("INVALID_PATH", `unsafe prefix: ${prefix}`);
+        }
+        if (!refName.startsWith("refs/")) {
+          throw gitError("INVALID_REF", `invalid ref name: ${refName}`);
+        }
+        if (!Number.isFinite(whenSeconds) || whenSeconds < 0) {
+          throw gitError("INVALID_PATH", `invalid commit timestamp: ${whenSeconds}`);
+        }
+        validateIdentity(author, "author");
+        validateIdentity(committer, "committer");
+
         const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-gitcl-idx-"));
         const tmpIndex = path.join(tmpDir, "index");
         const indexEnv: NodeJS.ProcessEnv = { GIT_INDEX_FILE: tmpIndex };
@@ -779,29 +1273,29 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
         let commitOid: string;
 
         try {
-          if (input.parent !== null) {
-            const parentObj = await batch.read(input.parent);
-            if (parentObj === null) {
-              throw gitError("PARENT_NOT_FOUND", `parent ${input.parent} is not in repository`);
+          if (expectedParent !== null) {
+            const parentInfo = await batchCheck.query(expectedParent);
+            if (parentInfo === null) {
+              throw gitError("PARENT_NOT_FOUND", `parent ${expectedParent} is not in repository`);
             }
-            if (parentObj.type !== "commit") {
+            if (parentInfo.type !== "commit") {
               throw gitError(
                 "INVALID_OID",
-                `parent ${input.parent} is not a commit (${parentObj.type})`,
+                `parent ${expectedParent} is not a commit (${parentInfo.type})`,
               );
             }
           }
           const loadParent =
-            input.parent !== null && !(input.change.kind === "replace" && input.prefix === "");
+            expectedParent !== null && !(change.kind === "replace" && prefix === "");
           if (loadParent) {
-            const rt = await runGit(git, gitdir, ["read-tree", input.parent!], {
+            const rt = await runGit(git, gitdir, ["read-tree", expectedParent!], {
               env: indexEnv,
               allowNonZero: true,
             });
             if (rt.status !== 0) {
               throw gitError(
                 "REPO_CORRUPT",
-                `cannot read parent tree ${input.parent}: ${rt.stderr}`,
+                `cannot read parent tree ${expectedParent}: ${rt.stderr}`,
               );
             }
           }
@@ -826,23 +1320,22 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
             return out;
           };
 
-          if (input.change.kind === "replace") {
-            if (loadParent && input.prefix !== "") {
-              for (const p of await listIndexedUnder(input.prefix)) {
+          if (change.kind === "replace") {
+            if (loadParent && prefix !== "") {
+              for (const p of await listIndexedUnder(prefix)) {
                 indexLines.push(`0 ${ZERO_OID}\t${p}\0`);
               }
             }
-            if (input.change.files !== null) {
-              const hashed = await hashCommitFiles(input.change.files);
+            if (change.files !== null) {
+              const hashed = await hashCommitFiles(change.files);
               for (const f of hashed) {
-                indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(input.prefix, f.rel)}\0`);
+                indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
               }
             }
           } else {
-            for (const rel of input.change.remove) {
+            for (const rel of change.remove) {
               if (!isSafeRelPath(rel)) throw gitError("INVALID_PATH", `unsafe remove path: ${rel}`);
-              const full = joinPrefix(input.prefix, rel);
-              // Match gix editor semantics: remove exact entry OR entire subtree under `full`.
+              const full = joinPrefix(prefix, rel);
               const matching = loadParent ? await listIndexedUnder(full) : [];
               if (matching.length > 0) {
                 for (const p of matching) indexLines.push(`0 ${ZERO_OID}\t${p}\0`);
@@ -850,95 +1343,91 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
                 indexLines.push(`0 ${ZERO_OID}\t${full}\0`);
               }
             }
-            const hashed = await hashCommitFiles(input.change.upsert);
+            const hashed = await hashCommitFiles(change.upsert);
             for (const f of hashed) {
-              indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(input.prefix, f.rel)}\0`);
+              indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
             }
           }
 
           if (indexLines.length > 0) {
-            await runGit(git, gitdir, ["update-index", "--replace", "-z", "--index-info"], {
-              input: Buffer.from(indexLines.join(""), "utf8"),
-              env: indexEnv,
-            });
+            const ui = await runGit(
+              git,
+              gitdir,
+              ["update-index", "--replace", "-z", "--index-info"],
+              {
+                input: Buffer.from(indexLines.join(""), "utf8"),
+                env: indexEnv,
+              },
+            );
+            // Never silently publish a commit if Git ignored any requested path (Major #18).
+            if (/Ignoring path/i.test(ui.stderr)) {
+              throw gitError("INVALID_PATH", `git update-index ignored path: ${ui.stderr}`);
+            }
           }
 
           const wt = await runGit(git, gitdir, ["write-tree"], { env: indexEnv });
           treeOid = wt.stdout.toString("ascii").trim();
 
-          const when = `@${Math.trunc(input.when.seconds)} ${zoneOf(input.when.offset)}`;
-          const commitArgs =
-            input.parent !== null
-              ? ["commit-tree", treeOid, "-p", input.parent]
-              : ["commit-tree", treeOid];
-          const ct = await runGit(git, gitdir, commitArgs, {
-            input: Buffer.from(input.message, "utf8"),
-            env: {
-              GIT_AUTHOR_NAME: input.author.name,
-              GIT_AUTHOR_EMAIL: input.author.email,
-              GIT_AUTHOR_DATE: when,
-              GIT_COMMITTER_NAME: input.committer.name,
-              GIT_COMMITTER_EMAIL: input.committer.email,
-              GIT_COMMITTER_DATE: when,
-            },
+          // Write commit object via `hash-object -t commit -w --stdin` so valid identities like
+          // `Example Inc.` are preserved verbatim identically to gix and fast-import (Major #20).
+          const stamp = `${Math.trunc(whenSeconds)} ${zoneOf(whenOffset)}`;
+          const headerLines = [
+            `tree ${treeOid}`,
+            ...(expectedParent !== null ? [`parent ${expectedParent}`] : []),
+            `author ${author.name} <${author.email}> ${stamp}`,
+            `committer ${committer.name} <${committer.email}> ${stamp}`,
+            "",
+          ];
+          const commitPayload = Buffer.concat([
+            Buffer.from(`${headerLines.join("\n")}\n`, "utf8"),
+            Buffer.from(message, "utf8"),
+          ]);
+          const ct = await runGit(git, gitdir, ["hash-object", "-t", "commit", "-w", "--stdin"], {
+            input: commitPayload,
           });
           commitOid = ct.stdout.toString("ascii").trim();
+          if (!OID_RE.test(commitOid)) {
+            throw gitError("IO_ERROR", `hash-object returned invalid commit oid: ${commitOid}`);
+          }
         } finally {
           await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
         }
 
-        if (input.beforeMoveRef !== undefined) {
-          hookDepth += 1;
-          try {
-            await input.beforeMoveRef({ commit: commitOid, tree: treeOid });
-          } finally {
-            hookDepth -= 1;
-          }
+        if (beforeMoveRef !== undefined) {
+          const frozenSnapshot = Object.freeze({ commit: commitOid, tree: treeOid });
+          await hookScope.run(Symbol("beforeMoveRef"), () => beforeMoveRef(frozenSnapshot));
         }
 
-        const expectedOld = input.parent ?? ZERO_OID;
+        const expectedOld = expectedParent ?? ZERO_OID;
         const upd = await runGit(
           git,
           gitdir,
-          ["update-ref", "--no-deref", input.ref, commitOid, expectedOld],
+          ["update-ref", "--no-deref", refName, commitOid, expectedOld],
           {
             allowNonZero: true,
           },
         );
         if (upd.status !== 0) {
-          const msg = upd.stderr || `exit ${upd.status}`;
-          if (
-            msg.includes("is at ") ||
-            msg.includes("ref already exists") ||
-            msg.includes("Unable to create") ||
-            msg.includes("cannot lock ref")
-          ) {
-            if (msg.includes("Permission denied") || msg.includes("Read-only file system")) {
-              throw gitError("IO_ERROR", `ref update I/O failure for ${input.ref}: ${msg}`);
-            }
-            throw gitError("CAS_CONFLICT", `ref update refused for ${input.ref}: ${msg}`);
-          }
-          if (msg.includes("not a valid") || msg.includes("invalid ref")) {
-            throw gitError("INVALID_REF", `invalid ref ${input.ref}: ${msg}`);
-          }
-          throw gitError("IO_ERROR", `ref update failed for ${input.ref}: ${msg}`);
+          throw classifyUpdateRefError(refName, upd.stderr, upd.status);
         }
         return commitOid;
       });
     },
 
     close(): Promise<void> {
+      if (hookScope.getStore() !== undefined) {
+        return Promise.reject(
+          gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
+        );
+      }
       if (closePromise !== null) return closePromise;
       closing = true;
       closePromise = (async () => {
-        if (inFlight > 0 && hookDepth === 0) {
-          await new Promise<void>((resolve) => {
-            if (inFlight === 0) resolve();
-            else drainWaiters.push(resolve);
-          });
+        if (inFlight > 0) {
+          await new Promise<void>((resolve) => drainWaiters.push(resolve));
         }
         closed = true;
-        await batch.close();
+        await Promise.allSettled([batchCheck.close(), batchCat.close()]);
       })();
       return closePromise;
     },
@@ -948,7 +1437,12 @@ async function openPlumbingRepo(git: GitProgram, gitdir: string): Promise<GitRep
 export function gitclGitEngine(git: GitProgram, version: string): GitEngine {
   return {
     name: `git ${version} (cli plumbing)`,
-    open(gitdir: string): Promise<GitRepo> {
+    async open(gitdir: string): Promise<GitRepo> {
+      try {
+        await fs.stat(path.join(gitdir, "HEAD"));
+      } catch (err) {
+        throw gitError("IO_ERROR", `cannot open bare repository ${gitdir}`, err);
+      }
       return openPlumbingRepo(git, gitdir);
     },
   };

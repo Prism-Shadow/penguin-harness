@@ -49,35 +49,123 @@ fn oid_of(hex: &str) -> Result<gix::hash::ObjectId> {
     })
 }
 
-fn is_windows_device_name(seg: &str) -> bool {
-    let stem = seg.split('.').next().unwrap_or(seg);
-    let upper = stem.to_ascii_uppercase();
-    matches!(
-        upper.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL"
-            | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
-            | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
-    )
+/// Rejects SharedArrayBuffer-backed buffers before Rust ever constructs `&[u8]`.
+pub struct SafeBytes(pub Vec<u8>);
+
+impl napi::bindgen_prelude::TypeName for SafeBytes {
+    fn type_name() -> &'static str {
+        "Buffer"
+    }
+    fn value_type() -> napi::ValueType {
+        napi::ValueType::Object
+    }
+}
+
+impl napi::bindgen_prelude::ValidateNapiValue for SafeBytes {}
+
+impl napi::bindgen_prelude::ToNapiValue for SafeBytes {
+    unsafe fn to_napi_value(
+        env: napi::sys::napi_env,
+        val: Self,
+    ) -> Result<napi::sys::napi_value> {
+        <Buffer as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env, Buffer::from(val.0))
+    }
+}
+
+impl napi::bindgen_prelude::FromNapiValue for SafeBytes {
+    unsafe fn from_napi_value(
+        env: napi::sys::napi_env,
+        napi_val: napi::sys::napi_value,
+    ) -> Result<Self> {
+        let mut is_ta = false;
+        let status = napi::sys::napi_is_typedarray(env, napi_val, &mut is_ta);
+        if status != napi::sys::Status::napi_ok || !is_ta {
+            return Err(git_err("INVALID_PATH", "expected Buffer or Uint8Array for file body"));
+        }
+        let mut ta_type: napi::sys::napi_typedarray_type = 0;
+        let mut byte_len: usize = 0;
+        let mut data: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut arraybuffer: napi::sys::napi_value = std::ptr::null_mut();
+        let mut byte_offset: usize = 0;
+        let status = napi::sys::napi_get_typedarray_info(
+            env,
+            napi_val,
+            &mut ta_type,
+            &mut byte_len,
+            &mut data,
+            &mut arraybuffer,
+            &mut byte_offset,
+        );
+        if status != napi::sys::Status::napi_ok {
+            return Err(git_err("INVALID_PATH", "failed to inspect file body buffer"));
+        }
+        // Node-API `napi_is_arraybuffer` returns true ONLY for non-shared ArrayBuffer (false for SharedArrayBuffer).
+        let mut is_ab = false;
+        let ab_status = napi::sys::napi_is_arraybuffer(env, arraybuffer, &mut is_ab);
+        if ab_status != napi::sys::Status::napi_ok || !is_ab {
+            return Err(git_err(
+                "INVALID_PATH",
+                "SharedArrayBuffer-backed buffers are not supported",
+            ));
+        }
+        if byte_len == 0 || data.is_null() {
+            return Ok(SafeBytes(Vec::new()));
+        }
+        let slice = std::slice::from_raw_parts(data as *const u8, byte_len);
+        Ok(SafeBytes(slice.to_vec()))
+    }
 }
 
 fn is_safe_rel_path(rel: &str) -> bool {
-    if rel.is_empty()
-        || rel.starts_with('/')
-        || rel.ends_with('/')
-        || rel.contains('\\')
-        || rel.contains('\0')
-        || rel.contains(':')
-    {
+    if rel.is_empty() || rel.starts_with('/') || rel.ends_with('/') {
         return false;
     }
-    rel.split('/').all(|seg| {
-        !seg.is_empty()
-            && seg != "."
-            && seg != ".."
-            && !is_windows_device_name(seg)
-    })
+    if rel.bytes().any(|b| b == 0 || b == b'\\' || b == b':') {
+        return false;
+    }
+    for seg in rel.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." {
+            return false;
+        }
+        if seg.ends_with(' ') || seg.ends_with('.') {
+            return false;
+        }
+        // Reject `.git` (case-insensitive) to match Git's update-index/verify_path rules.
+        if seg.eq_ignore_ascii_case(".git") {
+            return false;
+        }
+        let stem = seg.split('.').next().unwrap_or(seg);
+        let upper = stem.to_ascii_uppercase();
+        if matches!(
+            upper.as_str(),
+            "CON"
+                | "PRN"
+                | "AUX"
+                | "NUL"
+                | "COM1"
+                | "COM2"
+                | "COM3"
+                | "COM4"
+                | "COM5"
+                | "COM6"
+                | "COM7"
+                | "COM8"
+                | "COM9"
+                | "LPT1"
+                | "LPT2"
+                | "LPT3"
+                | "LPT4"
+                | "LPT5"
+                | "LPT6"
+                | "LPT7"
+                | "LPT8"
+                | "LPT9"
+        ) {
+            return false;
+        }
+    }
+    true
 }
-
 fn join_prefix(prefix: &str, rel: &str) -> String {
     if prefix.is_empty() {
         rel.to_string()
@@ -86,10 +174,6 @@ fn join_prefix(prefix: &str, rel: &str) -> String {
     } else {
         format!("{prefix}/{rel}")
     }
-}
-
-fn is_hex_oid(s: &str) -> bool {
-    (s.len() == 40 || s.len() == 64) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Wraps a `File` and enforces exact expected length during streaming reads into the ODB.
@@ -137,12 +221,29 @@ fn open_regular_source_file(path: &str) -> Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        opts.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     let file = opts
         .open(path)
         .map_err(|e| git_err("IO_ERROR", format!("cannot open {path}: {e}")))?;
     let fmeta = file
         .metadata()
         .map_err(|e| git_err("IO_ERROR", format!("cannot fstat {path}: {e}")))?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if (fmeta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+            return Err(git_err(
+                "INVALID_PATH",
+                format!("opened descriptor is a reparse point: {path}"),
+            ));
+        }
+    }
     if !fmeta.is_file() {
         return Err(git_err(
             "INVALID_PATH",
@@ -256,6 +357,8 @@ pub struct NativeTreeEntry {
     pub size: Option<f64>,
 }
 
+const MAX_TREE_DEPTH: usize = 256;
+
 fn collect_tree_entries(
     repo: &gix::Repository,
     tree_id: gix::hash::ObjectId,
@@ -263,52 +366,99 @@ fn collect_tree_entries(
     with_size: bool,
     out: &mut Vec<NativeTreeEntry>,
 ) -> Result<()> {
-    let tree = repo
-        .find_tree(tree_id)
-        .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} missing: {e}")))?;
-    let decoded = tree
-        .decode()
-        .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} malformed: {e}")))?;
-    for entry in decoded.entries {
-        let name = std::str::from_utf8(entry.filename.as_ref())
-            .map_err(|_| {
-                git_err("INVALID_PATH", format!("non-UTF-8 tree entry name in tree {tree_id}"))
-            })?
-            .to_owned();
-        let rel = if base.is_empty() {
-            name
-        } else {
-            format!("{base}/{name}")
-        };
-        if entry.mode.is_tree() {
-            collect_tree_entries(repo, entry.oid.to_owned(), &rel, with_size, out)?;
-        } else if entry.mode.is_commit() {
-            // Skip submodules (160000), matching AgentStateRepo semantics.
+    // Frame-based iterative DFS that preserves exact depth-first Git entry order:
+    let mut frames: Vec<(Vec<EitherEntry>, usize)> = Vec::new();
+    let push_tree = |repo: &gix::Repository,
+                     tid: gix::hash::ObjectId,
+                     b: String,
+                     d: usize,
+                     frames: &mut Vec<(Vec<EitherEntry>, usize)>|
+     -> Result<()> {
+        if d > MAX_TREE_DEPTH {
+            return Err(git_err(
+                "REPO_CORRUPT",
+                format!("tree nesting exceeds maximum depth {MAX_TREE_DEPTH}"),
+            ));
+        }
+        let tree = repo
+            .find_tree(tid)
+            .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tid} missing: {e}")))?;
+        let decoded = tree
+            .decode()
+            .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tid} malformed: {e}")))?;
+        let mut items = Vec::with_capacity(decoded.entries.len());
+        for entry in decoded.entries {
+            let name = std::str::from_utf8(entry.filename.as_ref())
+                .map_err(|_| {
+                    git_err("INVALID_PATH", format!("non-UTF-8 tree entry name in tree {tid}"))
+                })?
+                .to_owned();
+            let rel = if b.is_empty() {
+                name
+            } else {
+                format!("{b}/{name}")
+            };
+            match entry.mode.kind() {
+                gix::object::tree::EntryKind::Tree => {
+                    items.push(EitherEntry::Tree(entry.oid.to_owned(), rel, d + 1));
+                }
+                gix::object::tree::EntryKind::Blob | gix::object::tree::EntryKind::BlobExecutable => {
+                    let mode_str = if matches!(
+                        entry.mode.kind(),
+                        gix::object::tree::EntryKind::BlobExecutable
+                    ) {
+                        "100755"
+                    } else {
+                        "100644"
+                    };
+                    let size = if with_size {
+                        let hdr = repo.find_header(entry.oid).map_err(|e| {
+                            git_err("REPO_CORRUPT", format!("blob {} missing: {e}", entry.oid))
+                        })?;
+                        if hdr.kind() != gix::object::Kind::Blob {
+                            return Err(git_err(
+                                "REPO_CORRUPT",
+                                format!("entry {rel} points to {:?}, expected blob", hdr.kind()),
+                            ));
+                        }
+                        Some(hdr.size() as f64)
+                    } else {
+                        None
+                    };
+                    items.push(EitherEntry::Blob(NativeTreeEntry {
+                        rel,
+                        oid: entry.oid.to_string(),
+                        mode: mode_str.to_string(),
+                        size,
+                    }));
+                }
+                _ => {}
+            }
+        }
+        items.reverse();
+        frames.push((items, d));
+        Ok(())
+    };
+
+    push_tree(repo, tree_id, base.to_string(), 0, &mut frames)?;
+    while let Some((items, _d)) = frames.last_mut() {
+        let Some(item) = items.pop() else {
+            frames.pop();
             continue;
-        } else {
-            let oid = entry.oid.to_owned();
-            let mode = if entry.mode.is_executable() {
-                "100755".to_string()
-            } else {
-                "100644".to_string()
-            };
-            let size = if with_size {
-                let hdr = repo
-                    .find_header(oid)
-                    .map_err(|e| git_err("REPO_CORRUPT", format!("object {oid} missing: {e}")))?;
-                Some(hdr.size() as f64)
-            } else {
-                None
-            };
-            out.push(NativeTreeEntry {
-                rel,
-                oid: oid.to_string(),
-                mode,
-                size,
-            });
+        };
+        match item {
+            EitherEntry::Blob(entry) => out.push(entry),
+            EitherEntry::Tree(child_id, child_rel, child_depth) => {
+                push_tree(repo, child_id, child_rel, child_depth, &mut frames)?;
+            }
         }
     }
     Ok(())
+}
+
+enum EitherEntry {
+    Blob(NativeTreeEntry),
+    Tree(gix::hash::ObjectId, String, usize),
 }
 
 #[napi(object)]
@@ -341,6 +491,12 @@ fn resolve_head_sync(repo: &gix::Repository) -> Result<NativeHeadInfo> {
         .peel_to_id()
         .map_err(|e| git_err("INVALID_REF", format!("{ref_name} is not a valid commit id: {e}")))?
         .detach();
+    let _commit = repo.find_commit(id).map_err(|e| {
+        git_err(
+            "INVALID_REF",
+            format!("{ref_name} ({id}) does not resolve to a commit object: {e}"),
+        )
+    })?;
     Ok(NativeHeadInfo {
         ref_name,
         commit: Some(id.to_string()),
@@ -423,6 +579,17 @@ pub struct NativeExtractResult {
     pub total_bytes: f64,
 }
 
+struct ExtractLockGuard {
+    lock_path: std::path::PathBuf,
+}
+impl Drop for ExtractLockGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.lock_path);
+    }
+}
+
+const EXTRACT_LOCK_NAME: &str = ".penguin-extract.lock";
+
 fn extract_tree_sync(
     repo: &gix::Repository,
     commit_oid: &str,
@@ -430,19 +597,20 @@ fn extract_tree_sync(
     dest_dir: &str,
     only_paths: Option<&[String]>,
 ) -> Result<NativeExtractResult> {
+    let commit_id = oid_of(commit_oid).map_err(|e| git_err("INVALID_OID", e.reason))?;
     if !prefix.is_empty() && !is_safe_rel_path(prefix) {
         return Err(git_err("INVALID_PATH", format!("unsafe prefix: {prefix}")));
     }
     let only_set: Option<HashSet<&str>> = match only_paths {
         Some(paths) => {
-            let mut set = HashSet::with_capacity(paths.len());
+            let mut s = HashSet::with_capacity(paths.len());
             for p in paths {
                 if !is_safe_rel_path(p) {
-                    return Err(git_err("INVALID_PATH", format!("unsafe onlyPaths entry: {p}")));
+                    return Err(git_err("INVALID_PATH", format!("unsafe onlyPath: {p}")));
                 }
-                set.insert(p.as_str());
+                s.insert(p.as_str());
             }
-            Some(set)
+            Some(s)
         }
         None => None,
     };
@@ -456,14 +624,6 @@ fn extract_tree_sync(
                     format!("{dest_dir} exists and is not a real directory"),
                 ));
             }
-            let mut rd = fs::read_dir(dest)
-                .map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
-            if rd.next().is_some() {
-                return Err(git_err(
-                    "DEST_NOT_EMPTY",
-                    format!("{dest_dir} is not empty"),
-                ));
-            }
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             fs::create_dir_all(dest)
@@ -474,8 +634,31 @@ fn extract_tree_sync(
         }
     }
 
-    let cid = oid_of(commit_oid).map_err(|e| git_err("INVALID_OID", e.reason))?;
-    let Some(root_tree) = subtree_oid(repo, cid, prefix)? else {
+    // Reserve destination directory exclusively so concurrent extractions cannot interleave (Major #12).
+    let lock_path = dest.join(EXTRACT_LOCK_NAME);
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .map_err(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists {
+                git_err("DEST_NOT_EMPTY", format!("{dest_dir} is currently locked or not empty"))
+            } else {
+                git_err("IO_ERROR", format!("cannot lock {dest_dir}: {e}"))
+            }
+        })?;
+    let _lock_guard = ExtractLockGuard { lock_path };
+
+    let mut rd = fs::read_dir(dest)
+        .map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
+    while let Some(ent) = rd.next() {
+        let ent = ent.map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
+        if ent.file_name() != EXTRACT_LOCK_NAME {
+            return Err(git_err("DEST_NOT_EMPTY", format!("{dest_dir} is not empty")));
+        }
+    }
+
+    let Some(tree_id) = subtree_oid(repo, commit_id, prefix)? else {
         return Ok(NativeExtractResult {
             files: Vec::new(),
             total_bytes: 0.0,
@@ -483,14 +666,16 @@ fn extract_tree_sync(
     };
 
     let mut entries = Vec::new();
-    collect_tree_entries(repo, root_tree, "", false, &mut entries)?;
+    collect_tree_entries(repo, tree_id, "", false, &mut entries)?;
 
     let mut files = Vec::new();
     let mut total_bytes: u64 = 0;
+    // Track exact relative directory spellings created in this run so case-insensitive FS merges fail loudly (Major #13).
+    let mut created_dirs: HashSet<String> = HashSet::new();
 
     for entry in entries {
-        if let Some(ref only) = only_set {
-            if !only.contains(entry.rel.as_str()) {
+        if let Some(ref set) = only_set {
+            if !set.contains(entry.rel.as_str()) {
                 continue;
             }
         }
@@ -504,25 +689,59 @@ fn extract_tree_sync(
         let obj = repo
             .find_object(blob_id)
             .map_err(|e| git_err("REPO_CORRUPT", format!("blob {blob_id} missing: {e}")))?;
-        let target = dest.join(&entry.rel);
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| git_err("IO_ERROR", format!("cannot create parent for {}: {e}", entry.rel)))?;
+        if obj.kind != gix::object::Kind::Blob {
+            return Err(git_err(
+                "REPO_CORRUPT",
+                format!(
+                    "tree entry {} points to {:?}, expected blob",
+                    entry.rel, obj.kind
+                ),
+            ));
         }
-        if !is_safe_rel_path(&entry.rel) {
-            return Err(git_err("INVALID_PATH", format!("unsafe tree path: {}", entry.rel)));
+
+        // Create parent directories one component at a time without silently merging case-colliding spellings.
+        let parts: Vec<&str> = entry.rel.split('/').collect();
+        let mut cur_dir = dest.to_path_buf();
+        let mut cur_rel = String::new();
+        for dir_part in &parts[..parts.len() - 1] {
+            if !cur_rel.is_empty() {
+                cur_rel.push('/');
+            }
+            cur_rel.push_str(dir_part);
+            cur_dir.push(dir_part);
+            if !created_dirs.contains(&cur_rel) {
+                fs::create_dir(&cur_dir).map_err(|e| {
+                    if e.kind() == io::ErrorKind::AlreadyExists {
+                        git_err(
+                            "INVALID_PATH",
+                            format!("directory case or path collision at {cur_rel}"),
+                        )
+                    } else {
+                        git_err("IO_ERROR", format!("cannot create directory {cur_rel}: {e}"))
+                    }
+                })?;
+                created_dirs.insert(cur_rel.clone());
+            }
         }
+
+        let target = cur_dir.join(parts[parts.len() - 1]);
         let mut open_opts = fs::OpenOptions::new();
         open_opts.write(true).create_new(true);
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            // Honor process umask at descriptor creation (matches git checkout-index 0666/0777).
             open_opts.mode(if entry.mode == "100755" { 0o777 } else { 0o666 });
         }
-        let mut f = open_opts
-            .open(&target)
-            .map_err(|e| git_err("IO_ERROR", format!("cannot create {}: {e}", target.display())))?;
+        let mut f = open_opts.open(&target).map_err(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists {
+                git_err(
+                    "INVALID_PATH",
+                    format!("file case or path collision at {}", entry.rel),
+                )
+            } else {
+                git_err("IO_ERROR", format!("cannot create {}: {e}", target.display()))
+            }
+        })?;
         f.write_all(&obj.data)
             .map_err(|e| git_err("IO_ERROR", format!("cannot write {}: {e}", target.display())))?;
         total_bytes += obj.data.len() as u64;
@@ -551,7 +770,7 @@ pub struct RepoCommitFileInput {
     /// Present for `kind: "file"` (direct streaming from disk).
     pub file_path: Option<String>,
     /// Present for `kind: "bytes"`.
-    pub body: Option<Buffer>,
+    pub body: Option<SafeBytes>,
     /// "100644" (default) or "100755".
     pub mode: Option<String>,
 }
@@ -577,7 +796,29 @@ pub struct NativePreparedCommit {
     pub tree: String,
 }
 
+fn validate_identity_field(value: &str, field: &str) -> Result<()> {
+    if value.is_empty()
+        || value
+            .bytes()
+            .any(|b| b == 0 || b == b'\n' || b == b'\r' || b == b'<' || b == b'>')
+    {
+        return Err(git_err(
+            "INVALID_PATH",
+            format!("invalid identity {field}: must be non-empty and free of NUL/CR/LF/< / >"),
+        ));
+    }
+    Ok(())
+}
+
 fn signature_of(identity: &IdentityInput) -> Result<gix::actor::Signature> {
+    validate_identity_field(&identity.name, "name")?;
+    validate_identity_field(&identity.email, "email")?;
+    if !identity.when_seconds.is_finite() || identity.when_seconds < 0.0 {
+        return Err(git_err(
+            "INVALID_PATH",
+            format!("invalid commit timestamp: {}", identity.when_seconds),
+        ));
+    }
     let time_str = format!(
         "{} {}",
         identity.when_seconds as i64,
@@ -623,7 +864,7 @@ impl From<RepoCommitInput> for OwnedRepoCommitInput {
                         rel: f.rel,
                         file_path: f.file_path,
                         // Copy JS-backed Buffer synchronously on the JS thread to avoid UB.
-                        body: f.body.map(|b| b.as_ref().to_vec()),
+                        body: f.body.map(|b| b.0),
                         mode: f.mode,
                     })
                     .collect()
@@ -782,6 +1023,24 @@ fn prepare_commit_sync(
     })
 }
 
+fn has_non_conflict_io_error(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = cur {
+        if let Some(io_err) = e.downcast_ref::<io::Error>() {
+            if io_err.kind() != io::ErrorKind::AlreadyExists {
+                return true;
+            }
+        }
+        cur = e.source();
+    }
+    let msg = err.to_string();
+    msg.contains("Permission denied")
+        || msg.contains("Read-only file system")
+        || msg.contains("No space left on device")
+        || msg.contains("Input/output error")
+        || msg.contains("Too many open files")
+}
+
 fn cas_ref_sync(
     repo: &gix::Repository,
     ref_name: &str,
@@ -806,11 +1065,10 @@ fn cas_ref_sync(
                 "",
             );
             repo.edit_reference(edit).map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("Permission denied") || msg.contains("Read-only") {
-                    git_err("IO_ERROR", format!("ref storage error for {ref_name}: {msg}"))
+                if has_non_conflict_io_error(&e) {
+                    git_err("IO_ERROR", format!("ref storage error for {ref_name}: {e}"))
                 } else {
-                    git_err("CAS_CONFLICT", format!("ref update refused for {ref_name}: {msg}"))
+                    git_err("CAS_CONFLICT", format!("ref update refused for {ref_name}: {e}"))
                 }
             })?;
             Ok(())
@@ -818,12 +1076,17 @@ fn cas_ref_sync(
         _ => {
             // Strict creation CAS: gix-ref 0.70.0 `PreviousValue::MustNotExist` treats an existing
             // ref equal to `new_id` as a no-op success instead of conflict. Acquire Git's `.lock`
-            // file directly, verify strict absence across loose + packed refs under lock, then commit.
+            // file directly, verify strict absence AND D/F namespace non-conflict across BOTH
+            // loose and packed refs under lock, then publish atomically.
             let ref_rel = full_name.as_bstr().to_string();
             let ref_path = repo.git_dir().join(&ref_rel);
             if let Some(parent) = ref_path.parent() {
                 fs::create_dir_all(parent).map_err(|e| {
-                    git_err("IO_ERROR", format!("cannot create ref parent {}: {e}", parent.display()))
+                    if e.kind() == io::ErrorKind::AlreadyExists || e.kind() == io::ErrorKind::NotADirectory {
+                        git_err("CAS_CONFLICT", format!("ref namespace conflict for {ref_name}: {e}"))
+                    } else {
+                        git_err("IO_ERROR", format!("cannot create ref parent {}: {e}", parent.display()))
+                    }
                 })?;
             }
             let lock_path = repo.git_dir().join(format!("{ref_rel}.lock"));
@@ -847,6 +1110,29 @@ fn cas_ref_sync(
                         "CAS_CONFLICT",
                         format!("ref {ref_name} already exists (expected absent)"),
                     ));
+                }
+                // Check loose + packed refs for D/F conflicts (`refs/heads/topic` vs `refs/heads/topic/sub`).
+                let ref_slash = format!("{ref_rel}/");
+                let refs_platform = repo.references().map_err(|e| {
+                    git_err("IO_ERROR", format!("cannot iterate refs for {ref_name}: {e}"))
+                })?;
+                let iter = refs_platform.all().map_err(|e| {
+                    git_err("IO_ERROR", format!("cannot list refs for {ref_name}: {e}"))
+                })?;
+                for item in iter {
+                    let r = item.map_err(|e| {
+                        git_err("IO_ERROR", format!("cannot read ref entry while locking {ref_name}: {e}"))
+                    })?;
+                    let other = r.name().as_bstr().to_string();
+                    if other == ref_rel
+                        || other.starts_with(&ref_slash)
+                        || ref_rel.starts_with(&format!("{other}/"))
+                    {
+                        return Err(git_err(
+                            "CAS_CONFLICT",
+                            format!("ref {ref_name} conflicts with existing ref {other}"),
+                        ));
+                    }
                 }
                 lock_file
                     .write_all(format!("{new_id}\n").as_bytes())
@@ -1146,7 +1432,7 @@ impl NativeRepo {
 #[napi(object)]
 pub struct FileEntry {
     pub rel: String,
-    pub body: Buffer,
+    pub body: SafeBytes,
 }
 
 struct OwnedFileEntry {
@@ -1176,7 +1462,7 @@ impl From<CommitInput> for OwnedCommitInput {
                 xs.into_iter()
                     .map(|f| OwnedFileEntry {
                         rel: f.rel,
-                        body: f.body.as_ref().to_vec(),
+                        body: f.body.0,
                     })
                     .collect()
             }),

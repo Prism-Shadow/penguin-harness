@@ -1,24 +1,29 @@
 /**
  * Isolated Git plumbing process helpers.
  *
- * Strips ALL ambient `GIT_*` environment variables (case-insensitively on Windows), including
- * `GIT_CONFIG_COUNT` and `GIT_CONFIG_PARAMETERS`, then pins config flags so host settings,
- * hooks (including repo-local hooks), filters, and attributes never alter bytes.
+ * - Strips ALL ambient `GIT_*` (and `LANGUAGE`) env vars case-insensitively.
+ * - Pins `--literal-pathspecs`, `--no-replace-objects`, `core.protectNTFS=false` (bare index
+ *   plumbing never writes to a worktree), `core.hooksPath=NULL`, `core.autocrlf=false`,
+ *   `core.eol=lf`, `commit.gpgsign=false`, `LC_ALL=C`, `LANG=C`.
+ * - Attaches `error` handlers to stdout, stderr, and stdin so stream errors always reject the
+ *   active promise cleanly rather than becoming uncaught process exceptions.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { GitProgram } from "./binary.js";
 
 const NULL_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
 
-/** Config flags pinned on every plumbing command so host settings never alter bytes. */
 const ISOLATED_CONFIG_ARGS = [
   "--literal-pathspecs",
+  "--no-replace-objects",
   "-c",
   "core.autocrlf=false",
   "-c",
   "core.safecrlf=false",
   "-c",
   "core.eol=lf",
+  "-c",
+  "core.protectNTFS=false",
   "-c",
   `core.hooksPath=${NULL_CONFIG}`,
   "-c",
@@ -33,15 +38,16 @@ export function isolatedEnv(git: GitProgram, extraEnv?: NodeJS.ProcessEnv): Node
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue;
-    if (k.toUpperCase().startsWith("GIT_")) continue;
+    const upper = k.toUpperCase();
+    if (upper.startsWith("GIT_") || upper === "LANGUAGE") continue;
     env[k] = v;
   }
+  env.LC_ALL = "C";
+  env.LANG = "C";
   env.GIT_CONFIG_NOSYSTEM = "1";
   env.GIT_CONFIG_GLOBAL = NULL_CONFIG;
   env.GIT_ATTR_NOSYSTEM = "1";
-  delete env.LANGUAGE;
-  env.LC_ALL = "C";
-  env.LANG = "C";
+  env.GIT_NO_REPLACE_OBJECTS = "1";
   env.GIT_TERMINAL_PROMPT = "0";
   if ("execPath" in git && typeof git.execPath === "string" && git.execPath !== "") {
     env.GIT_EXEC_PATH = git.execPath;
@@ -61,7 +67,8 @@ export function startGit(
   args: string[],
   extraEnv?: NodeJS.ProcessEnv,
 ): ChildProcessWithoutNullStreams {
-  return spawn(git.program, ["--git-dir", gitdir, ...ISOLATED_CONFIG_ARGS, ...args], {
+  const fullArgs = ["--git-dir", gitdir, ...ISOLATED_CONFIG_ARGS, ...args];
+  return spawn(git.program, fullArgs, {
     env: isolatedEnv(git, extraEnv),
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
@@ -78,13 +85,28 @@ export function runGit(
     const child = startGit(git, gitdir, args, opts.env);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      reject(err);
+    };
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (err) => reject(err));
+    child.stdout.on("error", fail);
+    child.stderr.on("error", fail);
+    child.on("error", fail);
     child.stdin.on("error", (err: NodeJS.ErrnoException) => {
-      if (err.code !== "EPIPE") reject(err);
+      if (err.code !== "EPIPE") fail(err);
     });
     child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
       if (signal !== null) {
         reject(new Error(`git ${args[0] ?? ""}: killed by ${signal}`));
         return;

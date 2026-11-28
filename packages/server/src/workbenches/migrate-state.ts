@@ -159,17 +159,27 @@ export async function migrateWorkbenchesIntoState(
   }
   const history = path.join(agentDir, "workbenches-history");
   if (ready.length > 0) {
-    const resolvedEngine = typeof opts.engine === "function" ? opts.engine() : opts.engine;
-    const repo = new AgentStateRepo({
-      gitdir: agentStateRepoDir(agentDir),
-      now: () => new Date(),
-      log: (line) => log(`[workbenches] ${line}`),
-      engine: resolvedEngine,
-    });
     await fs.mkdir(target, { recursive: true });
+    let repo: AgentStateRepo | null = null;
+    let engineErr: unknown = null;
+    try {
+      const resolvedEngine = typeof opts.engine === "function" ? opts.engine() : opts.engine;
+      repo = new AgentStateRepo({
+        gitdir: agentStateRepoDir(agentDir),
+        now: () => new Date(),
+        log: (line) => log(`[workbenches] ${line}`),
+        engine: resolvedEngine,
+      });
+    } catch (err) {
+      engineErr = err;
+    }
     for (const folder of ready) {
       try {
-        await importVersions(repo, folder, path.join(history, folder.id), log);
+        if (repo !== null) {
+          await importVersions(repo, folder, path.join(history, folder.id), log);
+        } else if (await exists(path.join(history, folder.id, "versions.json"))) {
+          log(`[workbenches] ${folder.id}: old versions not imported: ${messageOf(engineErr)}`);
+        }
       } catch (err) {
         log(`[workbenches] ${folder.id}: old versions not imported: ${messageOf(err)}`);
       }

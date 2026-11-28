@@ -6,12 +6,9 @@
  * compiles against `@prismshadow/penguin-core/plugin` alone and contributes one engine to the
  * server's `AgentStateHistoryModule.engines` slot.
  *
- * The harness keeps every cheap step of the repository in-process — HEAD, whether a load changed
- * anything, the history walk — and hands an engine only the two steps that grow with a
- * workbench: writing a commit, and reading a version's files back. This one does them with
- * GitHub Desktop's build of Git as dugite pins it (./binary.ts), in one process each
- * (./engine.ts). On hosts where the packaged Git cannot run, the built-in engine records versions; the two write the same
- * commits, so the repository never notices which one wrote.
+ * Contributes `dugiteGitEngine` (implementing the unified `GitEngine` / `GitRepo` contract in
+ * `./git-engine.ts`) backed by GitHub Desktop's packaged Git binary (`./binary.ts`). All engines
+ * produce byte-identical commits, trees, and history walks so repositories are freely portable.
  */
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type { GitEngineSource, Plugin } from "@prismshadow/penguin-core/plugin";

@@ -3,11 +3,15 @@
  *
  * Lifecycle & concurrency:
  * - Every public `GitRepo` call passes through an admission gate (`inFlight` counter).
- * - `close()` is idempotent, rejects new calls immediately, drains in-flight operations, and
- *   only then releases the native `Arc<ThreadSafeRepository>`.
- * - Re-entrant calls made from inside `commit`'s `beforeMoveRef` hook use an internal re-entry
- *   depth counter so `close()` draining never self-deadlocks.
+ * - `close()` is idempotent, immediately rejects new calls, drains every in-flight operation
+ *   (including commits awaiting `beforeMoveRef` and completing `casRef`), and only then releases
+ *   the native `Arc<ThreadSafeRepository>`.
+ * - Calling `close()` from inside `beforeMoveRef` on the same repo is detected via
+ *   `AsyncLocalStorage` and rejected cleanly instead of deadlocking.
+ * - Heavy bulk operations (`prepareCommit`, `extractTree`) pass through a bounded concurrency
+ *   semaphore so they cannot starve unrelated Node libuv filesystem work.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   GitCommitFile,
   GitCommitInput,
@@ -31,11 +35,6 @@ import {
 } from "./binary.js";
 
 const GIT_ERROR_RE = /^GIT_ERROR:([A-Z_]+):(.*)$/s;
-
-function gitError(code: GitErrorCode, message: string): GitError {
-  return Object.assign(new Error(message), { code });
-}
-
 const GIT_ERROR_CODES: ReadonlySet<string> = new Set<GitErrorCode>([
   "CAS_CONFLICT",
   "PARENT_NOT_FOUND",
@@ -47,6 +46,29 @@ const GIT_ERROR_CODES: ReadonlySet<string> = new Set<GitErrorCode>([
   "REPO_CORRUPT",
   "IO_ERROR",
 ]);
+
+/** Cap concurrent heavy libuv tasks so gitoxide never starves unrelated Node fs I/O. */
+const MAX_CONCURRENT_BULK = 2;
+let activeBulk = 0;
+const bulkWaiters: Array<() => void> = [];
+
+async function withBulkSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeBulk >= MAX_CONCURRENT_BULK) {
+    await new Promise<void>((resolve) => bulkWaiters.push(resolve));
+  }
+  activeBulk += 1;
+  try {
+    return await fn();
+  } finally {
+    activeBulk -= 1;
+    const next = bulkWaiters.shift();
+    if (next) next();
+  }
+}
+
+function gitError(code: GitErrorCode, message: string): GitError {
+  return Object.assign(new Error(message), { code });
+}
 
 function wrapGitError(err: unknown): never {
   if (
@@ -68,18 +90,29 @@ function wrapGitError(err: unknown): never {
   throw gitError("IO_ERROR", raw);
 }
 
+function assertNotSharedBuffer(body: Uint8Array, label: string): Buffer {
+  if (typeof SharedArrayBuffer !== "undefined" && body.buffer instanceof SharedArrayBuffer) {
+    throw gitError("INVALID_PATH", `${label}: SharedArrayBuffer-backed buffers are not supported`);
+  }
+  return Buffer.isBuffer(body) ? body : Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+}
+
 function toNativeFile(f: GitCommitFile): NativeRepoCommitFileInput {
   if (f.source.kind === "file") {
     return { rel: f.rel, filePath: f.source.path, mode: f.mode ?? "100644" };
   }
-  return { rel: f.rel, body: f.source.body, mode: f.mode ?? "100644" };
+  return {
+    rel: f.rel,
+    body: assertNotSharedBuffer(f.source.body, f.rel),
+    mode: f.mode ?? "100644",
+  };
 }
 
 function wrapRepo(handle: NativeRepo): GitRepo {
+  const hookScope = new AsyncLocalStorage<symbol>();
   let closing = false;
   let closed = false;
   let inFlight = 0;
-  let hookDepth = 0;
   let closePromise: Promise<void> | null = null;
   const drainWaiters: Array<() => void> = [];
 
@@ -91,7 +124,7 @@ function wrapRepo(handle: NativeRepo): GitRepo {
   };
 
   async function runAdmitted<T>(fn: () => Promise<T>): Promise<T> {
-    if (closed || (closing && hookDepth === 0)) {
+    if (closed || closing) {
       throw gitError("IO_ERROR", "GitRepo has been closed");
     }
     inFlight += 1;
@@ -122,17 +155,14 @@ function wrapRepo(handle: NativeRepo): GitRepo {
     ): Promise<GitTreeEntry[] | null> {
       return runAdmitted(async () => {
         try {
-          const entries = await handle.listTree(commitOid, prefix, opts?.withSize === true);
-          if (entries === null || entries === undefined) return null;
-          return entries.map((e) => {
-            const item: GitTreeEntry = {
-              rel: e.rel,
-              oid: e.oid,
-              mode: (e.mode === "100755" ? "100755" : "100644") as GitFileMode,
-            };
-            if (e.size !== undefined) item.size = e.size;
-            return item;
-          });
+          const rows = await handle.listTree(commitOid, prefix, opts?.withSize ?? false);
+          if (rows === null || rows === undefined) return null;
+          return rows.map((row) => ({
+            rel: row.rel,
+            oid: row.oid,
+            mode: row.mode as GitFileMode,
+            ...(row.size !== undefined && row.size !== null ? { size: row.size } : {}),
+          }));
         } catch (err) {
           wrapGitError(err);
         }
@@ -148,10 +178,10 @@ function wrapRepo(handle: NativeRepo): GitRepo {
             opts.limit,
             opts.maxWalk,
           );
-          return rows.map((r) => ({
-            commit: r.commit,
-            tree: r.tree,
-            committerTime: r.committerTime,
+          return rows.map((row) => ({
+            commit: row.commit,
+            tree: row.tree,
+            committerTime: row.committerTime,
           }));
         } catch (err) {
           wrapGitError(err);
@@ -160,86 +190,100 @@ function wrapRepo(handle: NativeRepo): GitRepo {
     },
 
     extractTree(opts: GitExtractTreeOptions): Promise<GitExtractTreeResult> {
-      return runAdmitted(async () => {
-        try {
-          const res = await handle.extractTree(
-            opts.commitOid,
-            opts.prefix,
-            opts.destDir,
-            opts.onlyPaths ? [...opts.onlyPaths] : undefined,
-          );
-          return { files: res.files, totalBytes: res.totalBytes };
-        } catch (err) {
-          wrapGitError(err);
-        }
-      });
+      return runAdmitted(() =>
+        withBulkSlot(async () => {
+          try {
+            const res = await handle.extractTree(
+              opts.commitOid,
+              opts.prefix,
+              opts.destDir,
+              opts.onlyPaths ? [...opts.onlyPaths] : undefined,
+            );
+            return { files: res.files, totalBytes: res.totalBytes };
+          } catch (err) {
+            wrapGitError(err);
+          }
+        }),
+      );
     },
 
     commit(input: GitCommitInput): Promise<string> {
       return runAdmitted(async () => {
-        const identity = (who: GitCommitInput["author"]) => ({
-          name: who.name,
-          email: who.email,
+        // Snapshot mutable inputs upfront so a beforeMoveRef hook cannot mutate CAS operands.
+        const refName = String(input.ref);
+        const expectedParent = input.parent === null ? null : String(input.parent);
+        const prefix = String(input.prefix);
+        const message = String(input.message);
+        const author = {
+          name: String(input.author.name),
+          email: String(input.author.email),
           whenSeconds: input.when.seconds,
           whenOffsetMinutes: input.when.offset,
-        });
-        const nativeInput =
-          input.change.kind === "replace"
-            ? {
-                parent: input.parent ?? undefined,
-                prefix: input.prefix,
-                changeKind: "replace" as const,
-                files:
-                  input.change.files === null ? undefined : input.change.files.map(toNativeFile),
-                message: input.message,
-                author: identity(input.author),
-                committer: identity(input.committer),
-              }
-            : {
-                parent: input.parent ?? undefined,
-                prefix: input.prefix,
-                changeKind: "patch" as const,
-                files: input.change.upsert.map(toNativeFile),
-                remove: [...input.change.remove],
-                message: input.message,
-                author: identity(input.author),
-                committer: identity(input.committer),
-              };
+        };
+        const committer = {
+          name: String(input.committer.name),
+          email: String(input.committer.email),
+          whenSeconds: input.when.seconds,
+          whenOffsetMinutes: input.when.offset,
+        };
+        const change = input.change;
+        const changeKind = change.kind;
+        const files =
+          change.kind === "replace"
+            ? change.files === null
+              ? undefined
+              : change.files.map(toNativeFile)
+            : change.upsert.map(toNativeFile);
+        const remove = change.kind === "patch" ? [...change.remove] : undefined;
+        const beforeMoveRef = input.beforeMoveRef;
 
-        let prepared: { commit: string; tree: string };
+        let preparedCommit: string;
+        let preparedTree: string;
         try {
-          prepared = await handle.prepareCommit(nativeInput);
+          const prepared = await withBulkSlot(() =>
+            handle.prepareCommit({
+              parent: expectedParent ?? undefined,
+              prefix,
+              changeKind,
+              files,
+              remove,
+              message,
+              author,
+              committer,
+            }),
+          );
+          preparedCommit = String(prepared.commit);
+          preparedTree = String(prepared.tree);
         } catch (err) {
           wrapGitError(err);
         }
-        if (input.beforeMoveRef !== undefined) {
-          hookDepth += 1;
-          try {
-            await input.beforeMoveRef(prepared);
-          } finally {
-            hookDepth -= 1;
-          }
+
+        if (beforeMoveRef !== undefined) {
+          // Run hook inside an AsyncLocalStorage scope so re-entrant close() is rejected instead of deadlocking.
+          const frozenSnapshot = Object.freeze({ commit: preparedCommit, tree: preparedTree });
+          await hookScope.run(Symbol("beforeMoveRef"), () => beforeMoveRef(frozenSnapshot));
         }
+
         try {
-          await handle.casRef(input.ref, prepared.commit, input.parent ?? undefined);
+          await handle.casRef(refName, preparedCommit, expectedParent ?? undefined);
+          return preparedCommit;
         } catch (err) {
           wrapGitError(err);
         }
-        return prepared.commit;
       });
     },
 
     close(): Promise<void> {
+      if (hookScope.getStore() !== undefined) {
+        return Promise.reject(
+          gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
+        );
+      }
       if (closePromise !== null) return closePromise;
       closing = true;
       closePromise = (async () => {
-        // If called re-entrantly from inside beforeMoveRef, do not self-deadlock;
-        // release native handle once outer call completes (or immediately if inFlight === 0).
-        if (inFlight > 0 && hookDepth === 0) {
-          await new Promise<void>((resolve) => {
-            if (inFlight === 0) resolve();
-            else drainWaiters.push(resolve);
-          });
+        if (inFlight > 0) {
+          await new Promise<void>((resolve) => drainWaiters.push(resolve));
         }
         closed = true;
         handle.close();
@@ -251,7 +295,7 @@ function wrapRepo(handle: NativeRepo): GitRepo {
 
 export function gixGitEngine(native: Native, version: string): GitEngine {
   return {
-    name: `${version} (gitoxide)`,
+    name: `${version} (gix)`,
     async open(gitdir: string): Promise<GitRepo> {
       try {
         const handle = await native.openRepo(gitdir);
@@ -263,18 +307,10 @@ export function gixGitEngine(native: Native, version: string): GitEngine {
   };
 }
 
-let cachedNative: Native | undefined;
-
-export function openGixGitEngine(host: GitEngineHost): GitEngine {
+export async function openGixGitEngine(host: GitEngineHost): Promise<GitEngine> {
   const say = (line: string) => host.log(`[agent-state-gix] ${line}`);
-  if (cachedNative === undefined) {
-    try {
-      cachedNative = loadNative();
-    } catch (err) {
-      throw new Error(`the native half did not load: ${(err as Error).message}`);
-    }
-  }
-  const version = cachedNative.engineVersion();
-  say(`${version} in-process`);
-  return gixGitEngine(cachedNative, version);
+  const native = loadNative();
+  const version = native.engineVersion();
+  say(`using ${version} (in-process)`);
+  return gixGitEngine(native, version);
 }

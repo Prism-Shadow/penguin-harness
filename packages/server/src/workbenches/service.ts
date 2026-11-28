@@ -403,6 +403,8 @@ export class WorkbenchService implements Workbenches {
 
   /** Agents whose State is being replaced (whileReleased), and when that ends. */
   private readonly held = new Map<string, Promise<void>>();
+  /** Migrations currently running per Agent so whileReleased() can drain them before swapping agent_state. */
+  private readonly migrating = new Map<string, Set<Promise<void>>>();
 
   /**
    * Every way into an Agent's workbenches comes through here, so it waits out an import first.
@@ -411,10 +413,23 @@ export class WorkbenchService implements Workbenches {
    * costs a few stats, and concurrent callers share a run.
    */
   private async migrate(projectId: string, agentId: string): Promise<void> {
-    await this.held.get(`${projectId}/${agentId}`);
-    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId), () =>
+    const agentKey = `${projectId}/${agentId}`;
+    for (let held = this.held.get(agentKey); held; held = this.held.get(agentKey)) await held;
+    const run = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId), () =>
       this.engines.current(),
     );
+    let active = this.migrating.get(agentKey);
+    if (!active) {
+      active = new Set();
+      this.migrating.set(agentKey, active);
+    }
+    active.add(run);
+    try {
+      return await run;
+    } finally {
+      active.delete(run);
+      if (active.size === 0) this.migrating.delete(agentKey);
+    }
   }
 
   setup(ctx: ClassCtx) {
@@ -722,9 +737,13 @@ export class WorkbenchService implements Workbenches {
     by?: VersionAuthor,
   ): Promise<WorkbenchInfo> {
     const k = key(projectId, agentId, workbenchId);
-    return this.serializeWorkbench(k, async () => {
+    await this.serializeWorkbench(k, async () => {
       const folder = await this.folder(projectId, agentId, workbenchId);
       if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
+      const t = this.pending.get(k);
+      if (t) clearTimeout(t);
+      this.pending.delete(k);
+      await this.loading.get(k)?.catch(() => undefined);
       let found = true;
       await restoreSourceFromDir(folder, async (incoming) => {
         const extracted = await this.fromRepo(k, () =>
@@ -742,8 +761,8 @@ export class WorkbenchService implements Workbenches {
         return extracted;
       });
       if (!found) throw new WorkbenchNotFound("no such version");
-      return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
     });
+    return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
   }
 
   async remove(
@@ -752,26 +771,29 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
     by?: VersionAuthor,
   ): Promise<void> {
-    const folder = await this.folder(projectId, agentId, workbenchId);
     const k = key(projectId, agentId, workbenchId);
-    // Nothing may write into the folder while it is deleted: a load writes `.build/`, and a
-    // file recreated there mid-delete fails the rm on Windows (ENOTEMPTY). Pending reloads are
-    // dropped, none is scheduled until the folder is gone, and one already running finishes.
-    this.removing.add(k);
-    try {
-      const t = this.pending.get(k);
-      if (t) clearTimeout(t);
-      this.pending.delete(k);
-      await this.loading.get(k)?.catch(() => undefined);
-      await fs.promises.rm(folder.dir, {
-        recursive: true,
-        force: true,
-        maxRetries: 5,
-        retryDelay: 100,
-      });
-    } finally {
-      this.removing.delete(k);
-    }
+    const folder = await this.serializeWorkbench(k, async () => {
+      const found = await this.folder(projectId, agentId, workbenchId);
+      // Nothing may write into the folder while it is deleted: a load writes `.build/`, and a
+      // file recreated there mid-delete fails the rm on Windows (ENOTEMPTY). Pending reloads are
+      // dropped, none is scheduled until the folder is gone, and one already running finishes.
+      this.removing.add(k);
+      try {
+        const t = this.pending.get(k);
+        if (t) clearTimeout(t);
+        this.pending.delete(k);
+        await this.loading.get(k)?.catch(() => undefined);
+        await fs.promises.rm(found.dir, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 100,
+        });
+      } finally {
+        this.removing.delete(k);
+      }
+      return found;
+    });
     // Its data, cache and state folders go with it, so a workbench made later under the same id
     // starts empty. A link the Agent left on the way to them is never followed.
     const root = this.paths.root;
@@ -929,9 +951,16 @@ export class WorkbenchService implements Workbenches {
       clearTimeout(t);
       this.pending.delete(k);
     }
-    await Promise.all(
-      [...this.loading].filter(([k]) => k.startsWith(prefix)).map(([, p]) => p.catch(() => {})),
-    );
+    while (true) {
+      const activeMigrations = [...(this.migrating.get(agentKey) ?? [])];
+      const activeMutations = [...this.mutating]
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([, p]) => p);
+      const activeLoads = [...this.loading].filter(([k]) => k.startsWith(prefix)).map(([, p]) => p);
+      const pendingAll = [...activeMigrations, ...activeMutations, ...activeLoads];
+      if (pendingAll.length === 0) break;
+      await Promise.allSettled(pendingAll);
+    }
     for (const [k, l] of this.loaded) {
       if (!k.startsWith(prefix)) continue;
       l.tree?.dispose();
@@ -1191,6 +1220,9 @@ export class WorkbenchService implements Workbenches {
     const run = after
       .catch(() => undefined)
       .then(async () => {
+        for (let mut = this.mutating.get(k); mut; mut = this.mutating.get(k)) {
+          await mut.catch(() => undefined);
+        }
         const current = (await readFolder(folder.dir, folder.id)) ?? folder;
         // Checked in the queue, after the loads before it: a switch turned off since this was
         // asked for is what wins (setEnabled waits for every load queued before its marker).
@@ -1323,10 +1355,11 @@ export class WorkbenchService implements Workbenches {
         uiBuild: pages === null ? null : folder.revision,
         appCenter,
       };
-      // Recording the version is bookkeeping around a load that has already succeeded, so it
-      // cannot be inside the try that decides whether the load failed: a repository that
-      // cannot be written would hand the caller back the tree disposed just above, and leak
-      // the one that is actually serving.
+      // Publish the replacement BEFORE disposing the old tree or awaiting Git history recording,
+      // so concurrent same-revision lookups never observe or dispatch to a disposed instance.
+      if (!this.disposed) {
+        this.loaded.set(k, next);
+      }
       previous?.tree?.dispose();
       pruneBuilds(folder.dir, folder.revision);
       try {
