@@ -74,6 +74,7 @@ export { isValidId } from "../state/ids.js";
 
 export type * from "./sandbox.js";
 export type * from "./agent-state.js";
+export type * from "./git.js";
 export type * from "./languages.js";
 export type * from "./library.js";
 

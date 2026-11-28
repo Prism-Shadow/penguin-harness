@@ -16,6 +16,7 @@ import type { AgentStateEngineSource, Plugin } from "@prismshadow/penguin-core/p
 import { openGixEngine } from "./engine.js";
 
 export { gixEngine, openGixEngine } from "./engine.js";
+export { gixGitEngine, openGixGitEngine } from "./git-engine.js";
 export { loadNative } from "./binary.js";
 
 @Component({
