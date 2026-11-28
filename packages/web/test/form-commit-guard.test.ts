@@ -5,7 +5,8 @@
  * The JSX is parsed (TypeScript's parser, no types) rather than remembered, in three checks:
  *
  * 1. **A typed control never commits from its own handler.** On an `Input`, `Textarea`,
- *    `PasswordInput` or `TagInput` under `features/` (and the project dialogs), an `onBlur` fails
+ *    `PasswordInput` or `TagInput` under `features/` or `components/` (and the project
+ *    dialogs), an `onBlur` fails
  *    outright, and an `onChange` whose handler — the inline arrow, or the function of that name
  *    declared in the module — calls `api.*` or a function named `save*`, `persist*`, `write*`,
  *    `submit*`, `put*`, `post*`, `send*`, `commit*` or `onSave*` fails. An `onBlur` on any other
@@ -89,13 +90,15 @@ const TYPED = new Set(["Input", "Textarea", "PasswordInput", "TagInput"]);
 const COMMITS = /^(?:save|persist|write|submit|put|post|send|commit|onSave|onSubmit|onCommit)/;
 
 /**
- * The files check 1 and 2 read: everything under features/, and the library web halves the app
- * compiles in (the project dialogs and the model pages among them — a move must not take a form
- * out of the guard's reach).
+ * The files the checks read: everything under features/ and components/ (the account dialogs
+ * among the latter), and the library web halves the app compiles in (the project dialogs and
+ * the model pages among them — a move must not take a form out of the guard's reach).
  */
 const inReach = (file: SourceFile) =>
   file.rel.endsWith(".tsx") &&
-  ((file.root === "web" && file.rel.startsWith("features/")) || file.root.startsWith("library:"));
+  ((file.root === "web" &&
+    (file.rel.startsWith("features/") || file.rel.startsWith("components/"))) ||
+    file.root.startsWith("library:"));
 
 /** Each file is parsed once, however many checks read it. */
 const parsed = new WeakMap<SourceFile, ts.SourceFile>();
@@ -210,8 +213,7 @@ const TAKES_PART = new Set(["useFormDraft", "useUnsavedChanges", "useGuardedClos
 /** The web modules taking part in the model, keyed by {@link appKey}; check 3 runs on each. */
 const FORM_MODULES: readonly SourceFile[] = SCAN.files.filter(
   (f) =>
-    f.rel.endsWith(".tsx") &&
-    ((f.root === "web" && f.rel.startsWith("features/")) || f.root.startsWith("library:")) &&
+    inReach(f) &&
     !EXCUSED_FILES.some(([key]) => key === appKey(f)) &&
     [...TAKES_PART].some((hook) => f.text.includes(`${hook}(`)) &&
     callsAny(parse(f), TAKES_PART),
