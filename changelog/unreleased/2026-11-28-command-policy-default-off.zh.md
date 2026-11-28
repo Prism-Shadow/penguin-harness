@@ -3,7 +3,7 @@
 - **Date:** 2026-11-28
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1942](https://github.com/Prism-Shadow/penguin-harness/pull/1942)
 - **Breaking:** yes — Project 配置的 `[command_policy]` 里没写 `enabled = true` 的，命令策略一律关闭
 
 [English](2026-11-28-command-policy-default-off.md)

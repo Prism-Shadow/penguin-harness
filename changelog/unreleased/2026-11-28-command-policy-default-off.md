@@ -3,7 +3,7 @@
 - **Date:** 2026-11-28
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1942](https://github.com/Prism-Shadow/penguin-harness/pull/1942)
 - **Breaking:** yes — a Project whose config does not say `enabled = true` under `[command_policy]` runs with the command policy off
 
 [中文版](2026-11-28-command-policy-default-off.zh.md)
