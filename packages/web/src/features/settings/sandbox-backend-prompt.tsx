@@ -1,50 +1,64 @@
 /**
  * The question the Sandbox card asks when its switch is turned on and the machine has no
- * sandbox backend for its OS: install this OS's default ones? Install / Not now, plus "Don't
- * ask again" for this machine (lib/sandbox-backend-prompt.ts keeps that in this browser).
- *
- * The answer never touches the switch: it stays on in the card either way, and the card's Save
- * stores it. Installing goes through the Plugins page's own install, so it carries that page's
- * cost, which the body says: the App is re-assembled, stopping runs in progress.
+ * sandbox backend for its OS: uses the unified PluginBatchInstallModal so the user sees how many
+ * backend plugins are needed, why they are needed, a single unified SSE progress bar during
+ * download, and both manual + Agent-assisted source configuration if any download fails.
  */
-import { useState } from "react";
-import { Checkbox, ConfirmModal, ICONS } from "@prismshadow/penguin-ui";
+import type { InstallStage } from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import {
+  PluginBatchInstallModal,
+  type BatchPluginItem,
+} from "../plugins/plugin-batch-install";
+import type { FailedPluginDownload } from "../plugins/plugin-source-assist";
 
 export function SandboxBackendPrompt({
   pkgs,
   machineName,
-  busy,
-  onInstall,
-  onLater,
+  runInstall,
+  onOpenSources,
+  onConfigureWithAi,
+  onComplete,
+  onClose,
 }: {
   /** The packages to offer, installed together; null keeps the dialog closed. */
   pkgs: readonly string[] | null;
   /** The machine the card is editing, as the picker names it. */
   machineName: string;
-  busy: boolean;
-  onInstall: (dontAskAgain: boolean) => void;
-  onLater: (dontAskAgain: boolean) => void;
+  runInstall: (
+    pkg: string,
+    callbacks: {
+      onProgress: (received: number, total: number | null) => void;
+      onStage: (stage: InstallStage) => void;
+    },
+  ) => Promise<{ loadError?: string | undefined }>;
+  onOpenSources?: (() => void) | undefined;
+  onConfigureWithAi?: ((failed: readonly FailedPluginDownload[]) => void) | undefined;
+  onComplete?: (result: { installed: string[]; failed: FailedPluginDownload[] }) => void;
+  onClose: (dontAskAgain: boolean) => void;
 }) {
-  const [dontAsk, setDontAsk] = useState(false);
+  if (pkgs === null) return null;
   const P = S.settings.sandboxBackendPrompt;
+  const B = S.plugins.installModel.batch;
+  const items: BatchPluginItem[] = pkgs.map((pkg) => ({
+    specifier: pkg,
+    title: pkg,
+    reason: B.sandboxItemReason,
+  }));
   return (
-    <ConfirmModal
-      open={pkgs !== null}
+    <PluginBatchInstallModal
+      open
       title={P.title}
-      tone="primary"
-      glyph={ICONS.download}
-      busy={busy}
-      confirmLabel={busy ? P.installing : P.install}
-      cancelLabel={P.later}
-      onConfirm={() => onInstall(dontAsk)}
-      onClose={() => onLater(dontAsk)}
-    >
-      <div className="space-y-2 text-sm">
-        <p>{P.body(machineName, pkgs ?? [])}</p>
-        <p className="text-xs text-fg-muted">{P.cost}</p>
-        <Checkbox checked={dontAsk} disabled={busy} label={P.dontAsk} onChange={setDontAsk} />
-      </div>
-    </ConfirmModal>
+      summaryReason={B.sandboxSummaryReason(machineName, items.length)}
+      machineLabel={machineName}
+      impactNote={P.cost}
+      dontAskLabel={P.dontAsk}
+      items={items}
+      runInstall={(item, callbacks) => runInstall(item.specifier, callbacks)}
+      onOpenSources={onOpenSources}
+      onConfigureWithAi={onConfigureWithAi}
+      onComplete={onComplete}
+      onClose={(opts) => onClose(opts?.dontAskAgain === true)}
+    />
   );
 }

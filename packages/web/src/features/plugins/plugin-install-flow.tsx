@@ -93,6 +93,7 @@ export interface InstallFlowProps {
   failure?: InstallFailure | null;
   onDismissFailure?: () => void;
   onOpenSources?: () => void;
+  onConfigureWithAi?: () => void;
   onImportFile?: () => void;
   /** Installs (or, for `enable`, enables) it on the server. */
   onServer: () => void;
@@ -263,6 +264,11 @@ export function InstallFlow(props: InstallFlowProps) {
                   {props.onOpenSources !== undefined && (
                     <Button variant="link" size="sm" onClick={props.onOpenSources}>
                       {words.sourcesSettings}
+                    </Button>
+                  )}
+                  {props.onConfigureWithAi !== undefined && (
+                    <Button variant="link" size="sm" onClick={props.onConfigureWithAi}>
+                      {words.configureWithAi}
                     </Button>
                   )}
                   {props.onImportFile !== undefined && (
@@ -454,11 +460,13 @@ function InstallIcon({
 export function InstallFailureNote({
   failure,
   onOpenSources,
+  onConfigureWithAi,
   onImportFile,
   onDismiss,
 }: {
   failure: Failure;
   onOpenSources?: (() => void) | undefined;
+  onConfigureWithAi?: (() => void) | undefined;
   onImportFile?: (() => void) | undefined;
   onDismiss?: (() => void) | undefined;
 }) {
@@ -478,6 +486,11 @@ export function InstallFailureNote({
       {onOpenSources !== undefined && (
         <Button variant="link" size="sm" onClick={onOpenSources}>
           {words.sourcesSettings}
+        </Button>
+      )}
+      {onConfigureWithAi !== undefined && (
+        <Button variant="link" size="sm" onClick={onConfigureWithAi}>
+          {words.configureWithAi}
         </Button>
       )}
       {onImportFile !== undefined && (

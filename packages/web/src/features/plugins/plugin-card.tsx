@@ -257,9 +257,14 @@ export interface PluginCardProps {
   /** A server install of this row is written for another machine, which fetches it itself. */
   remoteInstall?: boolean;
   onDismissFailure?: () => void;
-  /** The failure's next steps: the Plugin Sources settings, and the zip import. */
+  /** The failure's next steps: the Plugin Sources settings, AI config assist, and the zip import. */
   onOpenSources?: () => void;
+  onConfigureWithAi?: () => void;
   onImportFile?: () => void;
+  /** Batch selection mode on the Plugins page for downloading multiple plugins in one modal. */
+  batchMode?: boolean;
+  batchSelected?: boolean;
+  onToggleBatchSelect?: () => void;
   /**
    * Installs it on the server (an admin), or enables a shipped module: the flow's step 1, which
    * says what it does, so the page asks nothing more.
@@ -772,6 +777,9 @@ export function PluginCard(props: PluginCardProps) {
             ? { onDismissFailure: props.onDismissFailure }
             : {})}
           {...(props.onOpenSources !== undefined ? { onOpenSources: props.onOpenSources } : {})}
+          {...(props.onConfigureWithAi !== undefined
+            ? { onConfigureWithAi: props.onConfigureWithAi }
+            : {})}
           {...(props.isAdmin && props.onImportFile !== undefined
             ? { onImportFile: props.onImportFile }
             : {})}
@@ -993,14 +1001,29 @@ export function PluginCard(props: PluginCardProps) {
               glyph={20}
             />
           }
-          onOpen={() => setDetailOpen(true)}
+          onOpen={() => {
+            if (props.batchMode && props.onToggleBatchSelect) props.onToggleBatchSelect();
+            else setDetailOpen(true);
+          }}
           install={{
-            label: action,
+            label:
+              props.batchMode && props.onToggleBatchSelect
+                ? props.batchSelected
+                  ? `✓ ${S.plugins.installModel.batch.selectedCount(1)}`
+                  : S.plugins.installModel.batch.selectMode
+                : action,
             progress: compactProgress,
             // While its own server install runs it stays live: it reopens the flow to watch.
-            disabled: props.pending === true || (props.blocked && !props.busy) || memberHeld,
-            ...(memberHeld ? { hint: S.plugins.installModel.adminOnly } : {}),
+            disabled:
+              props.batchMode && props.onToggleBatchSelect
+                ? false
+                : props.pending === true || (props.blocked && !props.busy) || memberHeld,
+            ...(memberHeld && !props.batchMode ? { hint: S.plugins.installModel.adminOnly } : {}),
             onClick: () => {
+              if (props.batchMode && props.onToggleBatchSelect) {
+                props.onToggleBatchSelect();
+                return;
+              }
               if (downloadUpdate) props.onModuleApply(true, release.to);
               else if (updateAgents.length > 0 && !props.busy) setPendingUpdate(updateAgents);
               else setInstallOpen(true);
@@ -1070,6 +1093,7 @@ export function PluginCard(props: PluginCardProps) {
               <InstallFailureNote
                 failure={props.failure.failure}
                 onOpenSources={props.onOpenSources}
+                onConfigureWithAi={props.onConfigureWithAi}
                 onImportFile={props.isAdmin ? props.onImportFile : undefined}
                 onDismiss={props.onDismissFailure}
               />

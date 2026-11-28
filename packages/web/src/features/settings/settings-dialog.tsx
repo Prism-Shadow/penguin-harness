@@ -297,7 +297,14 @@ export function SettingsDialog({
           />
         )}
         {current === "moduleRequests" && <ModuleRequestsPage />}
-        {current === "sandbox" && <PluginsSection host="sandbox" machine={pluginMachine} />}
+        {current === "sandbox" && (
+          <PluginsSection
+            host="sandbox"
+            machine={pluginMachine}
+            onOpenSources={() => goTo("plugins")}
+            onCloseDialog={onClose}
+          />
+        )}
         {current === "users" && <AdminUsersSection />}
         {ContributedBody !== undefined && (
           <ContributedBody openPage={(key) => goTo(key as SettingsSectionKey)} />

@@ -162,6 +162,8 @@ import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/pl
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { SourceFailuresNotice } from "./source-failures-notice";
 import { ImportPluginModal } from "./plugin-import-modal";
+import { PluginBatchInstallModal, type BatchPluginItem } from "./plugin-batch-install";
+import { usePluginSourceAssist } from "./plugin-source-assist";
 import {
   PLUGIN_GROUP_BYS,
   groupRows,
@@ -244,7 +246,16 @@ export function PluginsPage() {
   const { currentProject, agents, agentsLoading, currentAgent, setCurrentAgentId, reloadAgents } =
     useProject();
   const { repair, modal: repairModal } = usePluginRepair(agents);
+  const configureSourcesWithAi = usePluginSourceAssist(agents);
   const projectId = currentProject?.projectId ?? null;
+  /** Batch multi-plugin download selection mode and active modal items. */
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSelected, setBatchSelected] = useState<string[]>([]);
+  const [batchModal, setBatchModal] = useState<{
+    items: BatchPluginItem[];
+    machineId: string;
+    machineLabel: string;
+  } | null>(null);
 
   /** The plugins trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const todo = useUpdateBadges().todos.plugins;
@@ -1248,7 +1259,15 @@ export function PluginsPage() {
       onDismissFailure: () => {
         if (row.module !== undefined) failInstall(row.module.specifier, null);
       },
-      onOpenSources: () => setSettingsOpen(true),
+      onOpenSources: () => {
+        setSettingsSection("plugins");
+        setSettingsOpen(true);
+      },
+      onConfigureWithAi: () => {
+        const spec = row.module?.specifier ?? row.name;
+        const fail = row.module !== undefined ? installFailures.get(row.module.specifier) : null;
+        configureSourcesWithAi([{ specifier: spec, error: fail?.failure.text ?? "" }]);
+      },
       onImportFile: () => setImportOpen(true),
       onInstallServer: () => installServer(row),
       onAskAdmin: () => askAdmin(row),
@@ -1291,6 +1310,24 @@ export function PluginsPage() {
                 reason: row.module!.unsatisfied!,
               })
           : null,
+      ...(batchMode &&
+      isAdmin &&
+      row.module !== undefined &&
+      !row.module.shipped &&
+      row.module.state === "none" &&
+      row.library === undefined &&
+      rowMachine !== undefined
+        ? {
+            batchMode: true,
+            batchSelected: batchSelected.includes(row.module.specifier),
+            onToggleBatchSelect: () => {
+              const spec = row.module!.specifier;
+              setBatchSelected((prev) =>
+                prev.includes(spec) ? prev.filter((s) => s !== spec) : [...prev, spec],
+              );
+            },
+          }
+        : {}),
       onMcpChanged: refreshAgentMcp,
     };
   };
@@ -1448,6 +1485,33 @@ export function PluginsPage() {
               locale={locale}
             />
           </div>
+          {isAdmin &&
+            projectId !== null &&
+            rows.some(
+              (r) =>
+                r.module !== undefined &&
+                !r.module.shipped &&
+                r.module.state === "none" &&
+                r.library === undefined &&
+                moduleTarget(r, viewMachine) !== undefined,
+            ) && (
+              <Button
+                size="sm"
+                variant={batchMode ? "primary" : "secondary"}
+                data-testid="batch-download-toggle"
+                onClick={() => {
+                  setBatchMode((was) => {
+                    if (was) setBatchSelected([]);
+                    return !was;
+                  });
+                }}
+              >
+                <GlyphIcon d={ICONS.download} />
+                {batchMode
+                  ? S.plugins.installModel.batch.exitSelectMode
+                  : S.plugins.installModel.batch.selectMode}
+              </Button>
+            )}
           <ShowcaseLayoutToggle
             value={layout}
             onChange={chooseLayout}
@@ -1458,6 +1522,84 @@ export function PluginsPage() {
             }}
           />
         </div>
+        {batchMode && isAdmin && projectId !== null && (() => {
+          const downloadable = visible.filter(
+            (r) =>
+              r.module !== undefined &&
+              !r.module.shipped &&
+              r.module.state === "none" &&
+              r.library === undefined &&
+              moduleTarget(r, viewMachine) !== undefined,
+          );
+          const pickedRows = rows.filter(
+            (r) => r.module !== undefined && batchSelected.includes(r.module.specifier),
+          );
+          return (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-subtle/70 px-3 py-2 text-xs"
+              data-testid="batch-download-bar"
+            >
+              <span className="font-medium text-fg">
+                {S.plugins.installModel.batch.selectedCount(pickedRows.length)}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {downloadable.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="batch-select-all"
+                    onClick={() =>
+                      setBatchSelected(downloadable.map((r) => r.module!.specifier))
+                    }
+                  >
+                    {S.plugins.installModel.batch.selectAllDownloadable(downloadable.length)}
+                  </Button>
+                )}
+                {pickedRows.length > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => setBatchSelected([])}>
+                    {S.plugins.installModel.batch.clearSelection}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={pickedRows.length === 0 || pendingSpecifier !== null}
+                  data-testid="batch-download-open"
+                  onClick={() => {
+                    const targetMachine =
+                      pickedRows.map((r) => moduleTarget(r, viewMachine)).find((m) => m !== undefined) ??
+                      selfId;
+                    if (targetMachine === undefined) return;
+                    const machineLabel =
+                      targetMachine === selfId
+                        ? S.plugins.installModel.thisServer
+                        : (machineChoices.find((c) => c.value === targetMachine)?.label ??
+                          targetMachine);
+                    const items: BatchPluginItem[] = pickedRows.map((r) => {
+                      const entry = r.module?.entry;
+                      const desc =
+                        entry !== undefined
+                          ? localizedText(locale, entry.description, entry.descriptionZh)
+                          : "";
+                      return {
+                        specifier: r.module!.specifier,
+                        title:
+                          entry !== undefined
+                            ? localizedText(locale, entry.title ?? r.name, entry.titleZh) || r.name
+                            : r.name,
+                        ...(entry?.version !== undefined ? { version: entry.version } : {}),
+                        reason: desc || S.plugins.installModel.batch.defaultItemReason,
+                      };
+                    });
+                    setBatchModal({ items, machineId: targetMachine, machineLabel });
+                  }}
+                >
+                  {S.plugins.installModel.batch.downloadSelected(pickedRows.length)}
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
         {groupBy !== "none" && <Tabs items={tabs} active={activeTab} onChange={selectTab} />}
       </div>
 
@@ -1593,6 +1735,56 @@ export function PluginsPage() {
         </ConfirmModal>
       )}
       {repairModal}
+      {batchModal !== null && projectId !== null && (
+        <PluginBatchInstallModal
+          open
+          summaryReason={S.plugins.installModel.batch.selectedSummaryReason(batchModal.items.length)}
+          machineLabel={batchModal.machineLabel}
+          impactNote={S.plugins.applyConfirmWarning(true)}
+          items={batchModal.items}
+          runInstall={async (item, { onProgress, onStage }) => {
+            const spec = item.version ? `${item.specifier}@${item.version}` : item.specifier;
+            const next = await api.installPluginStream(
+              projectId,
+              spec,
+              batchModal.machineId,
+              onProgress,
+              onStage,
+            );
+            notifyPluginsChanged(projectId);
+            if (isCurrentVisit()) {
+              installedPlugins.accept(installedPluginsKey(projectId, null), next);
+              if (batchModal.machineId === selfId) {
+                pluginLibrary.invalidate(LIBRARY_KEY);
+                pluginIndex.invalidate(INDEX_KEY);
+                void reloadAgents().catch(() => undefined);
+              }
+            }
+            const installedRow = next.plugins.find((p) => p.specifier === item.specifier);
+            return { loadError: installedRow?.error };
+          }}
+          onOpenSources={() => {
+            setBatchModal(null);
+            setSettingsSection("plugins");
+            setSettingsOpen(true);
+          }}
+          onConfigureWithAi={(failed) => {
+            setBatchModal(null);
+            configureSourcesWithAi(failed);
+          }}
+          onImportFile={() => {
+            setBatchModal(null);
+            setImportOpen(true);
+          }}
+          onComplete={({ failed }) => {
+            if (failed.length === 0) {
+              setBatchSelected([]);
+              setBatchMode(false);
+            }
+          }}
+          onClose={() => setBatchModal(null)}
+        />
+      )}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
       {pendingQuickStart !== null && quickTarget && quickTarget.machine?.live !== false && (
         <ConfirmModal

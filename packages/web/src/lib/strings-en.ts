@@ -3324,7 +3324,47 @@ export const en: Strings = {
       doneService: "It is installed on this server, and this project can use it now.",
       failedTitle: (name: string) => `${name} could not be installed`,
       failedHelp:
-        "Try again. If it keeps failing, switch to another plugin source or import it from a file.",
+        "Try configuring plugin download sources or mirrors (such as npmmirror or gh-proxy.com) manually, ask an Agent to help configure it, or import from a file.",
+      configureWithAi: "Configure with AI",
+      configureWithAiNoAgent:
+        "No agent is available in this project to help configure downloads. Open Plugin sources to configure it manually.",
+      configureWithAiPrompt: (failed: ReadonlyArray<{ specifier: string; error: string }>) =>
+        [
+          "The following plugin download(s) failed. Please help diagnose connectivity and configure appropriate plugin download sources / mirrors (for example setting npm registry to npmmirror, or enabling gh-proxy.com / npm-registry / github-raw in Plugin mirrors), then let me know when to retry:",
+          ...failed.map((f) => `- ${f.specifier}: ${f.error}`),
+        ].join("\n"),
+      batch: {
+        title: (count: number) => `Download ${count} ${count === 1 ? "plugin" : "plugins"}`,
+        countBadge: (count: number) => `${count} ${count === 1 ? "plugin" : "plugins"}`,
+        whyHeading: "Why these plugins need to be downloaded",
+        startDownload: (count: number) => `Download and install (${count})`,
+        progressLabel: (count: number) => `Combined install progress for ${count} plugins`,
+        runningItem: (current: number, total: number, title: string, step: string) =>
+          `Installing ${current} of ${total}: ${title} — ${step}`,
+        allDoneSummary: (count: number) => `All ${count} plugins downloaded and installed.`,
+        partialSummary: (done: number, failed: number, total: number) =>
+          `${done} of ${total} completed, ${failed} failed.`,
+        statusReady: "Ready",
+        statusPending: "Queued",
+        statusDone: "Done",
+        statusFailed: "Failed",
+        failedRecommendTitle: "Download failed — configure plugin download sources",
+        failedRecommendBody:
+          "The default download source may be slow or unreachable on this network. Open Plugin sources to configure mirrors (such as gh-proxy.com or npmmirror) manually, or ask an Agent to help configure it.",
+        retryFailed: (count: number) => `Retry failed (${count})`,
+        selectMode: "Batch download",
+        exitSelectMode: "Done selecting",
+        selectedCount: (count: number) => `${count} selected`,
+        selectAllDownloadable: (count: number) => `Select all downloadable (${count})`,
+        clearSelection: "Clear",
+        downloadSelected: (count: number) => `Download selected (${count})`,
+        selectedSummaryReason: (count: number) =>
+          `You selected ${count} plugins to download and install on the target server. Once confirmed, they download sequentially in this single modal with a unified progress bar — nothing downloads in the background before you confirm.`,
+        sandboxSummaryReason: (machine: string, count: number) =>
+          `Sandbox is enabled on ${machine}, which needs these ${count} OS sandbox backend ${count === 1 ? "plugin" : "plugins"} downloaded and installed before isolated execution can run.`,
+        sandboxItemReason: "Required sandbox execution backend plugin for this operating system.",
+        defaultItemReason: "Install on this server for use by this project and its agents.",
+      },
       uninstallTitle: (name: string) => `Uninstall ${name} from the server`,
       uninstallBody: (name: string, agents: number) =>
         agents === 0

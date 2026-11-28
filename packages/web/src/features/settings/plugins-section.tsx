@@ -43,8 +43,8 @@ import {
   THIS_SERVER_KEY,
   backendToOffer,
   dismissBackendPrompt,
-  installInOrder,
 } from "../../lib/sandbox-backend-prompt";
+import { usePluginSourceAssist } from "../plugins/plugin-source-assist";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { MachinePicker } from "../machines";
 import { PluginCard } from "./plugin-config-card";
@@ -56,7 +56,6 @@ import {
   NoticeStrip,
   SettingsSection,
   guardLeave,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import { toastApiError, toastFailure } from "../../lib/toast-api-error";
@@ -126,6 +125,8 @@ export function PluginsSection({
   plugin,
   machine: initialMachine = null,
   host = "sources",
+  onOpenSources,
+  onCloseDialog,
 }: {
   focus?: string;
   /** On a plugin's page: its package — only its settings groups. */
@@ -134,6 +135,10 @@ export function PluginsSection({
   machine?: string | null;
   /** Without `plugin`: which of the host's own pages this is. */
   host?: "sources" | "sandbox";
+  /** Navigates to the Plugin Sources settings page (e.g. from a failed sandbox backend install). */
+  onOpenSources?: () => void;
+  /** Closes the parent Settings dialog (e.g. when handing off to an Agent chat). */
+  onCloseDialog?: () => void;
 } = {}) {
   const page: GroupPage =
     plugin !== undefined
@@ -166,10 +171,14 @@ export function PluginsSection({
   /** Why the picked machine's settings could not be read, when they could not. */
   const [loadError, setLoadError] = useState<string | null>(null);
   const nameOf = (id: string) => machineLabels.get(id) ?? id;
-  const projectId = useProjectIfAny()?.currentProject?.projectId ?? null;
+  const projectCtx = useProjectIfAny();
+  const projectId = projectCtx?.currentProject?.projectId ?? null;
+  const configureSourcesWithAi = usePluginSourceAssist(projectCtx?.agents ?? [], () => {
+    setOffered(null);
+    onCloseDialog?.();
+  });
   /** The backend package the install prompt offers, while it is open. */
   const [offered, setOffered] = useState<string[] | null>(null);
-  const [installing, setInstalling] = useState(false);
 
   /** The machine's answer becomes what every card shows; a card with unsaved edits keeps them. */
   const adopt = (list: PluginConfigEntry[]) => setEntries(list);
@@ -311,49 +320,31 @@ export function PluginsSection({
     setOffered(null);
   };
 
-  /**
-   * Installs the offered backends the way the Plugins page does, one after another: into this
-   * Project's table for the machine on screen only — this server's own machine id when the card
-   * shows this server, so no other machine is asked to run it. A request that fails stops the
-   * run and is reported; either way the prompt closes and the card's live parts (notices, the
-   * backend report) are read again, so what did install shows; drafts being edited are kept.
-   */
-  const installOffered = async (dontAskAgain: boolean) => {
-    if (offered === null || installing) return;
+  /** Installs one offered sandbox backend package via the streaming endpoint for unified byte progress. */
+  const runOfferedInstall = async (
+    pkg: string,
+    {
+      onProgress,
+      onStage,
+    }: {
+      onProgress: (received: number, total: number | null) => void;
+      onStage: (stage: api.InstallStage) => void;
+    },
+  ): Promise<{ loadError?: string | undefined }> => {
     if (projectId === null) {
-      toastError(S.settings.sandboxBackendPrompt.noProject);
-      return;
+      throw new Error(S.settings.sandboxBackendPrompt.noProject);
     }
-    setInstalling(true);
-    let target = machine;
-    await installInOrder(
-      offered,
-      async (pkg) => {
-        const to = (target ??= (await api.getInstalledPlugins(projectId, null)).machineId);
-        const res = await api.installPlugin(projectId, pkg, to);
-        return res.plugins.find((p) => p.specifier === pkg)?.error;
-      },
-      {
-        installed: (pkg) => toastSuccess(S.plugins.deploymentInstalledToast(pkg)),
-        failed: (pkg, error) =>
-          toastFailure(
-            toldFailure(S.plugins.deploymentFailedToast(pkg, error), {
-              what: "a plugin failed to load after it was installed",
-              facts: [["Plugin", pkg]],
-              detail: error,
-            }),
-          ),
-        threw: (e) => toastApiError(e),
-      },
-    );
-    closePrompt(dontAskAgain);
+    const to = machine ?? (await api.getInstalledPlugins(projectId, null)).machineId;
+    const res = await api.installPluginStream(projectId, pkg, to, onProgress, onStage);
+    return { loadError: res.plugins.find((p) => p.specifier === pkg)?.error };
+  };
+
+  const refreshAfterOffered = async () => {
     try {
       const config = await api.adminGetPluginConfig(machine);
       setEntries((prev) => withLiveParts(prev ?? [], config.plugins));
     } catch (e) {
       toastApiError(e);
-    } finally {
-      setInstalling(false);
     }
   };
 
@@ -448,11 +439,18 @@ export function PluginsSection({
       <SandboxBackendPrompt
         pkgs={offered}
         machineName={machine === null ? S.plugins.thisServer : nameOf(machine)}
-        busy={installing}
-        onInstall={(dontAskAgain) => void installOffered(dontAskAgain)}
-        onLater={(dontAskAgain) => {
-          if (!installing) closePrompt(dontAskAgain);
-        }}
+        runInstall={runOfferedInstall}
+        onOpenSources={
+          onOpenSources !== undefined
+            ? () => {
+                setOffered(null);
+                onOpenSources();
+              }
+            : undefined
+        }
+        onConfigureWithAi={(failed) => configureSourcesWithAi(failed)}
+        onComplete={() => void refreshAfterOffered()}
+        onClose={(dontAskAgain) => closePrompt(dontAskAgain)}
       />
     </SettingsSection>
   );

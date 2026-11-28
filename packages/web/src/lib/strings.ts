@@ -3524,7 +3524,46 @@ export const zh = {
       doneService: "它已经装到这台服务器，当前项目现在就能使用。",
       /** The sheet when the server install failed. */
       failedTitle: (name: string) => `没能装上 ${name}`,
-      failedHelp: "可以再试一次；一直失败的话，换一个插件源，或者从文件导入。",
+      failedHelp: "建议检查或配置插件下载源与镜像（例如 npmmirror 或 gh-proxy.com），你可以手动设置，或让智能体帮你配置，也可以从文件导入。",
+      configureWithAi: "让 Agent 帮忙配置",
+      configureWithAiNoAgent: "当前项目还没有可用的智能体，无法发起配置对话。请先手动打开插件源设置进行配置。",
+      configureWithAiPrompt: (failed: ReadonlyArray<{ specifier: string; error: string }>) =>
+        [
+          "以下插件下载或安装失败，请帮我排查网络并配置合适的插件下载源/镜像（例如 npm registry 设为 npmmirror，或在插件镜像中启用 gh-proxy.com / npm-registry / github-raw），配置完成后告诉我如何重试：",
+          ...failed.map((f) => `- ${f.specifier}: ${f.error}`),
+        ].join("\n"),
+      batch: {
+        title: (count: number) => `确认下载 ${count} 个插件`,
+        countBadge: (count: number) => `共 ${count} 个插件`,
+        whyHeading: "为什么要下载这些插件",
+        startDownload: (count: number) => `开始下载并安装 (${count})`,
+        progressLabel: (count: number) => `${count} 个插件的统一安装进度`,
+        runningItem: (current: number, total: number, title: string, step: string) =>
+          `正在处理第 ${current} / ${total} 个：${title} — ${step}`,
+        allDoneSummary: (count: number) => `全部 ${count} 个插件已下载并安装完成。`,
+        partialSummary: (done: number, failed: number, total: number) =>
+          `已完成 ${done} / ${total} 个，${failed} 个下载失败。`,
+        statusReady: "待确认",
+        statusPending: "等待中",
+        statusDone: "已完成",
+        statusFailed: "失败",
+        failedRecommendTitle: "部分插件下载失败，建议配置插件下载源",
+        failedRecommendBody:
+          "当前网络访问默认源可能受限或超时。你可以手动前往「插件源设置」启用镜像（如 gh-proxy.com、npmmirror），或直接让 Agent 帮你检查并配置。",
+        retryFailed: (count: number) => `重试失败项 (${count})`,
+        selectMode: "批量下载",
+        exitSelectMode: "退出批量",
+        selectedCount: (count: number) => `已选 ${count} 个插件`,
+        selectAllDownloadable: (count: number) => `全选可下载 (${count})`,
+        clearSelection: "清空选择",
+        downloadSelected: (count: number) => `下载所选 (${count})`,
+        selectedSummaryReason: (count: number) =>
+          `你选择了在当前目标服务器上下载并安装这 ${count} 个插件。确认后会在同一窗口按顺序下载，并展示统一进度条；在此之前不会发起任何后台下载。`,
+        sandboxSummaryReason: (machine: string, count: number) =>
+          `已在「${machine}」开启沙箱隔离，需要下载并安装这 ${count} 个操作系统对应的沙箱后端插件，隔离执行才能正常工作。`,
+        sandboxItemReason: "当前操作系统所需的沙箱执行后端插件。",
+        defaultItemReason: "安装到服务器供当前项目及智能体使用。",
+      },
       /** The server-uninstall confirm. */
       uninstallTitle: (name: string) => `从服务端卸载 ${name}`,
       uninstallBody: (name: string, agents: number) =>
