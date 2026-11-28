@@ -165,8 +165,11 @@ function Install-Location {
         $previous = @($history.from)
       }
     }
-    if ($previous -notcontains $sourceData) { $previous += $sourceData }
     $dataRoot = Join-Path $target 'data'
+    # Moving back to a previously used directory must drop the new active root from `from`,
+    # otherwise startup relocation validation rejects the self-referential history.
+    $previous = @($previous | Where-Object { $_ -ne $dataRoot })
+    if ($previous -notcontains $sourceData) { $previous += $sourceData }
     Write-AtomicText (Join-Path $target 'windows-data-roots.json') (@{from=$previous;to=$dataRoot} | ConvertTo-Json -Compress) $utf8
     Write-AtomicText $pointer $target ([Text.Encoding]::Unicode)
     # The pointer is the commit. No failure during later cleanup can revert it.
