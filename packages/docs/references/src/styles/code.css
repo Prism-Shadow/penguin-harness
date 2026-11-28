@@ -1,0 +1,254 @@
+/* Code blocks, copy button, Shiki dual-theme mapping, and Twoslash hover popups. */
+.docs-code {
+  display: block;
+  position: relative;
+  border: 1px solid var(--senary-contrast);
+  border-radius: var(--card-radius);
+  background: var(--octonary-contrast);
+  overflow: hidden;
+  margin-block: 0.75rem 1.5rem;
+}
+.docs-code-header {
+  display: flex;
+  align-items: center;
+  height: 2.5rem;
+  padding: 0 3rem 0 1rem;
+  background: var(--subtle-purple);
+  border-bottom: 1px solid var(--senary-contrast);
+}
+.docs-code-header a {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Shiki dual-theme token colors (block <pre class="shiki"> & inline <span class="shiki">) */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: transparent;
+}
+html.docs-dark-mode .shiki,
+html.docs-dark-mode .shiki span {
+  color: var(--shiki-dark);
+}
+.docs-code > pre.shiki,
+.docs-code > pre:not(.shiki) {
+  margin: 0;
+  padding-block: 0.9rem;
+  background: transparent !important;
+  overflow-x: auto;
+}
+.docs-code > pre.shiki > code,
+.docs-code > pre:not(.shiki) > code {
+  display: block;
+  min-width: max-content;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--tertiary-contrast);
+}
+.docs-code .line {
+  display: block;
+  white-space: pre;
+  min-height: 1.375em;
+  padding-inline: 1rem;
+  padding-block: 0.12rem;
+}
+.docs-code > pre.shiki a.code-link,
+.shiki a.code-link {
+  color: inherit;
+  text-decoration: none;
+}
+.docs-code > pre.shiki a.code-link:hover,
+.shiki a.code-link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bright-blue);
+  text-underline-offset: 2px;
+}
+
+/* Copy Button */
+button[docs-copy-source-code] {
+  position: absolute;
+  top: 0.38rem;
+  right: 0.45rem;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--card-radius);
+  cursor: pointer;
+  z-index: 10;
+  opacity: 0;
+  background-color: var(--octonary-contrast);
+  border: 1px solid var(--senary-contrast);
+  color: var(--quaternary-contrast);
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease;
+}
+.docs-code:hover > button[docs-copy-source-code],
+button[docs-copy-source-code].copied {
+  opacity: 1;
+}
+button[docs-copy-source-code]:hover {
+  color: var(--primary-contrast);
+}
+button[docs-copy-source-code] .docs-copy path {
+  fill: currentColor;
+}
+button[docs-copy-source-code] .docs-check {
+  display: none;
+  color: var(--symbolic-green);
+}
+button[docs-copy-source-code].copied .docs-copy {
+  display: none;
+}
+button[docs-copy-source-code].copied .docs-check {
+  display: block;
+}
+
+/* Verified Samples & Failure Banner */
+.docs-sample-wrap {
+  margin-top: 0.7rem;
+}
+.docs-sample-wrap .docs-code {
+  margin: 0;
+}
+.docs-sample-fail {
+  margin-bottom: 0.55rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: calc(var(--card-radius) * 0.8);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+  font-size: 0.8rem;
+}
+html.docs-dark-mode .docs-sample-fail {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.14);
+}
+.docs-sample-fail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.docs-sample-fail pre {
+  margin: 0.4rem 0 0;
+  font-size: 0.74rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* Twoslash Popups & Line Highlights */
+.docs-reference-member-card,
+.docs-reference-card-body,
+.docs-code.docs-twoslash,
+.docs-code.docs-twoslash > pre.shiki {
+  overflow: visible !important;
+}
+.docs-code.docs-twoslash > pre.shiki {
+  padding: 0.85rem 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.docs-code.docs-twoslash > pre.shiki > code {
+  min-width: 0;
+}
+.docs-code.docs-twoslash > pre.shiki > code > .line {
+  padding-inline: 1rem;
+  border-left: 2.5px solid transparent;
+  min-height: 1.3em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.docs-code.docs-twoslash > pre.shiki > code > .line.highlighted {
+  background: rgba(59, 130, 246, 0.085);
+  border-left-color: var(--bright-blue);
+}
+html.docs-dark-mode .docs-code.docs-twoslash > pre.shiki > code > .line.highlighted {
+  background: rgba(96, 165, 250, 0.13);
+}
+
+/* Highlight only the single token under cursor (override style-rich.css underline-all) */
+.twoslash:hover .twoslash-hover {
+  border-bottom-color: transparent !important;
+}
+.twoslash .twoslash-hover {
+  border-bottom: 1px solid transparent;
+  border-radius: 2px;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.twoslash .twoslash-hover:hover {
+  border-bottom-color: var(--bright-blue) !important;
+  background: rgba(59, 130, 246, 0.09);
+}
+html.docs-dark-mode .twoslash .twoslash-hover:hover {
+  background: rgba(96, 165, 250, 0.15);
+}
+.twoslash .twoslash-popup-container {
+  z-index: 60 !important;
+  border-radius: var(--card-radius) !important;
+  width: max-content !important;
+  max-width: min(560px, calc(100vw - 32px)) !important;
+  min-width: 0;
+}
+.docs-code pre.shiki code.twoslash-popup-code,
+.docs-code pre.shiki .twoslash-popup-code pre.shiki code {
+  display: block !important;
+  font-size: var(--twoslash-code-font-size) !important;
+  line-height: 1.48 !important;
+}
+.twoslash .twoslash-popup-code {
+  display: block !important;
+  padding: 0.45rem 0.7rem !important;
+  white-space: pre-wrap !important;
+  word-break: break-word;
+  line-height: 1.48;
+}
+.twoslash .twoslash-popup-code pre,
+.twoslash .twoslash-popup-code pre.shiki {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  white-space: pre-wrap !important;
+  font-size: inherit !important;
+  line-height: 1.48 !important;
+}
+.twoslash .twoslash-popup-code .line {
+  display: inline !important;
+  padding: 0 !important;
+  border: none !important;
+  white-space: pre-wrap !important;
+}
+.twoslash .twoslash-popup-docs {
+  padding: 0.48rem 0.7rem !important;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: normal !important;
+}
+.twoslash .twoslash-popup-docs p {
+  margin: 0;
+}
+.docs-code pre.shiki .twoslash-popup-docs code {
+  display: inline !important;
+  font-family: var(--code-font);
+  font-size: 0.73rem !important;
+  line-height: inherit !important;
+  padding: 0.08rem 0.3rem;
+  border-radius: 3px;
+  background: var(--septenary-contrast);
+  color: var(--primary-contrast);
+}
+.twoslash .twoslash-ref-link {
+  color: inherit;
+  text-decoration: none;
+}
+.twoslash .twoslash-ref-link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--bright-blue);
+  text-underline-offset: 2.5px;
+}

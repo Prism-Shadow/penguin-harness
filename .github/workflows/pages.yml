@@ -1,7 +1,7 @@
-# Public site: build the landing page (site root), the docs site (/docs/) and the component
-# gallery (/gallery/) with Vite and deploy them as ONE artifact to GitHub Pages
-# (scripts/build-site.mjs assembles the tree — landing dist with the docs and gallery dists
-# copied under docs/ and gallery/).
+# Public site: build the landing page (site root), the docs site (/docs/), the generated
+# TypeScript API reference (/docs/reference/) and the component gallery (/gallery/) and deploy
+# them as ONE artifact to GitHub Pages (scripts/build-site.mjs assembles the tree — landing dist
+# with docs under docs/, API reference under docs/reference/ and gallery under gallery/).
 # - Pull requests touching the site only BUILD (validation) — no Pages configuration and
 #   no deploy, so PRs never fail on Pages availability.
 # - Pushes to main (and manual dispatch) build + deploy. The site is served from the
@@ -10,10 +10,12 @@
 # - The Plugins, Benchmarks and Leaderboards pages read the repository's plugins/ and a fresh
 #   clone of Prism-Shadow/penguin-harness-benchmark at build time, so a push touching plugins/
 #   redeploys, and a daily run picks up what changed in the benchmark repository.
+# - The API reference (/docs/reference/) extracts types, JSDoc, HTTP routes, CLI commands and
+#   contribution slots from core, server, cli and library sources, so pushes touching them
+#   redeploy as well.
 # - The gallery frames the real Web App, compiled from packages/web and packages/ui, so a
 #   push touching either redeploys as well and the public gallery tracks the app. A pull
-#   request touching only those two is not built here: ci.yml selects their affected
-#   consumers and compiles the gallery from them.
+#   request touching only backend or app sources is not built here: ci.yml covers them.
 # First-time setup: repository Settings -> Pages -> Source = "GitHub Actions".
 name: Deploy Site
 
@@ -22,6 +24,10 @@ on:
     branches: [main]
     paths:
       - "plugins/**"
+      - "library/**"
+      - "packages/core/**"
+      - "packages/server/**"
+      - "packages/cli/**"
       - "packages/landing/**"
       - "packages/docs/**"
       - "packages/ui-gallery/**"
@@ -71,7 +77,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build site (landing + docs + gallery, vite)
+      - name: Build site (landing + docs + reference + gallery)
         env:
           BASE_PATH: /
         run: pnpm build:site

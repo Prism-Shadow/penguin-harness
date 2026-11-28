@@ -51,6 +51,7 @@ export const en: Strings = {
     next: "Next",
     notFound: "Page not found",
     backHome: "Back to docs home",
+    apiReference: "API Reference",
   },
 
   search: {

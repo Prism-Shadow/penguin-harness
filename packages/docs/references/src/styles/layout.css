@@ -1,0 +1,255 @@
+/* Base typography, shell layout, right-hand TOC, footer, and responsive breakpoints. */
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--inter-font);
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--primary-contrast);
+  background-color: var(--page-background);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--inter-tight-font);
+  font-weight: 500;
+  color: var(--primary-contrast);
+  letter-spacing: -0.015em;
+}
+p {
+  color: var(--secondary-contrast);
+  line-height: 1.65;
+  margin-block: 0.75rem;
+}
+a {
+  color: var(--bright-blue);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+a:hover {
+  color: var(--vivid-pink);
+}
+code {
+  font-family: var(--code-font);
+  font-size: 0.875em;
+  border-radius: var(--card-radius);
+  font-weight: 400;
+}
+.muted {
+  color: var(--quaternary-contrast);
+  font-size: 0.875rem;
+}
+.docs-doc-list {
+  margin: 0.55rem 0 0.85rem 1.25rem;
+  padding: 0;
+  color: var(--secondary-contrast);
+  line-height: 1.65;
+}
+.docs-doc-list li {
+  margin: 0.25rem 0;
+}
+
+/* ---------- Shell & Main Content ---------- */
+.adev-top-accent {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--secondary-nav-width);
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--electric-violet) 0%,
+    var(--bright-blue) 70%,
+    transparent 100%
+  );
+  z-index: 300;
+  pointer-events: none;
+}
+.adev-shell {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+.docs-app-main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  flex: 1;
+  min-width: 0;
+}
+.docs-content-layout {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: calc(100% - 16rem);
+  padding-block: var(--layout-padding);
+}
+.docs-content-layout.docs-content-wide {
+  width: 100%;
+  justify-content: flex-start;
+}
+.docs-viewer {
+  width: 100%;
+  max-width: var(--page-width);
+  padding-inline: var(--layout-padding);
+}
+.docs-content-wide .docs-viewer {
+  max-width: 1120px;
+}
+
+/* ---------- Right Table of Contents (.docs-toc) ---------- */
+.docs-toc {
+  position: fixed;
+  right: 1rem;
+  top: 0;
+  width: 16rem;
+  padding-right: 1rem;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+.docs-toc .docs-title {
+  font-size: 1.2rem;
+  font-weight: 500;
+  margin-block-start: var(--layout-padding);
+  margin-block-end: 0.75rem;
+  color: var(--primary-contrast);
+}
+.docs-toc .docs-faceted-list {
+  --faceted-list-border-width: 2px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-inline-start: 1px solid var(--senary-contrast);
+}
+.docs-toc .docs-faceted-list-item {
+  margin: 0;
+}
+.docs-toc .docs-faceted-list-item a {
+  position: relative;
+  display: block;
+  padding: 0.45rem 0.5rem 0.45rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35rem;
+  color: var(--quaternary-contrast);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.2s ease;
+}
+.docs-toc .docs-faceted-list-item a::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -1px;
+  width: var(--faceted-list-border-width);
+  height: 100%;
+  background: var(--primary-contrast);
+  opacity: 0;
+  transform: scaleY(0.7);
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
+}
+.docs-toc .docs-faceted-list-item a:hover {
+  color: var(--primary-contrast);
+}
+.docs-toc .docs-faceted-list-item a.docs-faceted-list-item-active {
+  background-image: var(--pink-to-purple-vertical-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.docs-toc .docs-faceted-list-item a.docs-faceted-list-item-active::before {
+  opacity: 1;
+  transform: scaleY(1);
+  background: var(--pink-to-purple-vertical-gradient);
+}
+.docs-toc .docs-toc-item-h3 a {
+  padding-inline-start: 2rem;
+}
+.docs-back-top {
+  margin: 0.75rem 0;
+  background: transparent;
+  border: none;
+  font-size: 0.875rem;
+  font-family: var(--inter-font);
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--tertiary-contrast);
+  cursor: pointer;
+  padding: 0.35rem 0;
+  transition: color 0.2s ease;
+}
+.docs-back-top:hover {
+  color: var(--primary-contrast);
+}
+
+/* ---------- Footer ---------- */
+.adev-footer-container {
+  margin-top: auto;
+  padding: var(--layout-padding);
+  border-top: 1px solid var(--septenary-contrast);
+  background-color: var(--page-background);
+}
+.adev-footer-columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2rem;
+  max-width: var(--page-width);
+}
+.adev-footer-container h2 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+.adev-footer-container ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.adev-footer-container li {
+  font-size: 0.8125rem;
+}
+.adev-footer-container a {
+  color: var(--quaternary-contrast);
+  font-weight: 400;
+}
+.adev-footer-container a:hover {
+  color: var(--primary-contrast);
+}
+.docs-license {
+  color: var(--quaternary-contrast);
+  font-size: 0.75rem;
+  margin-top: 2rem;
+}
+
+@media (max-width: 1280px) {
+  .docs-toc {
+    display: none;
+  }
+  .docs-content-layout {
+    width: 100%;
+    max-width: 100%;
+  }
+}

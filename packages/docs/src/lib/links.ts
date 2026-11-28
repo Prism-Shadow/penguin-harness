@@ -13,6 +13,12 @@ export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 export const SITE_URL = import.meta.env.BASE_URL.replace(/docs\/$/, "");
 
 /**
+ * Static TypeScript API reference site assembled under `<base>docs/reference/`
+ * by `scripts/build-site.mjs`.
+ */
+export const REFERENCE_URL = `${import.meta.env.BASE_URL}reference/`;
+
+/**
  * The component gallery: a sibling SPA beside the docs under the main site, at
  * "/<repo>/gallery/". In local dev it resolves under the docs root, which has no such page.
  */

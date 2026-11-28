@@ -8,8 +8,11 @@
     "dev": "vite",
     "build": "vite build && node scripts/postbuild.mjs",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p references/tsconfig.json && tsc --noEmit -p references/tsconfig.client.json",
+    "test": "vitest run --passWithNoTests",
+    "references:verify-samples": "tsx references/src/doc-samples.ts",
+    "references:build": "tsx references/src/build.ts",
+    "build:references": "pnpm run references:verify-samples && pnpm run references:build"
   },
   "dependencies": {
     "@prismshadow/penguin-ui": "workspace:*",
@@ -18,13 +21,25 @@
     "react-router": "^8.3.0"
   },
   "devDependencies": {
+    "@shikijs/transformers": "^3.4.0",
+    "@shikijs/twoslash": "^3.4.0",
     "@tailwindcss/vite": "^4.1.0",
+    "@types/hast": "^3.0.4",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
+    "comment-parser": "^1.4.1",
+    "hast-util-to-html": "^9.0.4",
+    "mdast-util-from-markdown": "^2.0.2",
+    "mdast-util-to-hast": "^13.2.0",
+    "mdast-util-to-string": "^4.0.0",
+    "shiki": "^3.4.0",
+    "space-separated-tokens": "^2.0.2",
     "tailwindcss": "^4.1.0",
+    "tsx": "^4.20.0",
     "typescript": "^5.6.0",
+    "unist-util-visit": "^5.0.0",
     "vite": "^7.3.7",
     "vitest": "^4.1.12"
   }

@@ -13,8 +13,12 @@ import type { SiteLinkProps, SiteSidebarItem } from "@prismshadow/penguin-ui/sit
 import { S } from "../lib/strings";
 import { DOCS_NAV, HOME_SLUG } from "../lib/nav";
 import { docTitle } from "../lib/docs";
+import { REFERENCE_URL } from "../lib/links";
 
 function routeLink({ href, ...props }: SiteLinkProps) {
+  if (href === REFERENCE_URL) {
+    return <a href={href} {...props} />;
+  }
   return <Link to={href} {...props} />;
 }
 
@@ -38,14 +42,24 @@ export function Sidebar({
   return (
     <SiteSidebarNav
       label="Docs"
-      sections={DOCS_NAV.map((section) => ({
-        id: section.id,
-        title: S.sections[section.id] ?? section.id,
-        items: section.pages.map((page) => ({
+      sections={DOCS_NAV.map((section) => {
+        const items: SiteSidebarItem[] = section.pages.map((page) => ({
           ...item(page.slug),
           children: page.children?.map((child) => item(child)),
-        })),
-      }))}
+        }));
+        if (section.id === "reference") {
+          items.push({
+            id: "api-reference",
+            href: REFERENCE_URL,
+            label: S.doc.apiReference,
+          });
+        }
+        return {
+          id: section.id,
+          title: S.sections[section.id] ?? section.id,
+          items,
+        };
+      })}
       renderLink={routeLink}
       onNavigate={onNavigate}
       search={{
