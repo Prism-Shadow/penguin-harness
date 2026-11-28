@@ -2,7 +2,7 @@
 /**
  * The account forms reached from the Settings dialog — changing one's password
  * (components/account/change-password-dialog.tsx) and adding a user
- * (library/organization/src/web/admin/admin-users-page.tsx) — under the settings commit model.
+ * (features/admin/admin-users-page.tsx) — under the settings commit model.
  *
  * - Save waits until every field it needs is filled and the two new passwords match; a mismatch
  *   is named under the confirmation as soon as it is typed.
@@ -20,7 +20,7 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { ChangePasswordDialog } from "../src/components/account/change-password-dialog";
-import { AdminUsersSection } from "@prismshadow/penguin-library-organization/web/admin/admin-users-page";
+import { AdminUsersSection } from "../src/features/admin/admin-users-page";
 import { AuthProvider } from "../src/state/auth";
 import { ADMIN_ME, adminSettingsServer } from "./helpers/admin-settings";
 import { apiError, json, stubFetch } from "./helpers/fetch";

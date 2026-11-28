@@ -91,7 +91,7 @@ import {
 import { usePromptInjection } from "./prompt-injection-controls";
 import { failureNode, toldFailure } from "../../lib/failure";
 import { toastFailure } from "../../lib/toast-api-error";
-import { workbenchLoadFailure } from "@prismshadow/penguin-library-workbench/web";
+import { workbenchLoadFailure } from "../../lib/workbench-load-failure";
 
 /** Everything the sub-pages list, as the Agent's server last answered. */
 interface Lists {

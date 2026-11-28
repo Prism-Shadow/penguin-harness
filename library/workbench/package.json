@@ -36,8 +36,7 @@
     "./web/app-center/tile-drag": "./src/web/app-center/tile-drag.ts",
     "./web/workbenches/exit-ball-state": "./src/web/workbenches/exit-ball-state.ts",
     "./web/workbenches/workbench-app-page": "./src/web/workbenches/workbench-app-page.tsx",
-    "./web/workbenches/workbench-frame": "./src/web/workbenches/workbench-frame.tsx",
-    "./web/workbenches/workbench-load-failure": "./src/web/workbenches/workbench-load-failure.ts"
+    "./web/workbenches/workbench-frame": "./src/web/workbenches/workbench-frame.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

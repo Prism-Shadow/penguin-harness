@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /**
  * A workbench whose files do not load: "Fix with AI" (features/ai-create/workbench-repair.tsx),
- * its report (features/workbenches/workbench-load-failure.ts) and the pane that offers them
+ * its report (lib/workbench-load-failure.ts) and the pane that offers them
  * beside Reload (workbench-page-status.tsx).
  *
  * - The chat a repair opens is the default Agent's, in the temporary Workspace, with a prompt that
@@ -37,10 +37,7 @@ import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { AppCenterPage } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-page";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { WorkbenchAppPage } from "@prismshadow/penguin-library-workbench/web/workbenches/workbench-app-page";
-import {
-  workbenchLoadFailure,
-  type FailedWorkbench,
-} from "@prismshadow/penguin-library-workbench/web/workbenches/workbench-load-failure";
+import { workbenchLoadFailure, type FailedWorkbench } from "../src/lib/workbench-load-failure";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PagesContext } from "../src/lib/web-app-pages";

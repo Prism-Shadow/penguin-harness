@@ -10,14 +10,11 @@ cycle: features/agents -> features/ai-create
 cycle: features/agents -> features/chat
 cycle: features/agents -> features/plugins
 cycle: features/agents -> features/schedules
-cycle: features/agents -> library/workbench
 cycle: features/ai-create -> features/chat
-cycle: features/ai-create -> library/workbench
 cycle: features/chat -> features/agents
 cycle: features/chat -> features/ai-create
 cycle: features/chat -> features/models
 cycle: features/chat -> features/schedules
-cycle: features/chat -> features/settings
 cycle: features/chat -> library/organization
 cycle: features/dock -> features/terminal
 cycle: features/models -> features/ai-create
@@ -25,17 +22,14 @@ cycle: features/models -> features/chat
 cycle: features/plugins -> features/agents
 cycle: features/plugins -> features/ai-create
 cycle: features/plugins -> features/chat
-cycle: features/plugins -> features/settings
 cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/models
-cycle: features/settings -> library/organization
 cycle: features/terminal -> features/dock
 cycle: features/traces -> features/chat
 cycle: library/organization -> features/chat
 cycle: library/organization -> features/models
 cycle: library/organization -> features/plugins
 cycle: library/organization -> features/traces
-cycle: library/workbench -> features/ai-create
 features/chat/machine-away.ts -> features/machines/machines-view.ts
 features/chat/model-switch.ts -> features/models/connection.ts
 features/models/models-page.tsx -> features/chat/draft-cache.ts

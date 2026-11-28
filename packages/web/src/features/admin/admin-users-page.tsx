@@ -22,16 +22,14 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import {
-  api,
-  ApiError,
-  S,
-  apiErrorText,
-  USERNAME_PATTERN,
-  formatDateTime,
-  useAuth,
-  failureNode,
-} from "@prismshadow/penguin-web/internal";
+import { ApiError } from "../../api/client";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { USERNAME_PATTERN } from "../../lib/semantic-id";
+import { formatDateTime } from "../../lib/format";
+import { failureNode } from "../../lib/failure";
+import { useAuth } from "../../state/auth";
 
 export function AdminUsersSection() {
   const { user, desktopMode } = useAuth();

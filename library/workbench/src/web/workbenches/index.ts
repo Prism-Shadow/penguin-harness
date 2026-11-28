@@ -6,12 +6,18 @@ export { WorkbenchExitBall } from "./exit-ball";
 
 export type { AppPageTabQuery } from "./use-app-page-tab";
 
-export { useWorkbenchActions, useWorkbenchPaletteActions } from "./workbench-actions";
+// The workbench operations and load-failure report live in the host's `lib/` — the features that
+// manage workbenches outside the half share them — and reach the half through the host seam.
+export {
+  useWorkbenchActions,
+  useWorkbenchPaletteActions,
+  workbenchLoadFailure,
+} from "@prismshadow/penguin-web/internal";
 
-export type { LoadFailedActions } from "./workbench-actions";
+export type {
+  LoadFailedActions,
+  FailedWorkbench,
+  WorkbenchLoadError,
+} from "@prismshadow/penguin-web/internal";
 
 export { WorkbenchPageStatus } from "./workbench-page-status";
-
-export { workbenchLoadFailure } from "./workbench-load-failure";
-
-export type { FailedWorkbench, WorkbenchLoadError } from "./workbench-load-failure";

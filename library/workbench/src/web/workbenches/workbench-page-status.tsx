@@ -13,9 +13,13 @@
 import { useMemo, type ReactNode } from "react";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { Button, FailureText } from "@prismshadow/penguin-ui";
-import { toldFailure, S } from "@prismshadow/penguin-web/internal";
-import { useWorkbenchActions } from "./workbench-actions";
-import { workbenchLoadFailure, type FailedWorkbench } from "./workbench-load-failure";
+import {
+  toldFailure,
+  S,
+  useWorkbenchActions,
+  workbenchLoadFailure,
+  type FailedWorkbench,
+} from "@prismshadow/penguin-web/internal";
 
 export function WorkbenchPageStatus({
   projectId,

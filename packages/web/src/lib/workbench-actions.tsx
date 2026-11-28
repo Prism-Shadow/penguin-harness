@@ -1,3 +1,9 @@
+/**
+ * The workbench source, version and removal operations, shared by the workbench domain's web
+ * half (its pages and the App Center) and the features that manage workbenches outside it (the
+ * Agent settings' rows, the sidebar's running apps): the vocabulary both consume, so it lives
+ * here, below the domains, and the half reads it through the host seam.
+ */
 import { useMemo, useRef, useState } from "react";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
@@ -15,14 +21,12 @@ import {
   type PaletteAction,
   type RowActionItem,
 } from "@prismshadow/penguin-ui";
-import {
-  api,
-  downloadArchive,
-  formatDateTime,
-  usePaletteActions,
-  S,
-  toastApiError,
-} from "@prismshadow/penguin-web/internal";
+import * as api from "../api/endpoints";
+import { downloadArchive } from "./archive-download";
+import { formatDateTime } from "./format";
+import { usePaletteActions } from "./palette-actions";
+import { S } from "./strings";
+import { toastApiError } from "./toast-api-error";
 
 interface WorkbenchScope {
   projectId: string | null;

@@ -41,10 +41,10 @@ import {
   useSafeMode,
   usePaletteActions,
   useDocumentTitle,
+  useWorkbenchPaletteActions,
 } from "@prismshadow/penguin-web/internal";
 import { WorkbenchExitBall } from "./exit-ball";
 import { useAppPageTab } from "./use-app-page-tab";
-import { useWorkbenchPaletteActions } from "./workbench-actions";
 import { WorkbenchFrame } from "./workbench-frame";
 import { WorkbenchPageStatus } from "./workbench-page-status";
 

@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-organization",
   "version": "0.2.20",
-  "description": "The organization domain: the OrgCache mechanism and the org cache repo it reads through. A library package - the server imports it; nothing here imports the server. Its web half (./web, company mode and the admin users section) is TypeScript source the Web App compiles with itself.",
+  "description": "The organization domain: the OrgCache mechanism and the org cache repo it reads through. A library package - the server imports it; nothing here imports the server. Its web half (./web, company mode) is TypeScript source the Web App compiles with itself.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -33,7 +33,6 @@
       "import": "./dist/organizations.js"
     },
     "./web": "./src/web/index.ts",
-    "./web/admin/admin-users-page": "./src/web/admin/admin-users-page.tsx",
     "./web/company/budget-input": "./src/web/company/budget-input.ts",
     "./web/company/calendar-geom": "./src/web/company/calendar-geom.ts",
     "./web/company/calendar-page": "./src/web/company/calendar-page.tsx",

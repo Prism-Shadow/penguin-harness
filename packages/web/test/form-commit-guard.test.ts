@@ -40,7 +40,7 @@ const SCAN = scanSources([".tsx", ".ts"]);
 /** [module, component, why its dialog closes without the guard]. */
 const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
   [
-    "library/organization/src/web/admin/admin-users-page.tsx",
+    "features/admin/admin-users-page.tsx",
     "DeleteUserDialog",
     "a two-step confirmation with nothing typed",
   ],

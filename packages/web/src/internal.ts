@@ -76,6 +76,8 @@ export * from "./lib/toast-api-error";
 export * from "./lib/use-document-title";
 export * from "./lib/web-app-pages";
 export * from "./lib/work-mode";
+export * from "./lib/workbench-actions";
+export * from "./lib/workbench-load-failure";
 export * from "./lib/workbench-shortcut";
 export * from "./lib/workbench-tabs";
 export * from "./lib/workbench-theme";
