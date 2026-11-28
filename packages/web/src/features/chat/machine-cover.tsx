@@ -23,7 +23,7 @@ import type { MachineJob } from "@prismshadow/penguin-server/api";
 import { ComposerCover, Spinner, TextAction } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
-import { jobFor } from "../machines";
+import { jobFor } from "@prismshadow/penguin-library-machine/web";
 import { HistoryMachineRetry } from "./history-machine-retry";
 import { listedAway, machineAway } from "./machine-away";
 import type { MachineAway, StoppedReason } from "./machine-away";

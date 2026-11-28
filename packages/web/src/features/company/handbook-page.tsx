@@ -18,7 +18,7 @@ import { Button, EmptyState, Waiting } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { WorkspaceBrowser } from "../workspace";
+import { WorkspaceBrowser } from "@prismshadow/penguin-library-workspace/web";
 import { useOrg } from "./org-layout";
 import { failureNode } from "../../lib/failure";
 

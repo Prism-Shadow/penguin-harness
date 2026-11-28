@@ -29,7 +29,7 @@ import "./app.css";
 import { DEMO_TAKEN_OVER, parseFrameParams } from "./frame";
 import { installGuestFrame } from "./guest-frame";
 import { installFetchShim } from "./mock/fetch-shim";
-import { setTerminalStreamOpener } from "../../../web/src/features/terminal/terminal-stream";
+import { setTerminalStreamOpener } from "../../../../library/terminal/src/web/terminal-stream";
 import { openDemoTerminal } from "./mock/terminal";
 import { getStore } from "./mock/store";
 import { isDemoLink } from "./mock/remote-machine";

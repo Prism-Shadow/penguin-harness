@@ -64,7 +64,7 @@ const POLICY: DeslopPolicy = {
  * it also takes rule 24's middle-dot separators, which were counted when the rule arrived.
  */
 const ALLOWLIST: DeslopAllowlist = {
-  "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+  "library/terminal/src/web/terminal-appearance.ts": { 9: [1, "W10"] },
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
   "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
@@ -75,7 +75,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/finance-page.tsx": { 24: [1, "W10"] },
   "features/company/overview-page.tsx": { 24: [1, "W10"] },
   "features/company/ticket-dialog.tsx": { 24: [3, "W10"] },
-  "features/machines/machine-detail-dialog.tsx": { 24: [1, "W10"] },
+  "library/machine/src/web/machine-detail-dialog.tsx": { 24: [1, "W10"] },
   "features/models/group-balance.tsx": { 24: [2, "W10"] },
   "features/models/preset-sync.tsx": { 24: [1, "W10"] },
   "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
@@ -121,10 +121,10 @@ const TOKENS_ONLY: readonly string[] = [
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
-  "features/terminal/terminal-keybar.tsx",
-  "features/workspace/workspace-finder.tsx",
-  "features/workspace/workspace-finder-model.ts",
-  "features/workspace/workspace-select.tsx",
+  "library/terminal/src/web/terminal-keybar.tsx",
+  "library/workspace/src/web/workspace-finder.tsx",
+  "library/workspace/src/web/workspace-finder-model.ts",
+  "library/workspace/src/web/workspace-select.tsx",
 ];
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;

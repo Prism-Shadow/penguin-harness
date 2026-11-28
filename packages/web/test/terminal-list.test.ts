@@ -1,5 +1,5 @@
 /**
- * The user's live terminals (features/terminal/terminal-list.ts): one list over this server and
+ * The user's live terminals (library/terminal/src/web/terminal-list.ts): one list over this server and
  * every machine of the Project, each shell asked of and killed on the machine that holds it, and
  * whether the list on hand heard from every source (what the terminal panel waits for before it
  * takes a shell's absence as its end).
@@ -32,7 +32,7 @@ async function modules() {
   vi.resetModules();
   stubLocalStorage();
   return {
-    list: await import("../src/features/terminal"),
+    list: await import("@prismshadow/penguin-library-terminal/web"),
     machines: await import("../src/lib/terminal-machines"),
   };
 }

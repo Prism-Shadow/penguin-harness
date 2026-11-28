@@ -110,6 +110,16 @@ export default defineConfig({
   // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
   resolve: {
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+    // The internal hub the domain libraries' web halves compile against resolves to this
+    // package's own source, not the copy under node_modules: pnpm records @prismshadow/penguin-web
+    // (a workspace package with peer dependencies) as a file: link, a snapshot that an incremental
+    // install may leave stale, while the app must always build against its own current hub.
+    alias: [
+      {
+        find: "@prismshadow/penguin-web/internal",
+        replacement: new URL("./src/internal.ts", import.meta.url).pathname,
+      },
+    ],
   },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the

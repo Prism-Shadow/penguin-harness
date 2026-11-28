@@ -1,11 +1,15 @@
 import { mainPanelDefinition as mainAgents } from "../src/features/chat/main-agents-panel";
 import { mainPanelDefinition as mainMemory } from "../src/features/chat/main-memory-panel";
-import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/main-dock-panel";
+import { mainPanelDefinition as mainWorkspace } from "@prismshadow/penguin-library-workspace/web/main-dock-panel";
 import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
-import { TerminalModule } from "../src/features/terminal/module";
+import {
+  TerminalModule,
+  TerminalPage,
+  TerminalDockRuntime,
+} from "@prismshadow/penguin-library-terminal/web";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
 
 const mainTerminal = new TerminalModule().panel.mainDefinitions[0]!;
@@ -81,7 +85,6 @@ import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
 import { systemAppsOf } from "../src/lib/system-apps";
 import { AgentsPage } from "../src/features/agents/agents-page";
-import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";

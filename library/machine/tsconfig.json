@@ -1,13 +1,47 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "paths": {
+      "@prismshadow/penguin-library-agent-api": ["../agent-api/src/index.ts"],
+      "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
+      "@prismshadow/penguin-library-cli/server-lock": ["../cli/src/server-lock.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
       "@prismshadow/penguin-library-db/database": ["../db/src/database.ts"],
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],
       "@prismshadow/penguin-library-db/migrations": ["../db/src/migrations/index.ts"],
-      "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"]
+      "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
+      "@prismshadow/penguin-library-http/app-env": ["../http/src/app-env.ts"],
+      "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
+      "@prismshadow/penguin-library-http/heartbeat": ["../http/src/heartbeat.ts"],
+      "@prismshadow/penguin-library-http/json-answer": ["../http/src/json-answer.ts"],
+      "@prismshadow/penguin-library-http/socket-compression": ["../http/src/socket-compression.ts"],
+      "@prismshadow/penguin-library-http/socket-frames": ["../http/src/socket-frames.ts"],
+      "@prismshadow/penguin-library-http/socket-line-frames": ["../http/src/socket-line-frames.ts"],
+      "@prismshadow/penguin-library-http/socket-sse-text": ["../http/src/socket-sse-text.ts"],
+      "@prismshadow/penguin-library-http/socket-stream-answer": [
+        "../http/src/socket-stream-answer.ts"
+      ],
+      "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
+      "@prismshadow/penguin-library-model": ["../model/src/index.ts"],
+      "@prismshadow/penguin-library-model/model-catalog/catalog": [
+        "../model/src/model-catalog/catalog.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/env-keys": [
+        "../model/src/model-catalog/env-keys.ts"
+      ],
+      "@prismshadow/penguin-library-project": ["../project/src/index.ts"],
+      "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
+      "@prismshadow/penguin-library-trace": ["../trace/src/index.ts"],
+      "@prismshadow/penguin-library-trace/history-layout": ["../trace/src/history-layout.ts"],
+      "@prismshadow/penguin-library-trace/history-stream": ["../trace/src/history-stream.ts"],
+      "@prismshadow/penguin-library-trace/history-wire": ["../trace/src/history-wire.ts"],
+      "@prismshadow/penguin-library-trace/listing": ["../trace/src/listing.ts"],
+      "@prismshadow/penguin-library-trace/message-window": ["../trace/src/message-window.ts"],
+      "@prismshadow/penguin-library-trace/session-history": ["../trace/src/session-history.ts"],
+      "@prismshadow/penguin-library-trace/trace-images": ["../trace/src/trace-images.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

@@ -32,6 +32,10 @@
       "types": "./dist/access.d.ts",
       "import": "./dist/access.js"
     },
+    "./resources": {
+      "types": "./dist/resources.d.ts",
+      "import": "./dist/resources.js"
+    },
     "./repos/schedules": {
       "types": "./dist/repos/schedules.d.ts",
       "import": "./dist/repos/schedules.js"
@@ -75,7 +79,7 @@
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "smol-toml": "^1.9.1"
   },
   "devDependencies": {

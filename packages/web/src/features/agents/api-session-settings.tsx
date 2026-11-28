@@ -20,7 +20,7 @@ import { useAgentLocation } from "../../lib/agent-location";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
-import { WorkspaceSelect } from "../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-library-workspace/web";
 import { failureNode } from "../../lib/failure";
 
 interface ApiSettingsProps {

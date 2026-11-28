@@ -380,7 +380,13 @@ describe("store image consumers", () => {
       body: store,
     });
     const root = await tmp("penguin-store-machine-root-");
-    const image = new ShippedImage(path.join(root, "release-image"), "0.2.16", store);
+    const image = new ShippedImage(
+      path.join(root, "release-image"),
+      "0.2.16",
+      store,
+      () => new Date(),
+      writePushedBuild,
+    );
     const ready = await image.ready();
     expect(ready.ok).toBe(true);
     if (!ready.ok || ready.plan.hmrDir === null) return;

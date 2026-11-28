@@ -17,75 +17,45 @@
  * history every successful load commits to the Agent State repository — which is what makes an
  * Agent's own edits to its workbench reversible. A method that may record a version takes `by`,
  * the member whose request it serves: that version is authored by them
- * (../workbenches/git-identity.ts); without it, by the server's Git identity.
+ * (the library-workbench git-identity module); without it, by the server's Git identity.
  */
 import type { AppCenterUnavailable } from "../api/types.js";
 import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
+  AppCenterShortcut,
+  IconRef,
+  WorkbenchApprovalMode,
+  WorkbenchDataLevel,
+  WorkbenchDataPaths,
   WorkbenchInfo,
+  WorkbenchRecord,
+  WorkbenchRequest,
+  WorkbenchResponse,
+  WorkbenchResult,
   WorkbenchTab,
   WorkbenchTabIcon,
   WorkbenchTabRenderer,
-  WorkbenchAppCenter,
-  AppCenterShortcut,
+  WorkbenchUiFile,
   WorkbenchUiRuntime,
   WorkbenchUiRuntimeFile,
-  WorkbenchUiFile,
   WorkbenchVersion,
-  WorkbenchRequest,
-  WorkbenchResponse,
   WorkbenchInput,
-  WorkbenchResult,
-  WorkbenchRecord,
-  IconRef,
+  WorkbenchAppCenter,
 } from "@prismshadow/penguin-library-workbench";
-import type { VersionAuthor } from "../workbenches/git-identity.js";
+import type { VersionAuthor } from "@prismshadow/penguin-library-workbench/git-identity";
 
 /**
- * The approval modes a workbench may open a Session with: two of a Session's existing modes,
- * the two that decide every tool call by themselves. Nobody watches a workbench Session, so a
- * mode that puts a call to a person (`read-only`, `always-ask`) is not offered.
+ * The approval modes a workbench may open a Session with, the levels its folders are shared at
+ * and their paths: the vocabulary moved to the workbenches domain package
+ * (@prismshadow/penguin-library-workbench, workbenches restack S19) and re-exported here for the
+ * server's own import paths.
  */
-export type WorkbenchApprovalMode = "allow-all" | "deny-all";
-
-/**
- * Who shares a workbench's folders:
- *
- * - `agent` (the default): this Agent's copy of the app alone. Its `dataDir` travels in the
- *   Agent export with the workbench's data; all three go when the workbench is removed.
- * - `server`: every copy of the same app (the same plugin's workbench) on this data root, across
- *   its Projects and Agents — a model's weights, a tool's binaries. Never exported, never removed
- *   with a workbench.
- * - `machine`: every data root of this OS user on this computer (the installed app, a dev
- *   instance) — a small local server one computer runs once. Never exported, never removed.
- *
- * The shared levels belong to apps installed from a plugin: the plugin's name is what makes two
- * copies one app. Only the handler writes them; the Agent's sandboxed commands may not.
- */
-export type WorkbenchDataLevel = "agent" | "server" | "machine";
-
-/**
- * Where a workbench's own folders are on the server's machine. The handler reads and writes them
- * with Node's own `fs` (`node:fs`, `node:path`, `node:net` are typed for it) and serves what its
- * page needs from its own routes; the host offers no file API.
- */
-export interface WorkbenchDataPaths {
-  /**
-   * Files kept for good: at the agent level what the handler and the Agent both write, the Agent
-   * with its own file tools (`<agentDir>/app/data/<id>`, exported with the workbench's data); at
-   * a shared level what every copy of the app reads, such as a model's weights.
-   */
-  dataDir: string;
-  /** Files that can be made again. Never exported. */
-  cacheDir: string;
-  /**
-   * Runtime-only files — Unix sockets, pipes, locks — at a short path, since a Unix socket path
-   * holds at most 103 bytes: name a socket with `socketPath`. Never exported; kept across
-   * restarts (unlink a stale socket before listening).
-   */
-  stateDir: string;
-}
+export type {
+  WorkbenchApprovalMode,
+  WorkbenchDataLevel,
+  WorkbenchDataPaths,
+} from "@prismshadow/penguin-library-workbench";
 
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()

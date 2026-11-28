@@ -35,7 +35,10 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
-    }
+    },
+    "./web": "./src/web/index.ts",
+    "./web/page-workspace": "./src/web/page-workspace/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "build": "tsup"
@@ -45,7 +48,14 @@
     "@prismshadow/penguin-library-http": "workspace:*"
   },
   "devDependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
     "@types/node": "^24",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "react-router": "^8.3.0",
     "tsup": "^8"
   },
   "private": true

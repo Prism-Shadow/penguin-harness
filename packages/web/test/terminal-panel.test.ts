@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 /**
- * The terminal panel's body (features/terminal/terminal-panel.tsx), rendered in a dock tab's
+ * The terminal panel's body (library/terminal/src/web/terminal-panel.tsx), rendered in a dock tab's
  * provider and driven the way a user does; the servers are faked at `fetch`.
  *
  * - Given a conversation with live shells, the strip lists exactly its own, numbered and titled,
@@ -16,8 +16,8 @@ import * as dock from "../src/features/dock/dock-state";
 import * as terminal from "../src/features/dock/dock-terminal";
 import { DockPanelProvider } from "../src/features/dock/panel-context";
 import type { DockPanelHandle } from "../src/features/dock/panel-context";
-import { TerminalPanel } from "../src/features/terminal";
-import * as list from "../src/features/terminal";
+import { TerminalPanel } from "@prismshadow/penguin-library-terminal/web";
+import * as list from "@prismshadow/penguin-library-terminal/web";
 import * as machines from "../src/lib/terminal-machines";
 import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";

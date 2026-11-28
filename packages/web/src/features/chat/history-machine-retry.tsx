@@ -3,7 +3,7 @@ import type { RetryAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { toastApiError } from "../../lib/toast-api-error";
 import { useMachines } from "../../state/machines";
-import { retryStatus } from "../machines";
+import { retryStatus } from "@prismshadow/penguin-library-machine/web";
 import type { MachineAway } from "./machine-away";
 
 /**

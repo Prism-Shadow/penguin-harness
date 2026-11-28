@@ -46,7 +46,7 @@ import {
   installInOrder,
 } from "../../lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { MachinePicker } from "../machines";
+import { MachinePicker } from "@prismshadow/penguin-library-machine/web";
 import { PluginCard } from "./plugin-config-card";
 import { cardsOn, type GroupPage } from "./plugin-config-groups";
 import { withLiveParts } from "./plugin-config-live";

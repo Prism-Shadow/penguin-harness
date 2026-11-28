@@ -17,7 +17,7 @@ import {
   PROBE_STEPS_MS,
   probeDelayMs,
   probeFingerprint,
-} from "../src/features/machines/probe-schedule";
+} from "@prismshadow/penguin-library-machine/web/probe-schedule";
 
 const machine = (
   id: string,

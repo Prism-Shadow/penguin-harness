@@ -26,7 +26,7 @@ import {
   terminalsOf,
   watchTerminals,
   type TerminalInfo,
-} from "../terminal";
+} from "@prismshadow/penguin-library-terminal/web";
 import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   currentDockScope,

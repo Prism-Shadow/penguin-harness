@@ -112,7 +112,7 @@ import { requestedApproval, shownApproval, useTargetDefaults } from "../draft-pe
 import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "../../model-picker";
 import { useAgentSkills } from "../use-agent-skills";
-import { WorkspaceSelect } from "../../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-library-workspace/web";
 import { FilesPanelToggle } from "../dock-toggles";
 import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";

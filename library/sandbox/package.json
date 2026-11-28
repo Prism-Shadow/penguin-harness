@@ -1,0 +1,68 @@
+{
+  "name": "@prismshadow/penguin-library-sandbox",
+  "version": "0.2.18",
+  "description": "The sandbox domain: the service that routes each spawn's policy to a backend that implements it, the dimensions vocabulary, the settings document's policy reads, the settings card's live status reads, and the non-admin ceiling. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/sandbox"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    "./dimensions": {
+      "types": "./dist/dimensions.d.ts",
+      "import": "./dist/dimensions.js"
+    },
+    "./service": {
+      "types": "./dist/service.d.ts",
+      "import": "./dist/service.js"
+    },
+    "./policy": {
+      "types": "./dist/policy.d.ts",
+      "import": "./dist/policy.js"
+    },
+    "./status": {
+      "types": "./dist/status.d.ts",
+      "import": "./dist/status.js"
+    },
+    "./ceiling": {
+      "types": "./dist/ceiling.d.ts",
+      "import": "./dist/ceiling.js"
+    },
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@types/react": "^19.1.0",
+    "react": "^19.1.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}

@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-library-http/errors": ["../http/src/errors.ts"],
+      "@prismshadow/penguin-library-http/public-origin": ["../http/src/public-origin.ts"],
+      "@prismshadow/penguin-library-http/socket-compression": ["../http/src/socket-compression.ts"],
+      "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
+      "@prismshadow/penguin-library-machine/contract": ["../machine/src/contract.ts"],
+      "@prismshadow/penguin-library-machine/terminal-relay": ["../machine/src/terminal-relay.ts"],
+      "@prismshadow/penguin-library-setting/resource-limits": ["../setting/src/resource-limits.ts"],
+      "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
+      "@prismshadow/penguin-library-session/access": ["../session/src/access.ts"],
+      "@prismshadow/penguin-library-session/resources": ["../session/src/resources.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/web"]
+}

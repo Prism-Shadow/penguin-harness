@@ -184,7 +184,7 @@
     "@prismshadow/penguin-library-project": "workspace:*",
     "@prismshadow/penguin-library-workspace": "workspace:*",
     "@prismshadow/a2ui": "workspace:*",
-    "hono": "^4.13.11",
+    "hono": "4.13.13",
     "undici": "^7.29.1",
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5",

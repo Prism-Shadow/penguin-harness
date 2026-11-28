@@ -39,8 +39,10 @@ import { bearerToken, sessionCookies } from "../auth/middleware.js";
 import { answerOf } from "../socket/stream-answer.js";
 import type { StreamAnswer } from "../socket/stream-answer.js";
 
+import { HEARTBEAT_MS } from "@prismshadow/penguin-library-http/heartbeat";
+
 /** The beat both the named ping and the `heartbeat` server event are written on (machines/event-hub.ts times the hub's silence by it). */
-export const HEARTBEAT_MS = 20_000;
+export { HEARTBEAT_MS };
 
 /** An event stream's socket that sends nothing for this long is destroyed (app.ts): two missed beats. */
 export const STREAM_IDLE_MS = 2 * HEARTBEAT_MS;

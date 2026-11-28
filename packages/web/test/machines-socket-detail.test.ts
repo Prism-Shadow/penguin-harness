@@ -1,6 +1,6 @@
 /**
  * The Machines page's unfolded record, and the socket line in it in particular
- * (features/machines/machines-page.tsx).
+ * (library/machine/src/web/machines-page.tsx).
  *
  * The socket fact has its own derivation (`socketReading`, machines-view.test.ts) — which state
  * reads as which word and which tone. This is the other half of acceptance: that the card
@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { MachineInfo, MachineSocketFact } from "@prismshadow/penguin-server/api";
-import { MachineSocketDetails as MachineRecord } from "../src/features/machines/machine-detail-dialog";
+import { MachineSocketDetails as MachineRecord } from "@prismshadow/penguin-library-machine/web/machine-detail-dialog";
 import { formatDateTime, formatRelativeShort } from "../src/lib/format";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";

@@ -29,9 +29,10 @@ import { declined } from "../hmr/hono-seam.js";
 import { CALL_HEADERS, CREDIT_FLOW, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
 import { StreamAnswer } from "./stream-answer.js";
+import { HEARTBEAT_MS } from "@prismshadow/penguin-library-http/heartbeat";
 
 /** Same cadence as the SSE heartbeat: a peer that answers no ping within two beats is gone. */
-export const HEARTBEAT_MS = 20_000;
+export { HEARTBEAT_MS };
 /** A client this far behind on a stream is fast-forwarded (its stream ends with reason "lagging") rather than buffered without bound. */
 export const HIGH_WATER_BYTES = 4 * 1024 * 1024;
 

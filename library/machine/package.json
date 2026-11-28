@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-machine",
   "version": "0.2.20",
-  "description": "The machines domain: the MachineRow shape, the machines repo and the browser-extension pairing store. A library package - the server imports it; nothing here imports the server.",
+  "description": "The machines domain: the ssh fleet's transport, the install and connect jobs, the machines service and its routes, the machines page's wire vocabulary, and the browser-extension pairing store. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -24,6 +24,234 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./aggregate-stream": {
+      "types": "./dist/aggregate-stream.d.ts",
+      "import": "./dist/aggregate-stream.js"
+    },
+    "./answer-cache": {
+      "types": "./dist/answer-cache.d.ts",
+      "import": "./dist/answer-cache.js"
+    },
+    "./answer-decoding": {
+      "types": "./dist/answer-decoding.d.ts",
+      "import": "./dist/answer-decoding.js"
+    },
+    "./answer": {
+      "types": "./dist/answer.d.ts",
+      "import": "./dist/answer.js"
+    },
+    "./answer-reason": {
+      "types": "./dist/answer-reason.d.ts",
+      "import": "./dist/answer-reason.js"
+    },
+    "./carried-store": {
+      "types": "./dist/carried-store.d.ts",
+      "import": "./dist/carried-store.js"
+    },
+    "./checkout-image": {
+      "types": "./dist/checkout-image.d.ts",
+      "import": "./dist/checkout-image.js"
+    },
+    "./commands": {
+      "types": "./dist/commands.d.ts",
+      "import": "./dist/commands.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js"
+    },
+    "./detect": {
+      "types": "./dist/detect.d.ts",
+      "import": "./dist/detect.js"
+    },
+    "./diagnose": {
+      "types": "./dist/diagnose.d.ts",
+      "import": "./dist/diagnose.js"
+    },
+    "./event-hub": {
+      "types": "./dist/event-hub.d.ts",
+      "import": "./dist/event-hub.js"
+    },
+    "./handshake": {
+      "types": "./dist/handshake.d.ts",
+      "import": "./dist/handshake.js"
+    },
+    "./history-paths": {
+      "types": "./dist/history-paths.d.ts",
+      "import": "./dist/history-paths.js"
+    },
+    "./history-routes": {
+      "types": "./dist/history-routes.d.ts",
+      "import": "./dist/history-routes.js"
+    },
+    "./history-sync": {
+      "types": "./dist/history-sync.d.ts",
+      "import": "./dist/history-sync.js"
+    },
+    "./install-server": {
+      "types": "./dist/install-server.d.ts",
+      "import": "./dist/install-server.js"
+    },
+    "./layout": {
+      "types": "./dist/layout.d.ts",
+      "import": "./dist/layout.js"
+    },
+    "./link-activity": {
+      "types": "./dist/link-activity.d.ts",
+      "import": "./dist/link-activity.js"
+    },
+    "./machine-api": {
+      "types": "./dist/machine-api.d.ts",
+      "import": "./dist/machine-api.js"
+    },
+    "./machine-sockets": {
+      "types": "./dist/machine-sockets.d.ts",
+      "import": "./dist/machine-sockets.js"
+    },
+    "./machine-status": {
+      "types": "./dist/machine-status.d.ts",
+      "import": "./dist/machine-status.js"
+    },
+    "./models-sync": {
+      "types": "./dist/models-sync.d.ts",
+      "import": "./dist/models-sync.js"
+    },
+    "./offline-history": {
+      "types": "./dist/offline-history.d.ts",
+      "import": "./dist/offline-history.js"
+    },
+    "./older-window-units": {
+      "types": "./dist/older-window-units.d.ts",
+      "import": "./dist/older-window-units.js"
+    },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./plugins-sync": {
+      "types": "./dist/plugins-sync.d.ts",
+      "import": "./dist/plugins-sync.js"
+    },
+    "./profile": {
+      "types": "./dist/profile.d.ts",
+      "import": "./dist/profile.js"
+    },
+    "./proxy": {
+      "types": "./dist/proxy.d.ts",
+      "import": "./dist/proxy.js"
+    },
+    "./release-cache": {
+      "types": "./dist/release-cache.d.ts",
+      "import": "./dist/release-cache.js"
+    },
+    "./remote-token": {
+      "types": "./dist/remote-token.d.ts",
+      "import": "./dist/remote-token.js"
+    },
+    "./secret-file": {
+      "types": "./dist/secret-file.d.ts",
+      "import": "./dist/secret-file.js"
+    },
+    "./server-control": {
+      "types": "./dist/server-control.d.ts",
+      "import": "./dist/server-control.js"
+    },
+    "./server-state": {
+      "types": "./dist/server-state.d.ts",
+      "import": "./dist/server-state.js"
+    },
+    "./starting-wait": {
+      "types": "./dist/starting-wait.d.ts",
+      "import": "./dist/starting-wait.js"
+    },
+    "./service": {
+      "types": "./dist/service.d.ts",
+      "import": "./dist/service.js"
+    },
+    "./session-forward": {
+      "types": "./dist/session-forward.d.ts",
+      "import": "./dist/session-forward.js"
+    },
+    "./session-index": {
+      "types": "./dist/session-index.d.ts",
+      "import": "./dist/session-index.js"
+    },
+    "./settings-sync": {
+      "types": "./dist/settings-sync.d.ts",
+      "import": "./dist/settings-sync.js"
+    },
+    "./shipped-image": {
+      "types": "./dist/shipped-image.d.ts",
+      "import": "./dist/shipped-image.js"
+    },
+    "./socket-relay": {
+      "types": "./dist/socket-relay.d.ts",
+      "import": "./dist/socket-relay.js"
+    },
+    "./ssh-config": {
+      "types": "./dist/ssh-config.d.ts",
+      "import": "./dist/ssh-config.js"
+    },
+    "./ssh-failure": {
+      "types": "./dist/ssh-failure.d.ts",
+      "import": "./dist/ssh-failure.js"
+    },
+    "./ssh-passwords": {
+      "types": "./dist/ssh-passwords.d.ts",
+      "import": "./dist/ssh-passwords.js"
+    },
+    "./terminal-relay": {
+      "types": "./dist/terminal-relay.d.ts",
+      "import": "./dist/terminal-relay.js"
+    },
+    "./trace-cache": {
+      "types": "./dist/trace-cache.d.ts",
+      "import": "./dist/trace-cache.js"
+    },
+    "./upgrade": {
+      "types": "./dist/upgrade.d.ts",
+      "import": "./dist/upgrade.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "import": "./dist/routes.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "import": "./dist/transport/index.js"
+    },
+    "./transport/connection": {
+      "types": "./dist/transport/connection.d.ts",
+      "import": "./dist/transport/connection.js"
+    },
+    "./transport/exec": {
+      "types": "./dist/transport/exec.d.ts",
+      "import": "./dist/transport/exec.js"
+    },
+    "./transport/lane": {
+      "types": "./dist/transport/lane.d.ts",
+      "import": "./dist/transport/lane.js"
+    },
+    "./transport/login": {
+      "types": "./dist/transport/login.d.ts",
+      "import": "./dist/transport/login.js"
+    },
+    "./transport/socks": {
+      "types": "./dist/transport/socks.d.ts",
+      "import": "./dist/transport/socks.js"
+    },
+    "./transport/ssh-session": {
+      "types": "./dist/transport/ssh-session.d.ts",
+      "import": "./dist/transport/ssh-session.js"
+    },
+    "./transport/targets": {
+      "types": "./dist/transport/targets.d.ts",
+      "import": "./dist/transport/targets.js"
+    },
+    "./machine": {
+      "types": "./dist/machine.d.ts",
+      "import": "./dist/machine.js"
+    },
     "./browser-extensions": {
       "types": "./dist/browser-extensions.d.ts",
       "import": "./dist/browser-extensions.js"
@@ -32,10 +260,8 @@
       "types": "./dist/builtin-browser-vocab.d.ts",
       "import": "./dist/builtin-browser-vocab.js"
     },
-    "./machine": {
-      "types": "./dist/machine.d.ts",
-      "import": "./dist/machine.js"
-    }
+    "./web": "./src/web/index.ts",
+    "./web/*": "./src/web/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -45,9 +271,26 @@
   "dependencies": {
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-library-db": "workspace:*"
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-cli": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-model": "workspace:*",
+    "@prismshadow/penguin-library-project": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-trace": "workspace:*",
+    "hono": "4.13.13",
+    "ws": "^8.18.3",
+    "tar": "^7.5.21"
   },
   "devDependencies": {
+    "@prismshadow/penguin-hmr": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@types/react": "^19.1.0",
+    "@types/ws": "^8.18.1",
+    "react": "^19.1.0",
+    "react-router": "^8.3.0",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

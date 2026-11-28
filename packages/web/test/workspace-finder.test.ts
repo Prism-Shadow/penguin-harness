@@ -1,6 +1,6 @@
 /**
  * The Workspace finder every Workspace picker opens; its decisions live in
- * features/workspace/workspace-finder-model.ts.
+ * library/workspace/src/web/workspace-finder-model.ts.
  *
  * - Breadcrumbs split a posix path from the root and keep a drive root whole.
  * - History goes back and forward, a new visit drops what was ahead, and reloading the folder
@@ -62,7 +62,7 @@ import {
   visibleEntries,
   type AccessAsk,
   type DeniedBox,
-} from "../src/features/workspace/workspace-finder-model";
+} from "@prismshadow/penguin-library-workspace/web/workspace-finder-model";
 
 import { memoryStorage } from "./helpers/storage";
 

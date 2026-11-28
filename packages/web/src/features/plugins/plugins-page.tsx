@@ -101,7 +101,7 @@ import { useSessions } from "../../state/sessions";
 import { agentKey } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { readKey, useRead } from "../../lib/read-store";
-import { MachinePicker, type MachineChoice } from "../machines";
+import { MachinePicker, type MachineChoice } from "@prismshadow/penguin-library-machine/web";
 import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
 import { localizedText } from "../../lib/skill-use";
 import { PackageUpdateDialog, packageUpdate, type PackageUpdate } from "./plugin-package-update";

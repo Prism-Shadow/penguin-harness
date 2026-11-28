@@ -1904,7 +1904,7 @@ export function SessionsProvider({
   // read them from (lib/terminal-machines.ts). Told "none" out loud when there is no account: it
   // waits for this word before it may drop a tab whose terminal is gone, and a user who can never
   // read the machine list would otherwise keep every dead tab in their dock forever
-  // (features/terminal/terminal-list.ts).
+  // (library/terminal/src/web/terminal-list.ts).
   useEffect(() => {
     if (!machines.settled) return;
     setTerminalMachines(machineIdsKey === "" ? [] : machineIdsKey.split(","));
