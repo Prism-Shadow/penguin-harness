@@ -59,10 +59,11 @@ function joinPrefix(prefix: string, rel: string): string {
 }
 
 function zoneOf(offset: number): string {
-  const abs = Math.abs(offset);
+  const truncated = Math.trunc(offset);
+  const abs = Math.abs(truncated);
   const hh = String(Math.floor(abs / 60)).padStart(2, "0");
   const mm = String(abs % 60).padStart(2, "0");
-  return `${offset < 0 ? "-" : "+"}${hh}${mm}`;
+  return `${truncated < 0 ? "-" : "+"}${hh}${mm}`;
 }
 
 interface RawTreeEntry {
@@ -540,7 +541,7 @@ function openGitclRepo(git: GitProgram, gitdir: string): GitRepo {
         const wt = await runGit(git, gitdir, ["write-tree"], { env: indexEnv });
         treeOid = wt.stdout.toString("utf8").trim();
 
-        const when = `${input.when.seconds} ${zoneOf(input.when.offset)}`;
+        const when = `@${Math.trunc(input.when.seconds)} ${zoneOf(input.when.offset)}`;
         const commitArgs =
           input.parent !== null
             ? ["commit-tree", treeOid, "-p", input.parent]

@@ -611,5 +611,46 @@ describe("GitEngine differential testing: gix <-> gitcl", () => {
         else process.env.GIT_CONFIG_GLOBAL = prevGlobal;
       }
     });
+
+    it("small and boundary Unix timestamps (@0, @1, @2, @526, @99999999) produce identical SHAs across gix and gitcl", async () => {
+      const gixDir = path.join(root, "ts-gix.git");
+      const gitclDir = path.join(root, "ts-gitcl.git");
+      await Promise.all([initBare(gixDir), initBare(gitclDir)]);
+
+      const rGix = await gix.open(gixDir);
+      const rGitcl = await gitcl.open(gitclDir);
+      try {
+        const file = await writeDiskSource("ts.txt", "timestamp regression\n");
+        const cases = [
+          { seconds: 0, offset: 0 },
+          { seconds: 1, offset: 480 },
+          { seconds: 2, offset: -330 },
+          { seconds: 526, offset: 525 },
+          { seconds: 99_999_999, offset: -720 },
+          { seconds: 100_000_000, offset: 840 },
+        ];
+        let parent: string | null = null;
+        for (const when of cases) {
+          const input: GitCommitInput = {
+            ref: "refs/heads/main",
+            parent,
+            prefix: "workbenches/ts",
+            change: {
+              kind: "replace",
+              files: [{ rel: "ts.txt", source: { kind: "file", path: file } }],
+            },
+            message: `ts ${when.seconds} ${when.offset}\n`,
+            author: { name: "Test", email: "test@example.com" },
+            committer: { name: "Test", email: "test@example.com" },
+            when,
+          };
+          const [shaGix, shaGitcl] = await Promise.all([rGix.commit(input), rGitcl.commit(input)]);
+          expect(shaGix).toBe(shaGitcl);
+          parent = shaGix;
+        }
+      } finally {
+        await Promise.all([rGix.close(), rGitcl.close()]);
+      }
+    });
   });
 });
