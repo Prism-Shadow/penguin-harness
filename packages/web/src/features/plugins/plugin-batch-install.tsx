@@ -328,89 +328,158 @@ export function PluginBatchInstallModal({
         data-testid="batch-plugin-install-modal"
         data-expanded={expanded ? "true" : "false"}
         className={`pointer-events-auto w-full overflow-hidden rounded-lg border border-line bg-overlay shadow-lg ${
-          expanded ? "sm:w-[340px]" : "sm:w-72"
+          expanded ? "sm:w-[340px]" : "sm:w-64"
         }`}
       >
-        {/* Slim 1-row header — click to toggle fold/expand */}
-        <div className="flex items-center gap-2 px-2.5 py-2">
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
-            onClick={() => setExpanded((was) => !was)}
+        {/* Folded: one single integrated 32px progress bar (fill + edge + status on one line) */}
+        {!expanded ? (
+          <div
+            role="status"
+            data-testid="batch-install-progress"
+            className="relative flex h-8 items-center gap-1.5 overflow-hidden px-2.5"
           >
-            <GlyphIcon
-              d={
-                phase === "done"
-                  ? ICONS.checkCircle
-                  : phase === "failed"
-                    ? ICONS.triangleAlert
-                    : ICONS.download
-              }
-              size={14}
-              className={`shrink-0 ${iconToneClass}`}
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
-              {expanded ? heading : foldedLine}
-            </span>
-            {!expanded && phase === "running" && (
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
-                {activeTransfer !== null ? `${displayPercent}% · ${activeTransfer.split(" ")[0]}` : `${displayPercent}%`}
-              </span>
+            {phase !== "review" && (
+              <>
+                <div
+                  role="progressbar"
+                  aria-label={B.progressLabel(items.length)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={displayPercent}
+                  data-layout-motion=""
+                  className={`pointer-events-none absolute inset-y-0 left-0 opacity-15 ${
+                    phase === "done"
+                      ? "bg-tone-success-emphasis"
+                      : phase === "failed"
+                        ? "bg-tone-attention-emphasis"
+                        : "bg-accent"
+                  }`}
+                  style={{ width: `${displayPercent}%` }}
+                />
+                <div
+                  aria-hidden
+                  data-layout-motion=""
+                  className={`pointer-events-none absolute bottom-0 left-0 h-0.5 ${
+                    phase === "done"
+                      ? "bg-tone-success-emphasis"
+                      : phase === "failed"
+                        ? "bg-tone-attention-emphasis"
+                        : "bg-accent"
+                  }`}
+                  style={{ width: `${displayPercent}%` }}
+                />
+              </>
             )}
-            {!expanded && (phase === "done" || phase === "failed") && (
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
-                {displayPercent}%
-              </span>
-            )}
-            {expanded && (
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
-                {phase === "review"
-                  ? `${items.length}`
-                  : `${doneCount}/${items.length} · ${displayPercent}%`}
-              </span>
-            )}
-          </button>
-          <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
-              aria-expanded={expanded}
-              aria-label={expanded ? B.fold : B.expand}
-              title={expanded ? B.fold : B.expand}
-              data-testid="batch-install-toggle-fold"
-              onClick={() => setExpanded((was) => !was)}
-              className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
+              className="relative flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              onClick={() => setExpanded(true)}
             >
-              <GlyphIcon d={expanded ? ICONS.chevronDown : ICONS.chevronUp} size={12} />
-            </button>
-            {phase !== "running" && <CloseButton onClose={handleClose} className="-mr-1" />}
-          </div>
-        </div>
-
-        {/* Flush unified progress bar — always visible once started, both folded and expanded */}
-        {phase !== "review" && (
-          <div role="status" data-testid="batch-install-progress" className={expanded ? "px-2.5 pb-2" : "px-2.5 pb-2"}>
-            <ProgressBar
-              value={displayPercent}
-              max={100}
-              size="xs"
-              tone={tone}
-              label={B.progressLabel(items.length)}
-            />
-            {expanded && (
-              <div className="mt-1 flex items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-fg-muted">
-                <span className="min-w-0 truncate text-fg">
-                  {phase === "running" && activeItem
-                    ? `${activeIndex + 1}/${items.length} ${activeItem.title} · ${activeSentence}`
-                    : phase === "done"
-                      ? B.allDoneSummary(doneCount)
-                      : B.partialSummary(doneCount, failedItems.length, items.length)}
+              <GlyphIcon
+                d={
+                  phase === "done"
+                    ? ICONS.checkCircle
+                    : phase === "failed"
+                      ? ICONS.triangleAlert
+                      : ICONS.download
+                }
+                size={13}
+                className={`shrink-0 ${iconToneClass}`}
+              />
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
+                {foldedLine}
+              </span>
+              {phase !== "review" && (
+                <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+                  {phase === "running" && activeTransfer !== null
+                    ? `${displayPercent}% · ${activeTransfer.split(" ")[0]}`
+                    : `${displayPercent}%`}
                 </span>
-                {phase === "running" && activeTransfer !== null && (
-                  <span className="shrink-0">{activeTransfer}</span>
-                )}
+              )}
+            </button>
+            <button
+              type="button"
+              aria-expanded={false}
+              aria-label={B.expand}
+              title={B.expand}
+              data-testid="batch-install-toggle-fold"
+              onClick={() => setExpanded(true)}
+              className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
+            >
+              <GlyphIcon d={ICONS.chevronUp} size={12} />
+            </button>
+            {phase !== "running" && <CloseButton onClose={handleClose} className="relative -mr-1" />}
+          </div>
+        ) : (
+          <>
+            {/* Expanded slim 1-row header */}
+            <div className="flex items-center gap-2 px-2.5 py-2">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                onClick={() => setExpanded(false)}
+              >
+                <GlyphIcon
+                  d={
+                    phase === "done"
+                      ? ICONS.checkCircle
+                      : phase === "failed"
+                        ? ICONS.triangleAlert
+                        : ICONS.download
+                  }
+                  size={14}
+                  className={`shrink-0 ${iconToneClass}`}
+                />
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
+                  {heading}
+                </span>
+                <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+                  {phase === "review"
+                    ? `${items.length}`
+                    : `${doneCount}/${items.length} · ${displayPercent}%`}
+                </span>
+              </button>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  aria-expanded={true}
+                  aria-label={B.fold}
+                  title={B.fold}
+                  data-testid="batch-install-toggle-fold"
+                  onClick={() => setExpanded(false)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
+                >
+                  <GlyphIcon d={ICONS.chevronDown} size={12} />
+                </button>
+                {phase !== "running" && <CloseButton onClose={handleClose} className="-mr-1" />}
+              </div>
+            </div>
+
+            {/* Expanded unified progress bar */}
+            {phase !== "review" && (
+              <div role="status" data-testid="batch-install-progress" className="px-2.5 pb-2">
+                <ProgressBar
+                  value={displayPercent}
+                  max={100}
+                  size="xs"
+                  tone={tone}
+                  label={B.progressLabel(items.length)}
+                />
+                <div className="mt-1 flex items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-fg-muted">
+                  <span className="min-w-0 truncate text-fg">
+                    {phase === "running" && activeItem
+                      ? `${activeIndex + 1}/${items.length} ${activeItem.title} · ${activeSentence}`
+                      : phase === "done"
+                        ? B.allDoneSummary(doneCount)
+                        : B.partialSummary(doneCount, failedItems.length, items.length)}
+                  </span>
+                  {phase === "running" && activeTransfer !== null && (
+                    <span className="shrink-0">{activeTransfer}</span>
+                  )}
+                </div>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {/* Expanded compact body */}
