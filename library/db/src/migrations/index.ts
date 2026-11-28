@@ -71,7 +71,7 @@ import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 import { usageRecordsPurpose } from "./steps/2026-11-19-usage-records-purpose.js";
 import { pluginModuleRequests } from "./steps/2026-11-19-plugin-module-requests.js";
 import { pluginModulePreinstalls } from "./steps/2026-11-19-plugin-module-preinstalls.js";
-
+import { authRoleSessions } from "./steps/2026-11-19-auth-role-sessions.js";
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
 export type { MigrateResult } from "./runner.js";
@@ -107,6 +107,7 @@ export const MIGRATIONS: readonly Migration[] = [
   usageRecordsPurpose,
   pluginModuleRequests,
   pluginModulePreinstalls,
+  authRoleSessions,
 ];
 
 /**

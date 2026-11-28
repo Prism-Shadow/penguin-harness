@@ -313,6 +313,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -380,6 +381,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -441,6 +443,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -505,6 +508,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -557,6 +561,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -606,6 +611,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -672,6 +678,7 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
         "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
         { session_id: "s1", purpose: null },
@@ -714,6 +721,7 @@ describe("a database from before the module requests: 2026-11-19-plugin-module-r
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -758,6 +766,7 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
   function openPrePreinstalls(): DatabaseSync {
     const db = openFresh();
     db.exec("DROP TABLE plugin_module_preinstalls;");
+    db.exec("DROP TABLE auth_generations; DROP TABLE auth_role_sessions;");
     stampThrough(db, "2026-11-19-plugin-module-requests");
     return db;
   }
@@ -767,6 +776,7 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
     try {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-preinstalls",
+        "2026-11-19-auth-role-sessions",
       ]);
       const record = db.prepare(
         "INSERT OR IGNORE INTO plugin_module_preinstalls (package, project_id, listed_at) VALUES (?, ?, ?)",
@@ -792,6 +802,120 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
       const after = shape(db);
       rollbackTo(db, "2026-11-19-plugin-module-requests");
       expect(hasTable(db, "plugin_module_preinstalls")).toBe(false);
+      migrate(db);
+      expect(shape(db)).toBe(after);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a database from before role-bound auth sessions: 2026-11-19-auth-role-sessions", () => {
+  /** A root whose line declared everything through 2026-11-19-plugin-module-preinstalls. */
+  function openPreAuthRoleSessions(): DatabaseSync {
+    const db = openFresh();
+    db.exec("DROP TABLE auth_generations; DROP TABLE auth_role_sessions;");
+    stampThrough(db, "2026-11-19-plugin-module-preinstalls");
+    return db;
+  }
+
+  it("adds both tables on the swap path, enforces NOT NULL and unique primary keys, and applies column defaults", () => {
+    const db = openPreAuthRoleSessions();
+    const fresh = openFresh();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-11-19-auth-role-sessions"]);
+      expect(shape(db)).toBe(shape(fresh));
+
+      const insertGen = db.prepare(
+        "INSERT INTO auth_generations (subject_id, project_id, agent_id, generation, role) VALUES (?, ?, ?, ?, ?)",
+      );
+      expect(Number(insertGen.run("agent:p1/a1", "p1", "a1", 1, "general").changes)).toBe(1);
+      expect(() => insertGen.run(null, "p1", "a1", 1, "general")).toThrow();
+      expect(() => insertGen.run("agent:p1/a1", "p1", "a1", 2, "admin")).toThrow();
+      expect(
+        db
+          .prepare(
+            "SELECT subject_kind, allowed_apis FROM auth_generations WHERE subject_id = 'agent:p1/a1'",
+          )
+          .get(),
+      ).toEqual({
+        subject_kind: "agent",
+        allowed_apis: "[]",
+      });
+
+      const insertSession = db.prepare(
+        "INSERT INTO auth_role_sessions (token_hash, subject_id, project_id, agent_id, role, generation, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      expect(
+        Number(
+          insertSession.run(
+            "hash-1",
+            "agent:p1/a1",
+            "p1",
+            "a1",
+            "general",
+            1,
+            "2026-11-19T00:00:00Z",
+            "2026-12-19T00:00:00Z",
+          ).changes,
+        ),
+      ).toBe(1);
+      expect(() =>
+        insertSession.run(
+          null,
+          "agent:p1/a1",
+          "p1",
+          "a1",
+          "general",
+          1,
+          "2026-11-19T00:00:00Z",
+          "2026-12-19T00:00:00Z",
+        ),
+      ).toThrow();
+      expect(() =>
+        insertSession.run(
+          "hash-1",
+          "agent:p1/a1",
+          "p1",
+          "a1",
+          "general",
+          1,
+          "2026-11-19T00:00:00Z",
+          "2026-12-19T00:00:00Z",
+        ),
+      ).toThrow();
+      expect(
+        db
+          .prepare(
+            "SELECT subject_kind, last_used_at FROM auth_role_sessions WHERE token_hash = 'hash-1'",
+          )
+          .get(),
+      ).toEqual({
+        subject_kind: "agent",
+        last_used_at: null,
+      });
+
+      MIGRATIONS.find((m) => m.name === "2026-11-19-auth-role-sessions")!.up(db);
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM auth_role_sessions").get() as { n: number },
+      ).toEqual({ n: 1 });
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM auth_generations").get() as { n: number },
+      ).toEqual({ n: 1 });
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down drops both tables, and a second up recreates them", () => {
+    const db = openPreAuthRoleSessions();
+    try {
+      migrate(db);
+      const after = shape(db);
+      rollbackTo(db, "2026-11-19-plugin-module-preinstalls");
+      expect(hasTable(db, "auth_role_sessions")).toBe(false);
+      expect(hasTable(db, "auth_generations")).toBe(false);
       migrate(db);
       expect(shape(db)).toBe(after);
     } finally {
