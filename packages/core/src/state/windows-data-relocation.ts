@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { legacyProjectDir } from "./paths.js";
 import { listProjectDirs } from "./project-dirs.js";
 import { rekeyWorkspaceMemory } from "./layout-migration/rekey-memory.js";
+import { legacyProjects } from "./layout-migration/steps/2026-11-projects-level.js";
 import type { PathMove } from "./layout-migration/journal.js";
 import {
   movedPath,
@@ -61,8 +63,14 @@ export async function relocateProjectWorkspacePaths(
   moves: readonly PathMove[],
   log: (line: string) => void,
 ): Promise<void> {
-  for (const { dir } of await listProjectDirs(root)) {
+  // Include top-level pre-`projects/` folders too: `migrateDataRoot` rewrites relocated
+  // Windows paths before the layout migration moves legacy Projects under `projects/`.
+  const projects = [
+    ...(await listProjectDirs(root)),
+    ...(await legacyProjects(root)).map((id) => ({ id, dir: legacyProjectDir(root, id) })),
+  ];
+  for (const { dir } of projects) {
     for (const file of await projectPathFiles(dir)) await rewriteFilePaths(file, moves);
   }
-  await rekeyWorkspaceMemory(root, moves, log);
+  await rekeyWorkspaceMemory(root, moves, log, projects);
 }
