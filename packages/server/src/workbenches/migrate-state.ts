@@ -53,7 +53,7 @@ export interface StateMigrationOptions {
   /** The old folders were just written by the server itself, so none needs to settle. */
   settled?: boolean;
   /** The deployment's Agent State engine, which records the imported versions (./repo.ts). */
-  engine: GitEngine;
+  engine: GitEngine | (() => GitEngine);
 }
 
 /** One version a `versions.json` lists, readable, with the time it was recorded. */
@@ -159,11 +159,12 @@ export async function migrateWorkbenchesIntoState(
   }
   const history = path.join(agentDir, "workbenches-history");
   if (ready.length > 0) {
+    const resolvedEngine = typeof opts.engine === "function" ? opts.engine() : opts.engine;
     const repo = new AgentStateRepo({
       gitdir: agentStateRepoDir(agentDir),
       now: () => new Date(),
       log: (line) => log(`[workbenches] ${line}`),
-      engine: opts.engine,
+      engine: resolvedEngine,
     });
     await fs.mkdir(target, { recursive: true });
     for (const folder of ready) {

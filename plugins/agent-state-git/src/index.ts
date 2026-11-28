@@ -14,10 +14,11 @@
  * commits, so the repository never notices which one wrote.
  */
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
-import type { AgentStateEngineSource, Plugin } from "@prismshadow/penguin-core/plugin";
+import type { GitEngineSource, Plugin } from "@prismshadow/penguin-core/plugin";
 import { openGitEngine } from "./engine.js";
 
 export { gitEngine, importStream, openGitEngine, quotePath, zoneOf } from "./engine.js";
+export { dugiteGitEngine } from "./git-engine.js";
 export { keptFiles, locateGit, pinFor } from "./binary.js";
 
 @Component({
@@ -42,7 +43,7 @@ export { keptFiles, locateGit, pinFor } from "./binary.js";
   },
 })
 export class AgentStateGit {
-  @Bind("agent-state-git.engine") engine!: AgentStateEngineSource;
+  @Bind("agent-state-git.engine") engine!: GitEngineSource;
 
   setup() {
     this.engine = (host) => openGitEngine(host);

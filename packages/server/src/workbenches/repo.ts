@@ -163,7 +163,15 @@ export class AgentStateRepo {
     engine: GitEngine;
     identity?: IdentitySources;
   }) {
-    this.gitdir = path.resolve(opts.gitdir);
+    const resolved = path.resolve(opts.gitdir);
+    let canonical = resolved;
+    try {
+      const parentReal = fs.realpathSync(path.dirname(resolved));
+      canonical = path.join(parentReal, path.basename(resolved));
+    } catch {
+      // Parent may not exist yet; keep resolved path.
+    }
+    this.gitdir = canonical;
     this.now = opts.now;
     this.log = opts.log;
     this.limit = opts.caps?.versions ?? HISTORY_LIMIT;
@@ -316,10 +324,18 @@ export class AgentStateRepo {
 
   private async withRepo<T>(fn: (repo: GitRepo) => Promise<T>): Promise<T> {
     const repo = await this.engine.open(this.gitdir);
+    let failed = false;
     try {
       return await fn(repo);
+    } catch (err) {
+      failed = true;
+      throw err;
     } finally {
-      await repo.close();
+      if (failed) {
+        await repo.close().catch(() => undefined);
+      } else {
+        await repo.close();
+      }
     }
   }
 
@@ -391,8 +407,23 @@ export class AgentStateRepo {
       path.join(made, "config"),
       "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n",
     );
-    await writeWhole(path.join(made, "info", "exclude"), EXCLUDE);
-    await fs.promises.rename(made, this.gitdir);
+    try {
+      await writeWhole(path.join(made, "info", "exclude"), EXCLUDE);
+      try {
+        await fs.promises.rename(made, this.gitdir);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (
+          (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM") &&
+          (await this.exists())
+        ) {
+          return;
+        }
+        throw err;
+      }
+    } finally {
+      await fs.promises.rm(made, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   private async versions(rel: string): Promise<GitHistoryEntry[]> {

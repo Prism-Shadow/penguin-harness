@@ -15,3 +15,6 @@ gix = "0.91"
 [profile.release]
 lto = true
 strip = "symbols"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

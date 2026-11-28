@@ -541,7 +541,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
    * first would take the place the conversion publishes into, and stop it.
    */
   const folders = async (projectId: string, agentId: string): Promise<string> => {
-    await migrateWorkbenches(agentDir(deps.root, projectId, agentId), deps.engines.current());
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId), () => deps.engines.current());
     return workbenchesDir(deps.root, projectId, agentId);
   };
 

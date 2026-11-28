@@ -106,7 +106,10 @@ const running = new Map<string, Promise<void>>();
  * move into Agent State (./migrate-state.ts). Any caller may await it before touching the
  * workbenches, concurrently with others.
  */
-export function migrateWorkbenches(agentDir: string, engine: GitEngine): Promise<void> {
+export function migrateWorkbenches(
+  agentDir: string,
+  engine: GitEngine | (() => GitEngine),
+): Promise<void> {
   const key = path.resolve(agentDir);
   const inFlight = running.get(key);
   if (inFlight) return inFlight;

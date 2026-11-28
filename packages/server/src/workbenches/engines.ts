@@ -73,6 +73,11 @@ export class EngineChoice implements AgentStateEngines {
             say("answered without an engine");
             return;
           }
+          if (typeof engine.open !== "function") {
+            this.without.set(id, "incompatible engine (missing GitEngine.open)");
+            say("incompatible engine (missing GitEngine.open)");
+            return;
+          }
           this.ready.set(id, engine);
           say(`${engine.name} records Agent State versions`);
         },

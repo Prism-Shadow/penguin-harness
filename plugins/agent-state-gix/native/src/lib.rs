@@ -49,11 +49,33 @@ fn oid_of(hex: &str) -> Result<gix::hash::ObjectId> {
     })
 }
 
+fn is_windows_device_name(seg: &str) -> bool {
+    let stem = seg.split('.').next().unwrap_or(seg);
+    let upper = stem.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL"
+            | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
+            | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+    )
+}
+
 fn is_safe_rel_path(rel: &str) -> bool {
-    if rel.is_empty() || rel.starts_with('/') || rel.ends_with('/') || rel.contains('\\') || rel.contains('\0') {
+    if rel.is_empty()
+        || rel.starts_with('/')
+        || rel.ends_with('/')
+        || rel.contains('\\')
+        || rel.contains('\0')
+        || rel.contains(':')
+    {
         return false;
     }
-    rel.split('/').all(|seg| !seg.is_empty() && seg != "." && seg != "..")
+    rel.split('/').all(|seg| {
+        !seg.is_empty()
+            && seg != "."
+            && seg != ".."
+            && !is_windows_device_name(seg)
+    })
 }
 
 fn join_prefix(prefix: &str, rel: &str) -> String {
@@ -97,13 +119,46 @@ impl Read for ExactLenReader {
     }
 }
 
-fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash::ObjectId> {
-    let file = File::open(path)
+fn open_regular_source_file(path: &str) -> Result<File> {
+    // Reject symlinks and non-regular files (e.g. FIFOs/sockets/dirs) BEFORE opening so a FIFO
+    // cannot stall libuv workers indefinitely.
+    let lmeta = fs::symlink_metadata(path)
+        .map_err(|e| git_err("IO_ERROR", format!("cannot lstat {path}: {e}")))?;
+    if !lmeta.file_type().is_file() {
+        return Err(git_err(
+            "INVALID_PATH",
+            format!("source path is not a regular file: {path}"),
+        ));
+    }
+    let mut opts = fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = opts
+        .open(path)
         .map_err(|e| git_err("IO_ERROR", format!("cannot open {path}: {e}")))?;
-    let expected = file
+    let fmeta = file
         .metadata()
-        .map_err(|e| git_err("IO_ERROR", format!("cannot stat {path}: {e}")))?
-        .len();
+        .map_err(|e| git_err("IO_ERROR", format!("cannot fstat {path}: {e}")))?;
+    if !fmeta.is_file() {
+        return Err(git_err(
+            "INVALID_PATH",
+            format!("opened descriptor is not a regular file: {path}"),
+        ));
+    }
+    Ok(file)
+}
+
+fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash::ObjectId> {
+    let file = open_regular_source_file(path)?;
+    let before = file
+        .metadata()
+        .map_err(|e| git_err("IO_ERROR", format!("cannot stat {path}: {e}")))?;
+    let expected = before.len();
+    let before_mtime = before.modified().ok();
     let mut reader = ExactLenReader {
         file,
         expected,
@@ -128,13 +183,26 @@ fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash:
     }
     let mut extra = [0u8; 1];
     match reader.file.read(&mut extra) {
-        Ok(0) => Ok(oid),
-        Ok(_) => Err(git_err(
-            "SOURCE_CHANGED",
-            format!("{path} grew during read (expected {expected})"),
-        )),
-        Err(e) => Err(git_err("IO_ERROR", format!("cannot verify EOF of {path}: {e}"))),
+        Ok(0) => {}
+        Ok(_) => {
+            return Err(git_err(
+                "SOURCE_CHANGED",
+                format!("{path} grew during read (expected {expected})"),
+            ))
+        }
+        Err(e) => return Err(git_err("IO_ERROR", format!("cannot verify EOF of {path}: {e}"))),
     }
+    let after = reader
+        .file
+        .metadata()
+        .map_err(|e| git_err("IO_ERROR", format!("cannot restat {path}: {e}")))?;
+    if after.len() != expected || (before_mtime.is_some() && after.modified().ok() != before_mtime) {
+        return Err(git_err(
+            "SOURCE_CHANGED",
+            format!("{path} metadata changed during read"),
+        ));
+    }
+    Ok(oid)
 }
 
 fn subtree_oid(
@@ -142,9 +210,12 @@ fn subtree_oid(
     commit_id: gix::hash::ObjectId,
     prefix: &str,
 ) -> Result<Option<gix::hash::ObjectId>> {
-    let commit = match repo.find_commit(commit_id) {
-        Ok(c) => c,
-        Err(_) => return Ok(None),
+    let commit = match repo.try_find_object(commit_id) {
+        Ok(Some(obj)) => obj
+            .try_into_commit()
+            .map_err(|e| git_err("INVALID_OID", format!("{commit_id} is not a commit: {e}")))?,
+        Ok(None) => return Ok(None),
+        Err(e) => return Err(git_err("REPO_CORRUPT", format!("cannot read commit {commit_id}: {e}"))),
     };
     let mut tree_id = commit
         .tree_id()
@@ -199,7 +270,11 @@ fn collect_tree_entries(
         .decode()
         .map_err(|e| git_err("REPO_CORRUPT", format!("tree {tree_id} malformed: {e}")))?;
     for entry in decoded.entries {
-        let name = String::from_utf8_lossy(entry.filename).into_owned();
+        let name = std::str::from_utf8(entry.filename.as_ref())
+            .map_err(|_| {
+                git_err("INVALID_PATH", format!("non-UTF-8 tree entry name in tree {tree_id}"))
+            })?
+            .to_owned();
         let rel = if base.is_empty() {
             name
         } else {
@@ -243,73 +318,33 @@ pub struct NativeHeadInfo {
 }
 
 fn resolve_head_sync(repo: &gix::Repository) -> Result<NativeHeadInfo> {
-    let gitdir = repo.git_dir();
-    let head_raw = fs::read_to_string(gitdir.join("HEAD"))
+    let head = repo
+        .head()
         .map_err(|e| git_err("INVALID_REF", format!("cannot read HEAD: {e}")))?;
-    let head_trimmed = head_raw.trim();
-    let ref_name = head_trimmed
-        .strip_prefix("ref: ")
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| git_err("INVALID_REF", format!("{} has a detached or unreadable HEAD", gitdir.display())))?
-        .to_string();
-
-    let loose_path = gitdir.join(&ref_name);
-    match fs::read_to_string(&loose_path) {
-        Ok(content) => {
-            let trimmed = content.trim();
-            if !is_hex_oid(trimmed) {
-                return Err(git_err(
-                    "INVALID_REF",
-                    format!("{ref_name} in {} is not a commit id", gitdir.display()),
-                ));
-            }
-            return Ok(NativeHeadInfo {
-                ref_name,
-                commit: Some(trimmed.to_string()),
-            });
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => {
-            return Err(git_err(
-                "IO_ERROR",
-                format!("cannot read {ref_name}: {e}"),
-            ));
-        }
-    }
-
-    let packed_path = gitdir.join("packed-refs");
-    match fs::read_to_string(&packed_path) {
-        Ok(content) => {
-            for line in content.lines() {
-                if line.is_empty() || line.starts_with('#') || line.starts_with('^') {
-                    continue;
-                }
-                if let Some((oid, name)) = line.split_once(' ') {
-                    if name == ref_name {
-                        if !is_hex_oid(oid) {
-                            return Err(git_err(
-                                "INVALID_REF",
-                                format!("{ref_name} in packed-refs is not a commit id"),
-                            ));
-                        }
-                        return Ok(NativeHeadInfo {
-                            ref_name,
-                            commit: Some(oid.to_string()),
-                        });
-                    }
-                }
-            }
-            Ok(NativeHeadInfo {
-                ref_name,
-                commit: None,
-            })
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(NativeHeadInfo {
+    let Some(referent) = head.referent_name() else {
+        return Err(git_err(
+            "INVALID_REF",
+            format!("{} has a detached HEAD", repo.git_dir().display()),
+        ));
+    };
+    let ref_name = referent.as_bstr().to_string();
+    if head.is_unborn() {
+        return Ok(NativeHeadInfo {
             ref_name,
             commit: None,
-        }),
-        Err(e) => Err(git_err("IO_ERROR", format!("cannot read packed-refs: {e}"))),
+        });
     }
+    let mut mutable = repo
+        .find_reference(ref_name.as_str())
+        .map_err(|e| git_err("INVALID_REF", format!("cannot resolve {ref_name}: {e}")))?;
+    let id = mutable
+        .peel_to_id()
+        .map_err(|e| git_err("INVALID_REF", format!("{ref_name} is not a valid commit id: {e}")))?
+        .detach();
+    Ok(NativeHeadInfo {
+        ref_name,
+        commit: Some(id.to_string()),
+    })
 }
 
 #[napi(object)]
@@ -346,10 +381,13 @@ fn walk_history_sync(
         let decoded = commit
             .decode()
             .map_err(|e| git_err("REPO_CORRUPT", format!("commit {curr_oid} malformed: {e}")))?;
-        let committer_time = decoded
+        let committer_sig = decoded
             .committer()
-            .map_err(|e| git_err("REPO_CORRUPT", format!("commit {curr_oid} committer invalid: {e}")))?
-            .seconds();
+            .map_err(|e| git_err("REPO_CORRUPT", format!("commit {curr_oid} committer invalid: {e}")))?;
+        let committer_time = committer_sig
+            .time()
+            .map_err(|e| git_err("REPO_CORRUPT", format!("commit {curr_oid} committer time invalid: {e}")))?
+            .seconds;
         oldest = Some((curr_oid, committer_time));
         let parent = decoded.parents().next();
         let before = match parent {
@@ -410,24 +448,30 @@ fn extract_tree_sync(
     };
 
     let dest = Path::new(dest_dir);
-    if dest.exists() {
-        if !dest.is_dir() {
-            return Err(git_err(
-                "DEST_NOT_EMPTY",
-                format!("{dest_dir} exists and is not a directory"),
-            ));
+    match fs::symlink_metadata(dest) {
+        Ok(meta) => {
+            if !meta.file_type().is_dir() {
+                return Err(git_err(
+                    "DEST_NOT_EMPTY",
+                    format!("{dest_dir} exists and is not a real directory"),
+                ));
+            }
+            let mut rd = fs::read_dir(dest)
+                .map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
+            if rd.next().is_some() {
+                return Err(git_err(
+                    "DEST_NOT_EMPTY",
+                    format!("{dest_dir} is not empty"),
+                ));
+            }
         }
-        let mut rd = fs::read_dir(dest)
-            .map_err(|e| git_err("IO_ERROR", format!("cannot read {dest_dir}: {e}")))?;
-        if rd.next().is_some() {
-            return Err(git_err(
-                "DEST_NOT_EMPTY",
-                format!("{dest_dir} is not empty"),
-            ));
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir_all(dest)
+                .map_err(|e| git_err("IO_ERROR", format!("cannot create {dest_dir}: {e}")))?;
         }
-    } else {
-        fs::create_dir_all(dest)
-            .map_err(|e| git_err("IO_ERROR", format!("cannot create {dest_dir}: {e}")))?;
+        Err(e) => {
+            return Err(git_err("IO_ERROR", format!("cannot lstat {dest_dir}: {e}")));
+        }
     }
 
     let cid = oid_of(commit_oid).map_err(|e| git_err("INVALID_OID", e.reason))?;
@@ -465,21 +509,22 @@ fn extract_tree_sync(
             fs::create_dir_all(parent)
                 .map_err(|e| git_err("IO_ERROR", format!("cannot create parent for {}: {e}", entry.rel)))?;
         }
-        let mut f = File::create(&target)
+        if !is_safe_rel_path(&entry.rel) {
+            return Err(git_err("INVALID_PATH", format!("unsafe tree path: {}", entry.rel)));
+        }
+        let mut open_opts = fs::OpenOptions::new();
+        open_opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Honor process umask at descriptor creation (matches git checkout-index 0666/0777).
+            open_opts.mode(if entry.mode == "100755" { 0o777 } else { 0o666 });
+        }
+        let mut f = open_opts
+            .open(&target)
             .map_err(|e| git_err("IO_ERROR", format!("cannot create {}: {e}", target.display())))?;
         f.write_all(&obj.data)
             .map_err(|e| git_err("IO_ERROR", format!("cannot write {}: {e}", target.display())))?;
-        #[cfg(unix)]
-        if entry.mode == "100755" {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = f
-                .metadata()
-                .map_err(|e| git_err("IO_ERROR", format!("cannot stat {}: {e}", target.display())))?
-                .permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&target, perms)
-                .map_err(|e| git_err("IO_ERROR", format!("cannot chmod {}: {e}", target.display())))?;
-        }
         total_bytes += obj.data.len() as u64;
         files.push(entry.rel);
     }
@@ -548,9 +593,52 @@ fn signature_of(identity: &IdentityInput) -> Result<gix::actor::Signature> {
         .map_err(|e| git_err("INVALID_PATH", format!("invalid signature time: {e}")))
 }
 
+struct OwnedRepoCommitFileInput {
+    rel: String,
+    file_path: Option<String>,
+    body: Option<Vec<u8>>,
+    mode: Option<String>,
+}
+
+struct OwnedRepoCommitInput {
+    parent: Option<String>,
+    prefix: String,
+    change_kind: String,
+    files: Option<Vec<OwnedRepoCommitFileInput>>,
+    remove: Option<Vec<String>>,
+    message: String,
+    author: IdentityInput,
+    committer: IdentityInput,
+}
+
+impl From<RepoCommitInput> for OwnedRepoCommitInput {
+    fn from(v: RepoCommitInput) -> Self {
+        OwnedRepoCommitInput {
+            parent: v.parent,
+            prefix: v.prefix,
+            change_kind: v.change_kind,
+            files: v.files.map(|list| {
+                list.into_iter()
+                    .map(|f| OwnedRepoCommitFileInput {
+                        rel: f.rel,
+                        file_path: f.file_path,
+                        // Copy JS-backed Buffer synchronously on the JS thread to avoid UB.
+                        body: f.body.map(|b| b.as_ref().to_vec()),
+                        mode: f.mode,
+                    })
+                    .collect()
+            }),
+            remove: v.remove,
+            message: v.message,
+            author: v.author,
+            committer: v.committer,
+        }
+    }
+}
+
 fn prepare_commit_sync(
     repo: &gix::Repository,
-    input: &RepoCommitInput,
+    input: &OwnedRepoCommitInput,
 ) -> Result<NativePreparedCommit> {
     if !input.prefix.is_empty() && !is_safe_rel_path(&input.prefix) {
         return Err(git_err(
@@ -599,7 +687,7 @@ fn prepare_commit_sync(
                     let blob_id = match (&file.file_path, &file.body) {
                         (Some(path), _) => write_blob_from_file(repo, path)?,
                         (None, Some(buf)) => repo
-                            .write_blob(buf.as_ref())
+                            .write_blob(buf.as_slice())
                             .map_err(|e| git_err("IO_ERROR", format!("cannot write {}: {e}", file.rel)))?
                             .detach(),
                         (None, None) => {
@@ -640,7 +728,7 @@ fn prepare_commit_sync(
                     let blob_id = match (&file.file_path, &file.body) {
                         (Some(path), _) => write_blob_from_file(repo, path)?,
                         (None, Some(buf)) => repo
-                            .write_blob(buf.as_ref())
+                            .write_blob(buf.as_slice())
                             .map_err(|e| git_err("IO_ERROR", format!("cannot write {}: {e}", file.rel)))?
                             .detach(),
                         (None, None) => {
@@ -707,17 +795,73 @@ fn cas_ref_sync(
         .try_into()
         .map_err(|e| git_err("INVALID_REF", format!("invalid ref name {ref_name}: {e}")))?;
     let new_id = oid_of(new_commit).map_err(|e| git_err("INVALID_OID", e.reason))?;
-    let expected = match expected_parent {
+
+    match expected_parent {
         Some(hex) if !hex.is_empty() => {
             let old_id = oid_of(hex).map_err(|e| git_err("INVALID_OID", e.reason))?;
-            PreviousValue::MustExistAndMatch(Target::Object(old_id))
+            let edit = RefEdit::update(
+                full_name,
+                new_id,
+                PreviousValue::MustExistAndMatch(Target::Object(old_id)),
+                "",
+            );
+            repo.edit_reference(edit).map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("Permission denied") || msg.contains("Read-only") {
+                    git_err("IO_ERROR", format!("ref storage error for {ref_name}: {msg}"))
+                } else {
+                    git_err("CAS_CONFLICT", format!("ref update refused for {ref_name}: {msg}"))
+                }
+            })?;
+            Ok(())
         }
-        _ => PreviousValue::MustNotExist,
-    };
-    let edit = RefEdit::update(full_name, new_id, expected, "");
-    repo.edit_reference(edit)
-        .map_err(|e| git_err("CAS_CONFLICT", format!("ref update refused for {ref_name}: {e}")))?;
-    Ok(())
+        _ => {
+            // Strict creation CAS: gix-ref 0.70.0 `PreviousValue::MustNotExist` treats an existing
+            // ref equal to `new_id` as a no-op success instead of conflict. Acquire Git's `.lock`
+            // file directly, verify strict absence across loose + packed refs under lock, then commit.
+            let ref_rel = full_name.as_bstr().to_string();
+            let ref_path = repo.git_dir().join(&ref_rel);
+            if let Some(parent) = ref_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    git_err("IO_ERROR", format!("cannot create ref parent {}: {e}", parent.display()))
+                })?;
+            }
+            let lock_path = repo.git_dir().join(format!("{ref_rel}.lock"));
+            let mut lock_file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+                .map_err(|e| {
+                    if e.kind() == io::ErrorKind::AlreadyExists {
+                        git_err("CAS_CONFLICT", format!("ref {ref_name} is locked"))
+                    } else {
+                        git_err("IO_ERROR", format!("cannot lock {ref_name}: {e}"))
+                    }
+                })?;
+            let result = (|| -> Result<()> {
+                let existing = repo.try_find_reference(full_name.as_bstr()).map_err(|e| {
+                    git_err("INVALID_REF", format!("cannot inspect {ref_name}: {e}"))
+                })?;
+                if existing.is_some() {
+                    return Err(git_err(
+                        "CAS_CONFLICT",
+                        format!("ref {ref_name} already exists (expected absent)"),
+                    ));
+                }
+                lock_file
+                    .write_all(format!("{new_id}\n").as_bytes())
+                    .map_err(|e| git_err("IO_ERROR", format!("cannot write lock for {ref_name}: {e}")))?;
+                drop(lock_file);
+                fs::rename(&lock_path, &ref_path)
+                    .map_err(|e| git_err("IO_ERROR", format!("cannot publish {ref_name}: {e}")))?;
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&lock_path);
+            }
+            result
+        }
+    }
 }
 
 // ---- NativeRepo handle & AsyncTasks ------------------------------------------------
@@ -749,7 +893,7 @@ impl Task for OpenRepoTask {
     type JsValue = NativeRepo;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let repo = gix::open(&self.gitdir)
+        let repo = gix::open_opts(&self.gitdir, gix::open::Options::isolated())
             .map_err(|e| git_err("IO_ERROR", format!("gitoxide cannot open {}: {e}", self.gitdir)))?;
         Ok(Arc::new(repo.into_sync()))
     }
@@ -866,7 +1010,7 @@ impl Task for ExtractTreeTask {
 
 pub struct PrepareCommitTask {
     repo: Arc<gix::ThreadSafeRepository>,
-    input: RepoCommitInput,
+    input: OwnedRepoCommitInput,
 }
 
 impl Task for PrepareCommitTask {
@@ -969,7 +1113,7 @@ impl NativeRepo {
     pub fn prepare_commit(&self, input: RepoCommitInput) -> Result<AsyncTask<PrepareCommitTask>> {
         Ok(AsyncTask::new(PrepareCommitTask {
             repo: self.sync_repo()?,
-            input,
+            input: input.into(),
         }))
     }
 
@@ -1005,6 +1149,44 @@ pub struct FileEntry {
     pub body: Buffer,
 }
 
+struct OwnedFileEntry {
+    rel: String,
+    body: Vec<u8>,
+}
+
+struct OwnedCommitInput {
+    gitdir: String,
+    ref_name: String,
+    parent: Option<String>,
+    rel: String,
+    files: Option<Vec<OwnedFileEntry>>,
+    message: String,
+    author: IdentityInput,
+    committer: IdentityInput,
+}
+
+impl From<CommitInput> for OwnedCommitInput {
+    fn from(v: CommitInput) -> Self {
+        OwnedCommitInput {
+            gitdir: v.gitdir,
+            ref_name: v.ref_name,
+            parent: v.parent,
+            rel: v.rel,
+            files: v.files.map(|xs| {
+                xs.into_iter()
+                    .map(|f| OwnedFileEntry {
+                        rel: f.rel,
+                        body: f.body.as_ref().to_vec(),
+                    })
+                    .collect()
+            }),
+            message: v.message,
+            author: v.author,
+            committer: v.committer,
+        }
+    }
+}
+
 #[napi(object)]
 pub struct CommitInput {
     pub gitdir: String,
@@ -1017,8 +1199,8 @@ pub struct CommitInput {
     pub committer: IdentityInput,
 }
 
-fn commit_sync(input: &CommitInput) -> Result<String> {
-    let repo = gix::open(&input.gitdir)
+fn commit_sync(input: &OwnedCommitInput) -> Result<String> {
+    let repo = gix::open_opts(&input.gitdir, gix::open::Options::isolated())
         .map_err(|e| refuse(format!("gitoxide cannot open {}: {e}", input.gitdir)))?;
     let parent = match input.parent.as_deref() {
         Some(hex) if !hex.is_empty() => Some(oid_of(hex)?),
@@ -1058,7 +1240,7 @@ fn commit_sync(input: &CommitInput) -> Result<String> {
             }
             for file in files {
                 let blob = repo
-                    .write_blob(file.body.as_ref())
+                    .write_blob(file.body.as_slice())
                     .map_err(|e| refuse(format!("cannot write {}: {e}", file.rel)))?;
                 let path = format!("{}/{}", input.rel, file.rel);
                 editor
@@ -1092,7 +1274,7 @@ fn commit_sync(input: &CommitInput) -> Result<String> {
 }
 
 pub struct CommitTask {
-    input: CommitInput,
+    input: OwnedCommitInput,
 }
 
 impl Task for CommitTask {
@@ -1110,11 +1292,11 @@ impl Task for CommitTask {
 
 #[napi]
 pub fn commit(input: CommitInput) -> AsyncTask<CommitTask> {
-    AsyncTask::new(CommitTask { input })
+    AsyncTask::new(CommitTask { input: input.into() })
 }
 
 fn read_objects_sync(gitdir: &str, oids: &[String]) -> Result<Vec<Option<Vec<u8>>>> {
-    let repo = gix::open(gitdir)
+    let repo = gix::open_opts(gitdir, gix::open::Options::isolated())
         .map_err(|e| refuse(format!("gitoxide cannot open {gitdir}: {e}")))?;
     let mut out = Vec::with_capacity(oids.len());
     for hex in oids {

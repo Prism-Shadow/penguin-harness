@@ -343,7 +343,7 @@ describe.skipIf(native === null)("agent-state-gix interchange with real Git", ()
 
     // Commit must return a Promise and settle in a later libuv turn (never blocking the JS tick).
     const commitOrder: string[] = [];
-    const rawCommitPromise = native.commit({
+    const rawCommitPromise = native!.commit({
       gitdir: c.gitdir,
       refName: c.ref,
       parent: tip,
@@ -380,7 +380,7 @@ describe.skipIf(native === null)("agent-state-gix interchange with real Git", ()
 
     // readObjects must likewise return a Promise and settle in a later libuv turn.
     const readOrder: string[] = [];
-    const rawReadPromise = native.readObjects(c.gitdir, oids);
+    const rawReadPromise = native!.readObjects(c.gitdir, oids);
     expect(rawReadPromise).toBeInstanceOf(Promise);
     readOrder.push("sync-return");
     queueMicrotask(() => readOrder.push("microtask"));

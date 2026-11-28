@@ -4,7 +4,7 @@
  * depends on core alone) to compare against.
  */
 import { fileURLToPath } from "node:url";
-import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine } from "@prismshadow/penguin-core/plugin";
 import { mustRun } from "../../../scripts/must-run.mjs";
 import { locateGit, type GitProgram } from "../src/binary.js";
 import { openGitEngine } from "../src/engine.js";
@@ -13,7 +13,7 @@ import { GIT_CACHE } from "./cache.js";
 export { GIT_CACHE };
 
 /** The engine and its Git, or null where this host cannot run them (and must not have to). */
-export async function liveGit(): Promise<{ engine: AgentStateEngine; git: GitProgram } | null> {
+export async function liveGit(): Promise<{ engine: GitEngine; git: GitProgram } | null> {
   const logged: string[] = [];
   const engine = await openGitEngine({ cacheDir: GIT_CACHE, log: (line) => logged.push(line) });
   const found = engine === null ? null : await locateGit({ cacheDir: GIT_CACHE });
@@ -39,7 +39,7 @@ export interface Server {
     gitdir: string;
     now: () => Date;
     log: (line: string) => void;
-    engine: AgentStateEngine;
+    engine: GitEngine;
     identity?: {
       env: Record<string, string>;
       home: string;

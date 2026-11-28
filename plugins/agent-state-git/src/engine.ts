@@ -22,9 +22,11 @@ import path from "node:path";
 import type {
   AgentStateCommit,
   AgentStateEngine,
-  AgentStateEngineHost,
   AgentStateIdentity,
+  GitEngine,
+  GitEngineHost,
 } from "@prismshadow/penguin-core/plugin";
+import { dugiteGitEngine } from "./git-engine.js";
 import { locateGit, type GitProgram } from "./binary.js";
 import { finish, gitEnv, start } from "./git.js";
 
@@ -204,14 +206,14 @@ function probe(git: GitProgram): Promise<string> {
 }
 
 /** One fetch per cache directory per process: a hot swap asks again, and gets the same answer. */
-const opening = new Map<string, Promise<AgentStateEngine>>();
+const opening = new Map<string, Promise<GitEngine>>();
 
 /**
  * The engine for this host, once its Git is in place and starts. An error when there is no Git
  * it could use or the program does not run: the deployment has no engine from this contribution.
  * A failed open is asked again by the next App, not by this one.
  */
-export function openGitEngine(host: AgentStateEngineHost): Promise<AgentStateEngine> {
+export function openGitEngine(host: GitEngineHost): Promise<GitEngine> {
   let open = opening.get(host.cacheDir);
   if (open === undefined) {
     open = (async () => {
@@ -227,7 +229,7 @@ export function openGitEngine(host: AgentStateEngineHost): Promise<AgentStateEng
         throw new Error(`${found.git.program} does not run (${err.message})`);
       });
       say(`git ${version} from ${found.source}`);
-      return gitEngine(found.git, version);
+      return dugiteGitEngine(found.git, version);
     })();
     opening.set(host.cacheDir, open);
     open.catch(() => {

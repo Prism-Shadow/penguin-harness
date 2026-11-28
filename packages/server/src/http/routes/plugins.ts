@@ -239,7 +239,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const root = deps.config.root;
     // Workbenches in the layout before Agent State are listed from where they move to.
-    await migrateWorkbenches(agentDir(root, projectId, agentId), deps.engines.current());
+    await migrateWorkbenches(agentDir(root, projectId, agentId), () => deps.engines.current());
     const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
@@ -272,7 +272,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const root = deps.config.root;
     // Before the install: one that wrote a workbench into Agent State ahead of the move would
     // take its id, and the Agent's existing folder, data included, would stay in the old place.
-    await migrateWorkbenches(agentDir(root, projectId, agentId), deps.engines.current());
+    await migrateWorkbenches(agentDir(root, projectId, agentId), () => deps.engines.current());
     await refusingTakenNames(async () => {
       await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
       await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
@@ -319,7 +319,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const root = deps.config.root;
     // Workbenches in the layout before Agent State are found where they move to.
-    await migrateWorkbenches(agentDir(root, projectId, agentId), deps.engines.current());
+    await migrateWorkbenches(agentDir(root, projectId, agentId), () => deps.engines.current());
     const result = await uninstallAgentPlugin(
       { root, library: deps.library, workbenches: deps.workbenches },
       projectId,

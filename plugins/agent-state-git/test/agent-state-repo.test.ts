@@ -10,7 +10,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine } from "@prismshadow/penguin-core/plugin";
 import { liveGit } from "./live-git.js";
 
 const live = await liveGit();
@@ -22,7 +22,7 @@ const { agentStateRepoScenarios } = (await import(
 )) as {
   agentStateRepoScenarios: (
     t: { afterEach: unknown; beforeEach: unknown; describe: unknown; expect: unknown; it: unknown },
-    scenario: { label: string; engine: () => AgentStateEngine | undefined },
+    scenario: { label: string; engine: () => GitEngine | undefined },
   ) => void;
 };
 

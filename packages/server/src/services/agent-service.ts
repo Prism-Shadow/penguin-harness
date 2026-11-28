@@ -379,7 +379,9 @@ export class AgentService implements AgentLifecycle {
    * ahead of the move: the old folder would then be left where it is.
    */
   private migrateWorkbenches(projectId: string, agentId: string): Promise<void> {
-    return migrateWorkbenches(agentDir(this.root, projectId, agentId), this.engines.current());
+    return migrateWorkbenches(agentDir(this.root, projectId, agentId), () =>
+      this.engines.current(),
+    );
   }
 
   /** Count installed folders without compiling or walking their UI/runtime assets. */

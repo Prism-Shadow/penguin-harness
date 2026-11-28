@@ -412,8 +412,7 @@ export class WorkbenchService implements Workbenches {
    */
   private async migrate(projectId: string, agentId: string): Promise<void> {
     await this.held.get(`${projectId}/${agentId}`);
-    return migrateWorkbenches(
-      agentDir(this.paths.root, projectId, agentId),
+    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId), () =>
       this.engines.current(),
     );
   }
@@ -698,6 +697,23 @@ export class WorkbenchService implements Workbenches {
     );
   }
 
+  private readonly mutating = new Map<string, Promise<unknown>>();
+
+  private serializeWorkbench<T>(k: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.mutating.get(k) ?? Promise.resolve();
+    const run = prior.then(fn, fn);
+    const tail = run.then(
+      () => {
+        if (this.mutating.get(k) === tail) this.mutating.delete(k);
+      },
+      () => {
+        if (this.mutating.get(k) === tail) this.mutating.delete(k);
+      },
+    );
+    this.mutating.set(k, tail);
+    return run;
+  }
+
   async rollback(
     projectId: string,
     agentId: string,
@@ -705,26 +721,29 @@ export class WorkbenchService implements Workbenches {
     revision: string,
     by?: VersionAuthor,
   ): Promise<WorkbenchInfo> {
-    const folder = await this.folder(projectId, agentId, workbenchId);
-    if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
-    let found = true;
-    await restoreSourceFromDir(folder, async (incoming) => {
-      const extracted = await this.fromRepo(key(projectId, agentId, workbenchId), () =>
-        this.repo(projectId, agentId).extractAt(repoPath(workbenchId), revision, incoming, {
-          validatePath: (fileRel) => {
-            if (!isSourcePath(fileRel))
-              throw new Error(`that version holds ${fileRel}, which is not workbench source`);
-          },
-        }),
-      );
-      if (extracted === null) {
-        found = false;
-        throw new WorkbenchNotFound("no such version");
-      }
-      return extracted;
+    const k = key(projectId, agentId, workbenchId);
+    return this.serializeWorkbench(k, async () => {
+      const folder = await this.folder(projectId, agentId, workbenchId);
+      if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
+      let found = true;
+      await restoreSourceFromDir(folder, async (incoming) => {
+        const extracted = await this.fromRepo(k, () =>
+          this.repo(projectId, agentId).extractAt(repoPath(workbenchId), revision, incoming, {
+            validatePath: (fileRel) => {
+              if (!isSourcePath(fileRel))
+                throw new Error(`that version holds ${fileRel}, which is not workbench source`);
+            },
+          }),
+        );
+        if (extracted === null) {
+          found = false;
+          throw new WorkbenchNotFound("no such version");
+        }
+        return extracted;
+      });
+      if (!found) throw new WorkbenchNotFound("no such version");
+      return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
     });
-    if (!found) throw new WorkbenchNotFound("no such version");
-    return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
   }
 
   async remove(

@@ -55,7 +55,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     await deps.agentConfig.requireExists(projectId, agentId);
     await refuseSystemAgentChange(deps.agentConfig, projectId, agentId, "export");
     // Workbenches still in an older layout move into agent_state/ first, so the package has them.
-    await migrateWorkbenches(agentDir(deps.root, projectId, agentId), deps.engines.current());
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId), () => deps.engines.current());
     const zip = await exportAgent(deps, projectId, agentId, c.req.query() as AgentArchiveQuery);
     const day = formatLocalDate(deps.now()).replaceAll("-", "");
     return new Response(new Uint8Array(zip), {
@@ -108,7 +108,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
       // the backup taken before the swap holds them and the package's cannot take their ids; then
       // what the server holds open there lets go until the swap is over (Windows cannot rename a
       // watched directory).
-      await migrateWorkbenches(dir, deps.engines.current());
+      await migrateWorkbenches(dir, () => deps.engines.current());
       const imported = await deps.workbenches.whileReleased(projectId, agentId, async () => {
         const done = await deps.snapshots.importArchive(projectId, agentId, pkg, {
           preSnapshot: true,
