@@ -18,8 +18,4 @@ export {
   parseOrgKey,
   resolveOrgLanding,
 } from "@prismshadow/penguin-web/internal";
-export type {
-  CompanyNavKey,
-  OrgPageRenderer,
-  WorkMode,
-} from "@prismshadow/penguin-web/internal";
+export type { CompanyNavKey, OrgPageRenderer, WorkMode } from "@prismshadow/penguin-web/internal";

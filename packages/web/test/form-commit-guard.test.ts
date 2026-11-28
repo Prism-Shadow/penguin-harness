@@ -33,12 +33,7 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import {
-  appKeyOf,
-  expectEveryRootScanned,
-  scanSources,
-  type SourceFile,
-} from "./helpers/roots";
+import { appKeyOf, expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
 
 const SCAN = scanSources([".tsx", ".ts"]);
 
@@ -86,9 +81,7 @@ const COMMITS = /^(?:save|persist|write|submit|put|post|send|commit|onSave|onSub
     library web halves' pages (their whole source takes part in the model, like a feature's). */
 const inReach = (file: SourceFile) =>
   file.name.endsWith(".tsx") &&
-  (file.root === "web"
-    ? file.rel.startsWith("features/")
-    : file.root.startsWith("library:"));
+  (file.root === "web" ? file.rel.startsWith("features/") : file.root.startsWith("library:"));
 
 /** Each file is parsed once, however many checks read it. */
 const parsed = new WeakMap<SourceFile, ts.SourceFile>();
@@ -309,8 +302,7 @@ function shellScopeSaves(file: SourceFile): Array<{ where: string; held: boolean
   return found;
 }
 
-const webFile = (rel: string) =>
-  SCAN.files.find((f) => appKeyOf(f.id) === rel);
+const webFile = (rel: string) => SCAN.files.find((f) => appKeyOf(f.id) === rel);
 const listed = (list: ReadonlyArray<readonly [string, ...unknown[]]>, rel: string) =>
   list.some(([f]) => f === rel);
 
