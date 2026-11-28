@@ -3352,7 +3352,14 @@ export const en: Strings = {
         failedRecommendBody:
           "The default download source may be slow or unreachable on this network. Open Plugin sources to configure mirrors (such as gh-proxy.com or npmmirror) manually, or ask an Agent to help configure it.",
         runningNote:
-          "Downloading and installing in order — keep this window open until the batch finishes.",
+          "You can fold this panel to the bottom-right corner and keep working while downloads continue.",
+        fold: "Fold download panel",
+        expand: "Expand download panel",
+        foldedReview: (count: number) => `${count} ${count === 1 ? "plugin" : "plugins"} waiting to download · click to expand`,
+        foldedRunning: (current: number, total: number, title: string) =>
+          `Downloading ${current} of ${total} · ${title}`,
+        foldedDone: (count: number) => `${count} ${count === 1 ? "plugin" : "plugins"} installed`,
+        foldedFailed: (failed: number) => `${failed} failed · click to expand and configure sources`,
         retryFailed: (count: number) => `Retry failed (${count})`,
         selectMode: "Batch download",
         exitSelectMode: "Done selecting",

@@ -229,4 +229,49 @@ describe("PluginBatchInstallModal", () => {
     expect(calls).toEqual(["@acme/beta"]);
     expect(modal.querySelector('[data-testid="batch-install-failure-recovery"]')).toBeNull();
   });
+
+  it("docks non-blockingly at the bottom-right and supports folding and expanding while downloading", async () => {
+    let release!: () => void;
+    const runInstall = vi.fn(
+      (_item: BatchPluginItem, cb: { onProgress: (r: number, t: number | null) => void }) => {
+        cb.onProgress(256 * 1024, 1024 * 1024);
+        return new Promise<{ loadError?: string }>((resolve) => {
+          release = () => resolve({});
+        });
+      },
+    );
+
+    await mount(
+      h(PluginBatchInstallModal, {
+        open: true,
+        summaryReason: "Non-blocking dock test.",
+        items: ITEMS,
+        runInstall,
+        onClose: vi.fn(),
+      }),
+    );
+
+    const modal = document.body.querySelector('[data-testid="batch-plugin-install-modal"]')!;
+    expect(modal.getAttribute("aria-modal")).toBe("false");
+    expect(modal.getAttribute("data-expanded")).toBe("true");
+
+    await click(modal.querySelector('[data-testid="batch-install-confirm"]') as HTMLButtonElement);
+    await settle();
+
+    // Fold during download: body collapses, unified progress bar remains live in corner strip.
+    await click(modal.querySelector('[data-testid="batch-install-toggle-fold"]') as HTMLButtonElement);
+    await settle();
+    expect(modal.getAttribute("data-expanded")).toBe("false");
+    expect(modal.querySelector('[data-testid="batch-install-body"]')).toBeNull();
+    expect(modal.querySelector('[role="progressbar"]')).not.toBeNull();
+
+    // Expand again: full body and plugin list return.
+    await click(modal.querySelector('[data-testid="batch-install-toggle-fold"]') as HTMLButtonElement);
+    await settle();
+    expect(modal.getAttribute("data-expanded")).toBe("true");
+    expect(modal.querySelector('[data-testid="batch-install-body"]')).not.toBeNull();
+
+    release();
+    await settle();
+  });
 });

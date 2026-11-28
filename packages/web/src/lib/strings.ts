@@ -3550,7 +3550,14 @@ export const zh = {
         failedRecommendTitle: "部分插件下载失败，建议配置插件下载源",
         failedRecommendBody:
           "当前网络访问默认源可能受限或超时。你可以手动前往「插件源设置」启用镜像（如 gh-proxy.com、npmmirror），或直接让 Agent 帮你检查并配置。",
-        runningNote: "正在按顺序下载并安装，请保持此窗口打开；全部完成后会在此统一汇总结果。",
+        runningNote: "可点击右上角折叠到右下角，不打断当前工作；全部完成后会在此统一汇总结果。",
+        fold: "折叠下载面板",
+        expand: "展开下载面板",
+        foldedReview: (count: number) => `待确认下载 ${count} 个插件 · 点击展开查看原因`,
+        foldedRunning: (current: number, total: number, title: string) =>
+          `正在下载第 ${current} / ${total} 个 · ${title}`,
+        foldedDone: (count: number) => `${count} 个插件已全部安装完成`,
+        foldedFailed: (failed: number) => `${failed} 个插件下载失败 · 点击展开配置下载源`,
         retryFailed: (count: number) => `重试失败项 (${count})`,
         selectMode: "批量下载",
         exitSelectMode: "退出批量",
