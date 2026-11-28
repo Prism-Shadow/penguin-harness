@@ -15,6 +15,20 @@ import { fileURLToPath } from "node:url";
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));
 const ALLOWED_DIR = "lib/shortcuts";
 
+/** The scanned roots: the app's src and the library web halves the app compiles in, as
+    [repo-relative prefix, directory] — the prefix names a file in the findings. */
+const ROOTS: ReadonlyArray<readonly [string, string]> = [
+  ["src", WEB_SRC],
+  [
+    "library/workbench/src/web",
+    fileURLToPath(new URL("../../../library/workbench/src/web", import.meta.url)),
+  ],
+  [
+    "library/organization/src/web",
+    fileURLToPath(new URL("../../../library/organization/src/web", import.meta.url)),
+  ],
+];
+
 /**
  * Files that read the modifiers for something other than a chord of their own, and are
  * therefore excused: the Workspace picker's fixed file-browser keys (Finder's ⌘↑ / ⌘[ / ⌘],
@@ -34,15 +48,17 @@ const EXCUSED_FILES = new Set([
 function modifierReads(): { allowed: string[]; elsewhere: string[] } {
   const allowed: string[] = [];
   const elsewhere: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = (prefix: string, dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        walk(full);
+        walk(prefix, full);
         continue;
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
-      const rel = path.relative(WEB_SRC, full).replaceAll(path.sep, "/");
+      const rel = path
+        .join(prefix, path.relative(dir, full))
+        .replaceAll(path.sep, "/");
       if (EXCUSED_FILES.has(rel)) continue;
       const code = fs
         .readFileSync(full, "utf8")
@@ -53,11 +69,11 @@ function modifierReads(): { allowed: string[]; elsewhere: string[] } {
         );
       code.split("\n").forEach((line, i) => {
         if (!/\.(ctrlKey|metaKey)\b/.test(line)) return;
-        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`src/${rel}:${i + 1}`);
+        (rel.startsWith(ALLOWED_DIR) ? allowed : elsewhere).push(`${rel}:${i + 1}`);
       });
     }
   };
-  walk(WEB_SRC);
+  for (const [prefix, dir] of ROOTS) walk(prefix, dir);
   return { allowed, elsewhere };
 }
 

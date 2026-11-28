@@ -26,7 +26,7 @@
  * readout goes back to the fit. The fit is re-taken as the drawing or the frame changes size
  * (a hire widens the tree, a sidebar collapse widens the frame) until the reader moves the
  * view themselves; from then on it is theirs, and only the percent button gives it back.
- * The arithmetic is in canvas-view.ts.
+ * The arithmetic is the host's lib/canvas-view.ts, reached through the internal seam.
  */
 import {
   useCallback,
@@ -67,16 +67,6 @@ import {
   orgKey,
   toastApiError,
   failureOf,
-} from "@prismshadow/penguin-web/internal";
-
-import { useCompany } from "./company-state";
-
-import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
-
-import { liveEmployeeStates } from "./org-sessions";
-import { DESK_ICON } from "./channel-header";
-import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
-import {
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -88,7 +78,15 @@ import {
   zoomAt,
   type CanvasSize,
   type CanvasView,
-} from "./canvas-view";
+} from "@prismshadow/penguin-web/internal";
+
+import { useCompany } from "./company-state";
+
+import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
+
+import { liveEmployeeStates } from "./org-sessions";
+import { DESK_ICON } from "./channel-header";
+import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
 
 import { ChartCard, ChartLegend } from "./chart-card";
 import {

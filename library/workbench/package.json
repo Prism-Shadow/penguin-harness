@@ -29,7 +29,15 @@
       "import": "./dist/workbench.js"
     },
     "./web": "./src/web/index.ts",
-    "./web/*": "./src/web/*"
+    "./web/app-center/app-center-page": "./src/web/app-center/app-center-page.tsx",
+    "./web/app-center/app-center-windows": "./src/web/app-center/app-center-windows.tsx",
+    "./web/app-center/arrangement": "./src/web/app-center/arrangement.ts",
+    "./web/app-center/system-app-page": "./src/web/app-center/system-app-page.tsx",
+    "./web/app-center/tile-drag": "./src/web/app-center/tile-drag.ts",
+    "./web/workbenches/exit-ball-state": "./src/web/workbenches/exit-ball-state.ts",
+    "./web/workbenches/workbench-app-page": "./src/web/workbenches/workbench-app-page.tsx",
+    "./web/workbenches/workbench-frame": "./src/web/workbenches/workbench-frame.tsx",
+    "./web/workbenches/workbench-load-failure": "./src/web/workbenches/workbench-load-failure.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -39,7 +47,6 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
-    "@prismshadow/penguin-web": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router": "^8.3.0"

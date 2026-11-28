@@ -41,7 +41,12 @@ import { deepPagePaths } from "./src/lib/page-paths";
 const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 function watchPackageSources(): Plugin {
-  const roots = [at("../ui/src/"), at("../web/src/")];
+  const roots = [
+    at("../ui/src/"),
+    at("../web/src/"),
+    at("../../library/workbench/src/web/"),
+    at("../../library/organization/src/web/"),
+  ];
   const stylesheets = [
     at("./src/styles.css"),
     at("./src/app/app.css"),

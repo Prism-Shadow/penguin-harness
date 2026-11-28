@@ -19,7 +19,14 @@ import { describe, expect, it } from "vitest";
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
 
-/** Every `.ts`/`.tsx` under src/, as [path relative to src, source text]. */
+/** The scanned roots: the app's src and the library web halves the app compiles in. */
+const ROOTS = [
+  SRC,
+  resolve(dirname(fileURLToPath(import.meta.url)), "../../../library/workbench/src/web"),
+  resolve(dirname(fileURLToPath(import.meta.url)), "../../../library/organization/src/web"),
+];
+
+/** Every `.ts`/`.tsx` under `dir`, as [path relative to src, source text]. */
 function sources(dir: string, rel = ""): Array<[string, string]> {
   const out: Array<[string, string]> = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -33,7 +40,7 @@ function sources(dir: string, rel = ""): Array<[string, string]> {
 
 describe("the highlighting engine", () => {
   it("is imported statically by the worker alone", () => {
-    const importers = sources(SRC)
+    const importers = ROOTS.flatMap((root) => sources(root))
       .filter(([, src]) =>
         /^import\s(?!type\s)[^;]*from "@prismshadow\/penguin-ui\/highlighter"/m.test(src),
       )

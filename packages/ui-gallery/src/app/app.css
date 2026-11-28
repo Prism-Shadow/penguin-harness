@@ -5,3 +5,5 @@
  */
 @import "../../../web/src/styles.css";
 @source "../../../web/src";
+@source "../../../library/workbench/src/web";
+@source "../../../library/organization/src/web";
