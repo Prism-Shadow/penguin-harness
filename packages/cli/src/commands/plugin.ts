@@ -118,6 +118,21 @@ function mcpServerLine(t: Messages, server: PluginMcpServer): string {
   return t.plugin.mcpServerLine(server.name, transport.kind, target);
 }
 
+/** Verifies `dir` is a built plugin package and returns whether it carries library assets. */
+function checkBuiltPlugin(dir: string, t: Messages): { library: boolean } {
+  let built: boolean;
+  try {
+    built = readPluginTable(dir) !== null;
+  } catch (err) {
+    throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
+  }
+  if (!built) throw new Error(t.plugin.dirNotBuilt(dir));
+  const parts = libraryParts(dir);
+  const library = parts.skills || parts.hooks || parts.mcp || parts.workbenches;
+  if (!library && !parts.modules) throw new Error(t.plugin.dirNotPlugin(dir));
+  return { library };
+}
+
 /**
  * Checks a local package directory the way the server's library will read it and uploads it as a
  * zip. Throws (nothing sent) for a package the library would refuse, one that is no plugin at all,
@@ -135,17 +150,12 @@ async function uploadDirectory(
   let pluginName: string;
   let version: string;
   let mcpServers: PluginMcpServer[] = [];
-  let built: boolean;
   try {
     ({ name, pluginName, version } = readPackageJson(dir).manifest);
-    built = readPluginTable(dir) !== null;
   } catch (err) {
     throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
   }
-  if (!built) throw new Error(t.plugin.dirNotBuilt(dir));
-  const parts = libraryParts(dir);
-  const library = parts.skills || parts.hooks || parts.mcp || parts.workbenches;
-  if (!library && !parts.modules) throw new Error(t.plugin.dirNotPlugin(dir));
+  const { library } = checkBuiltPlugin(dir, t);
   try {
     if (library) mcpServers = readLibraryPackage(dir).mcpServers;
   } catch (err) {
@@ -273,16 +283,7 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       // gate a directory install passes before anything is sent: a package that was never
       // built, or one the library would refuse, is reported and nothing is sent.
       const dir = path.resolve(directory);
-      let built = false;
-      try {
-        built = readPluginTable(dir) !== null;
-      } catch (err) {
-        throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
-      }
-      if (!built) throw new Error(t.plugin.dirNotBuilt(dir));
-      if (!libraryParts(dir).modules) {
-        throw new Error(t.plugin.dirNotPlugin(dir));
-      }
+      checkBuiltPlugin(dir, t);
       const res = await client.request<InstalledPluginsResponse>(
         "POST",
         `${installedPath(projectId)}/link`,
@@ -296,7 +297,10 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
         process.stdout.write(`${JSON.stringify(res)}\n`);
         return;
       }
-      const row = res.plugins.find((p) => p.linked === true);
+      const row = res.plugins.find(
+        (p) =>
+          p.linked === true && (res.installed === undefined || p.specifier === res.installed.name),
+      );
       process.stdout.write(
         row === undefined ? t.plugin.linked(dir) : t.plugin.linked(row.linkPath ?? dir),
       );

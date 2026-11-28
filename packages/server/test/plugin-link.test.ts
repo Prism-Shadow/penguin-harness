@@ -185,6 +185,7 @@ describe("plugin link", () => {
     const gone = await view();
     const goneRow = gone.plugins.find((p) => p.specifier === "@acme/live");
     expect(goneRow?.error ?? "").toContain("@acme");
+    expect(goneRow).toMatchObject({ linked: true, linkPath: dir });
   });
 
   it("remove runs npm's uninstall: the link and its manifest entry go; the author directory stays byte for byte", async () => {

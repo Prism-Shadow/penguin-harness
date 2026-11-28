@@ -408,6 +408,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           .map(([id]) => id),
         here: specifier in here,
       };
+      const linkFields = linkTable.has(specifier)
+        ? { linked: true as const, linkPath: linkTable.get(specifier) }
+        : {};
       const declared = await readPluginDeclaration(specifier, bases);
       if ("error" in declared) {
         plugins.push({
@@ -416,6 +419,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           builtin: false,
           modules: [],
           replaces: [],
+          ...linkFields,
           // A link's row exists because the link exists, not because a Project asked: the
           // fault IS its disk truth, and the page reads it wherever the row shows.
           ...(where.here || linkTable.has(specifier) ? { error: declared.error } : {}),
@@ -434,7 +438,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         builtin: declared.builtin,
         modules: declared.modules,
         replaces: declared.replaces,
-        ...(linkTable.has(specifier) ? { linked: true, linkPath: linkTable.get(specifier) } : {}),
+        ...linkFields,
         ...(!active && failure !== undefined ? { error: failure } : {}),
         ...(unmet !== undefined
           ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
