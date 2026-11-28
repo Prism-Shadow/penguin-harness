@@ -106,7 +106,7 @@ import {
   socketPathIn,
   type WorkbenchPlace,
 } from "./data-dirs.js";
-import { migrateWorkbenches } from "./migrate.js";
+import { migrateWorkbenches, whileAgentMigrationHeld } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
   BUILD_DIR,
@@ -408,8 +408,14 @@ export class WorkbenchService implements Workbenches {
   private nextLoadedGen = 1;
   /** Agents whose State is being replaced (whileReleased), and when that ends. */
   private readonly held = new Map<string, Promise<void>>();
-  /** Re-entrant AsyncLocalStorage tracking which agentKeys this call chain already admitted (Majors #2, #3). */
-  private readonly agentOpScope = new AsyncLocalStorage<ReadonlySet<string>>();
+  /**
+   * Re-entrant AsyncLocalStorage mapping `agentKey` -> live admission token. Tokens are revoked in
+   * `finally` so any inherited async context (e.g. timers or watcher callbacks) expires as soon as
+   * its admitting operation returns (Major #2).
+   */
+  private readonly agentOpScope = new AsyncLocalStorage<ReadonlyMap<string, symbol>>();
+  /** Currently live admission tokens for `withAgentOp`. */
+  private readonly activeAgentTokens = new Set<symbol>();
   /** In-flight admitted operations per Agent so whileReleased() drains entire operations end-to-end. */
   private readonly agentActiveOps = new Map<string, number>();
   /** Waiters notified whenever `agentActiveOps.get(agentKey)` drops to 0. */
@@ -419,8 +425,9 @@ export class WorkbenchService implements Workbenches {
 
   /**
    * Admits an operation on `(projectId, agentId)` across its ENTIRE lifecycle (migration, folder
-   * read, load/build, status write, rollback, removal). Already-admitted nested calls proceed
-   * without re-waiting on `held`, preventing self-deadlock during `whileReleased()` (Majors #2, #3).
+   * read, load/build, status write, dispatch, rollback, removal). Already-admitted nested calls
+   * with a still-live token proceed without re-waiting on `held`, preventing self-deadlock during
+   * `whileReleased()` while ensuring expired inherited contexts can never bypass `held`.
    */
   private async withAgentOp<T>(
     projectId: string,
@@ -429,18 +436,22 @@ export class WorkbenchService implements Workbenches {
   ): Promise<T> {
     const agentKey = `${projectId}/${agentId}`;
     const existingScope = this.agentOpScope.getStore();
-    if (existingScope?.has(agentKey)) {
+    const inheritedToken = existingScope?.get(agentKey);
+    if (inheritedToken !== undefined && this.activeAgentTokens.has(inheritedToken)) {
       return fn();
     }
     for (let held = this.held.get(agentKey); held; held = this.held.get(agentKey)) {
       await held;
     }
+    const token = Symbol(agentKey);
+    this.activeAgentTokens.add(token);
     this.agentActiveOps.set(agentKey, (this.agentActiveOps.get(agentKey) ?? 0) + 1);
-    const nextScope = new Set(existingScope);
-    nextScope.add(agentKey);
+    const nextScope = new Map(existingScope);
+    nextScope.set(agentKey, token);
     try {
       return await this.agentOpScope.run(nextScope, fn);
     } finally {
+      this.activeAgentTokens.delete(token);
       const rem = (this.agentActiveOps.get(agentKey) ?? 1) - 1;
       if (rem <= 0) {
         this.agentActiveOps.delete(agentKey);
@@ -512,10 +523,16 @@ export class WorkbenchService implements Workbenches {
       const all = !(await isSwitchedOff(base));
       const out: WorkbenchInfo[] = [];
       for (const folder of folders) {
-        const { info, unloaded } = await this.settle(projectId, agentId, folder, all);
-        // A marker written by hand is only seen here: what it unloaded is news to open pages.
-        if (unloaded) this.notify(projectId, agentId, info);
-        out.push(info);
+        try {
+          const { info, unloaded } = await this.settle(projectId, agentId, folder, all);
+          // A marker written by hand is only seen here: what it unloaded is news to open pages.
+          if (unloaded) this.notify(projectId, agentId, info);
+          out.push(info);
+        } catch (err) {
+          // Folder was removed concurrently after `listFolders` snapshotted it (Major #4).
+          if (err instanceof WorkbenchNotFound) continue;
+          throw err;
+        }
       }
       // Folders that went away drop their instances (only entries older than this snapshot).
       const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
@@ -713,13 +730,15 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
     request: WorkbenchRequest,
   ): Promise<WorkbenchResponse> {
-    const loaded = await this.withAgentOp(projectId, agentId, () =>
-      this.current(projectId, agentId, workbenchId),
-    );
-    if (loaded.main === null) {
-      return { status: 503, body: { error: loaded.error ?? "workbench is not loaded" } };
-    }
-    return loaded.main.handle(request);
+    // Keep Agent admission held across `main.handle(request)` so an archive swap drains active
+    // handlers before disposing their tree and swapping `agent_state` (Major #1).
+    return this.withAgentOp(projectId, agentId, async () => {
+      const loaded = await this.current(projectId, agentId, workbenchId);
+      if (loaded.main === null) {
+        return { status: 503, body: { error: loaded.error ?? "workbench is not loaded" } };
+      }
+      return await loaded.main.handle(request);
+    });
   }
 
   async uiFile(
@@ -807,8 +826,9 @@ export class WorkbenchService implements Workbenches {
   ): Promise<WorkbenchInfo> {
     const k = key(projectId, agentId, workbenchId);
     return this.withAgentOp(projectId, agentId, async () => {
-      // Admitted via withAgentOp BEFORE entering the unified per-workbench FIFO queue (Majors #1, #2).
-      await this.enqueueWorkbench(k, async () => {
+      // Execute restore AND its corresponding reload/record in ONE FIFO slot so concurrent
+      // rollbacks can never swap restored content with another requester's `by` identity (Major #5).
+      return this.enqueueWorkbench(k, async () => {
         const folder = await this.folder(projectId, agentId, workbenchId);
         if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
         const t = this.pending.get(k);
@@ -831,8 +851,26 @@ export class WorkbenchService implements Workbenches {
           return extracted;
         });
         if (!found) throw new WorkbenchNotFound("no such version");
+        const restored = await this.folder(projectId, agentId, workbenchId);
+        if (await this.runs(projectId, agentId, restored)) {
+          this.publish(projectId, {
+            type: "workbench_building",
+            projectId,
+            agentId,
+            workbenchId: restored.id,
+          });
+          const loaded = await this.loadNow(projectId, agentId, restored, by);
+          return this.info(projectId, agentId, workbenchId, loaded);
+        }
+        this.unload(k);
+        return this.idleInfo(
+          projectId,
+          agentId,
+          restored,
+          !(await isSwitchedOff(restored.dir)),
+          await readAppCenterManifest(restored.dir, restored.id),
+        );
       });
-      return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
     });
   }
 
@@ -1060,7 +1098,9 @@ export class WorkbenchService implements Workbenches {
     this.held.set(agentKey, new Promise<void>((resolve) => (end = resolve)));
     try {
       await this.releaseAgent(projectId, agentId);
-      return await work();
+      // Block and drain direct `migrateWorkbenches(agentDir, ...)` callers (such as plugin routes)
+      // for the duration of `work` so nothing recreates `agent_state/workbenches` mid-swap (Major #3).
+      return await whileAgentMigrationHeld(agentDir(this.paths.root, projectId, agentId), work);
     } finally {
       this.held.delete(agentKey);
       end();
@@ -1258,9 +1298,15 @@ export class WorkbenchService implements Workbenches {
         if (!(err instanceof WorkbenchDisabled)) throw err;
       }
     }
-    // A load that started before the switch went off still lands; it is let go with the rest.
-    await this.loading.get(k)?.catch(() => undefined);
-    const unloaded = this.unload(k);
+    // Serialize unload through the per-workbench FIFO queue and recheck live switches on disk so
+    // an older disable cannot dispose a workbench re-enabled concurrently (Major #6).
+    const unloaded = await this.enqueueWorkbench(k, async () => {
+      const live = await readFolder(folder.dir, folder.id);
+      if (live !== null && (await this.runs(projectId, agentId, live))) {
+        return false;
+      }
+      return this.unload(k);
+    });
     const info = await this.idleInfo(
       projectId,
       agentId,
@@ -1302,7 +1348,9 @@ export class WorkbenchService implements Workbenches {
     const inFlight = this.loading.get(k);
     if (inFlight && this.loadingRevision.get(k) === folder.revision) return inFlight;
     const run = this.enqueueWorkbench(k, async () => {
-      const current = (await readFolder(folder.dir, folder.id)) ?? folder;
+      const current = await readFolder(folder.dir, folder.id);
+      // Never fall back to a deleted snapshot or recreate a removed directory via status writes (Major #4).
+      if (current === null) throw new WorkbenchNotFound(`no workbench '${folder.id}'`);
       // Checked in the queue, after the loads/mutations before it: a switch turned off since this
       // was asked for is what wins (setEnabled waits for every load queued before its marker).
       if (!(await this.runs(projectId, agentId, current))) throw new WorkbenchDisabled(folder.id);
@@ -1396,7 +1444,8 @@ export class WorkbenchService implements Workbenches {
         log: (line) => this.log.line(`[workbench ${folder.id}] ${line}`),
       });
       subscriptions = own;
-      const host = await this.host(projectId, agentId, folder, own);
+      const hostState = { disposed: false };
+      const host = await this.host(projectId, agentId, folder, own, () => hostState.disposed);
       const modules = await bootModules(root, {
         ifaces: table as unknown as IfaceTable,
         resources: this.resources!,
@@ -1406,10 +1455,11 @@ export class WorkbenchService implements Workbenches {
         },
       });
       // Whatever lets this tree go — a reload replacing it, a removal, the platform going away —
-      // ends its handler's subscriptions with it: each one holds a Session's channel.
+      // ends its handler's subscriptions and blocks stale host.setState() writes (Major #1).
       const tree: ModuleTree = {
         ...modules,
         dispose: () => {
+          hostState.disposed = true;
           try {
             modules.dispose();
           } finally {
@@ -1519,6 +1569,7 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     folder: WorkbenchFolder,
     subscriptions: WorkbenchSubscriptions,
+    isDisposed: () => boolean,
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
@@ -1631,8 +1682,13 @@ export class WorkbenchService implements Workbenches {
       },
       getState: () => state,
       async setState(next: unknown) {
-        await writeState(folder.dir, next ?? null);
-        state = next ?? null;
+        await service.withAgentOp(projectId, agentId, async () => {
+          if (isDisposed()) {
+            throw new Error(`workbench '${folder.id}' has been disposed`);
+          }
+          await writeState(folder.dir, next ?? null);
+          state = next ?? null;
+        });
       },
       log: (message: string) => service.log.line(`[workbench ${folder.id}] ${message}`),
     };
@@ -1685,18 +1741,22 @@ export class WorkbenchService implements Workbenches {
     }
     let watcher: fs.FSWatcher;
     try {
-      watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
-        const segments = typeof filename === "string" ? filename.split(/[\\/]/) : [];
-        const id = segments[0];
-        // The workbench's own document is not code, and neither is the staging file a write
-        // of it goes through: `state.json` used to be the only name skipped, so every
-        // `setState` recompiled the workbench and tore down the tree that had just written it.
-        if (id === undefined || !isWorkbenchId(id)) return;
-        if (filename?.endsWith(STATE_FILE) || (filename !== null && isTempName(filename))) return;
-        // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
-        if (segments[1]?.startsWith(".")) return;
-        this.schedule(projectId, agentId, id);
-      });
+      // Create watcher outside any AsyncLocalStorage admission scope so callbacks never inherit
+      // an enclosing operation's scope (Major #2).
+      watcher = this.agentOpScope.exit(() =>
+        fs.watch(dir, { recursive: true }, (_event, filename) => {
+          const segments = typeof filename === "string" ? filename.split(/[\\/]/) : [];
+          const id = segments[0];
+          // The workbench's own document is not code, and neither is the staging file a write
+          // of it goes through: `state.json` used to be the only name skipped, so every
+          // `setState` recompiled the workbench and tore down the tree that had just written it.
+          if (id === undefined || !isWorkbenchId(id)) return;
+          if (filename?.endsWith(STATE_FILE) || (filename !== null && isTempName(filename))) return;
+          // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
+          if (segments[1]?.startsWith(".")) return;
+          this.schedule(projectId, agentId, id);
+        }),
+      );
     } catch {
       return;
     }
@@ -1728,7 +1788,9 @@ export class WorkbenchService implements Workbenches {
     };
     const watcher = { close: () => fs.unwatchFile(declared, appeared) };
     try {
-      fs.watchFile(declared, { persistent: false, interval: 500 }, appeared);
+      this.agentOpScope.exit(() =>
+        fs.watchFile(declared, { persistent: false, interval: 500 }, appeared),
+      );
     } catch {
       return;
     }

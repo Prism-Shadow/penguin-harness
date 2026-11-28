@@ -191,13 +191,23 @@ async function retryPendingHistoryImports(
     } catch {
       continue;
     }
-    const resolvedSource = path.resolve(agentDir, backupSource);
+    let resolvedSource = path.resolve(agentDir, backupSource);
     if (
       !resolvedSource.startsWith(`${resolvedAgent}${path.sep}`) ||
       !(await exists(resolvedSource))
     ) {
-      await fs.rm(markerPath, { force: true }).catch(() => undefined);
-      continue;
+      // If interrupted between `backUp` rename and updating the write-ahead marker, fall back to
+      // the canonical backup path for this workbench id (Major #7).
+      const fallbackBackup = path.resolve(journal, "backup", "workbenches-history", id);
+      if (
+        fallbackBackup.startsWith(`${resolvedAgent}${path.sep}`) &&
+        (await exists(fallbackBackup))
+      ) {
+        resolvedSource = fallbackBackup;
+      } else {
+        await fs.rm(markerPath, { force: true }).catch(() => undefined);
+        continue;
+      }
     }
     if (repo === null) {
       const key = `pending-engine:${markerPath}`;
@@ -208,7 +218,24 @@ async function retryPendingHistoryImports(
       continue;
     }
     try {
-      await importVersions(repo, id, resolvedSource, log);
+      const rel = `workbenches/${id}`;
+      const hadRecordedBefore = (await repo.history(rel, { limit: 1, walk: 1 })).length > 0;
+      const importedCount = await importVersions(repo, id, resolvedSource, log);
+      // If live commits already existed before this delayed legacy import, re-commit the live
+      // workbench folder on top so HEAD never regresses to an older legacy revision (Major #8).
+      if (hadRecordedBefore && importedCount > 0) {
+        const liveDir = path.join(target, id);
+        const liveFolder = await readFolder(liveDir, id);
+        if (liveFolder !== null) {
+          const liveFiles = await readLoadedSource(liveFolder);
+          if (liveFiles === null) {
+            throw new Error(
+              `live workbench ${id} changed while restoring HEAD after history retry`,
+            );
+          }
+          await repo.commitPath(rel, liveFiles, `workbench ${id} @${liveFolder.revision}`);
+        }
+      }
     } catch (err) {
       const key = `pending-retry:${markerPath}:${messageOf(err)}`;
       if (!reported.has(key)) {
@@ -333,9 +360,32 @@ export async function migrateWorkbenchesIntoState(
       } catch (err) {
         log(`[workbenches] ${folder.id}: old versions not imported: ${messageOf(err)}`);
       }
+      // Write-ahead pending history marker BEFORE moving the live folder or backing up history so
+      // an interruption or marker write failure can never strand unimported history (Major #7).
+      const pendingDir = path.join(journal, PENDING_HISTORY_DIR);
+      const markerPath = path.join(pendingDir, folder.id);
+      let wroteMarker = false;
+      if (hasHistory && !imported) {
+        try {
+          await fs.mkdir(pendingDir, { recursive: true });
+          const tmpMarker = path.join(
+            pendingDir,
+            `.${folder.id}.penguin-tmp-${process.pid}-${Date.now()}`,
+          );
+          await fs.writeFile(tmpMarker, `${path.relative(agentDir, copies)}\n`);
+          await fs.rename(tmpMarker, markerPath);
+          wroteMarker = true;
+        } catch (err) {
+          log(
+            `[workbenches] ${folder.dir} left in place: cannot record pending history marker: ${messageOf(err)}`,
+          );
+          continue;
+        }
+      }
       try {
         await fs.rename(folder.dir, path.join(target, folder.id));
       } catch (err) {
+        if (wroteMarker) await fs.rm(markerPath, { force: true }).catch(() => undefined);
         log(`[workbenches] ${folder.dir} not moved: ${messageOf(err)}`);
         continue;
       }
@@ -346,15 +396,19 @@ export async function migrateWorkbenchesIntoState(
       } catch (err) {
         log(`[workbenches] ${copies} kept in place: ${messageOf(err)}`);
       }
-      // Persist pending history import marker so a temporarily unready engine automatically
-      // completes the import on a later access even after `workbenches` is linked (Major #6).
-      if (!imported) {
-        const pendingDir = path.join(journal, PENDING_HISTORY_DIR);
-        await fs.mkdir(pendingDir, { recursive: true }).catch(() => undefined);
-        const relSource = path.relative(agentDir, keptPath);
-        await fs
-          .writeFile(path.join(pendingDir, folder.id), `${relSource}\n`)
-          .catch(() => undefined);
+      if (wroteMarker && keptPath !== copies) {
+        try {
+          const tmpMarker = path.join(
+            pendingDir,
+            `.${folder.id}.penguin-tmp-${process.pid}-${Date.now()}`,
+          );
+          await fs.writeFile(tmpMarker, `${path.relative(agentDir, keptPath)}\n`);
+          await fs.rename(tmpMarker, markerPath);
+        } catch (err) {
+          log(
+            `[workbenches] ${folder.id}: pending history marker kept at original path: ${messageOf(err)}`,
+          );
+        }
       }
     }
     await fs.rmdir(history).catch(() => undefined);
@@ -419,14 +473,15 @@ async function importVersions(
   id: string,
   historyDir: string,
   log: (line: string) => void,
-): Promise<void> {
+): Promise<number> {
   const rel = `workbenches/${id}`;
   const versions = await oldVersions(historyDir, id, log);
-  if (versions.length === 0) return;
+  if (versions.length === 0) return 0;
   // Deduplicate against the full recorded history rather than the 50-entry UI display cap (Minor #10).
   const recorded = new Set(
     (await repo.history(rel, { limit: 1_000_000, walk: 1_000_000 })).map((v) => v.revision),
   );
+  let committed = 0;
   for (const version of versions) {
     if (recorded.has(version.folder.revision)) continue;
     const files = await readLoadedSource(version.folder);
@@ -434,11 +489,13 @@ async function importVersions(
       log(`[workbenches] ${version.folder.dir} changed while it was read; not imported`);
       continue;
     }
-    await repo.commitPath(rel, files, `workbench ${id} @${version.folder.revision}`, {
+    const res = await repo.commitPath(rel, files, `workbench ${id} @${version.folder.revision}`, {
       at: version.at,
     });
+    if (res.changed) committed += 1;
     recorded.add(version.folder.revision);
   }
+  return committed;
 }
 
 /**

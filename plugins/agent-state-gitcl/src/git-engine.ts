@@ -163,25 +163,29 @@ function zoneOf(offsetMinutes: number): string {
 
 function classifyUpdateRefError(refName: string, stderr: string, status: number): GitError {
   const detail = stderr || `exit ${status}`;
-  // Strip single-quoted path/ref arguments when inspecting diagnostic reasons so a pathname
-  // containing e.g. "already exists" cannot hijack error classification (Major #10).
-  const normalized = detail.replace(/'[^']*'/g, "''");
-  if (/not a valid refname|invalid ref|bad ref|refname '' is not valid/i.test(normalized)) {
-    return gitError("INVALID_REF", `invalid ref ${refName}: ${detail}`);
-  }
+  // Replace exact `'${refName}'` BEFORE generic quote-stripping so apostrophes inside valid ref
+  // names (e.g. `refs/heads/o'connor`) do not break diagnostic matching (Minor #5).
+  const strippedRef = detail.split(`'${refName}'`).join("''");
+  const normalized = strippedRef.replace(/'[^']*'/g, "''");
   if (
+    /: (?:Permission denied|Read-only file system|No space left on device|Input\/output error|Too many open files)\b/i.test(
+      strippedRef,
+    ) ||
     /Permission denied|Read-only file system|No space left on device|Input\/output error|Too many open files/i.test(
       normalized,
     )
   ) {
     return gitError("IO_ERROR", `ref storage error for ${refName}: ${detail}`);
   }
+  if (/not a valid refname|invalid ref|bad ref|refname '' is not valid/i.test(normalized)) {
+    return gitError("INVALID_REF", `invalid ref ${refName}: ${detail}`);
+  }
   if (
-    /cannot lock ref '': (?:is at [0-9a-f]+ but expected|reference already exists|reference is missing|unable to resolve reference|'' exists)/i.test(
-      normalized,
+    /cannot lock ref '': (?:is at [0-9a-f]+ but expected|reference already exists|dangling symref already exists|reference is missing|unable to resolve reference|'.*' exists)/i.test(
+      strippedRef,
     ) ||
-    /Unable to create '': File exists/i.test(normalized) ||
-    /cannot create '': (?:'' exists|reference already exists)/i.test(normalized) ||
+    /Unable to create '.*': File exists/i.test(strippedRef) ||
+    /cannot create '': (?:'.*' exists|reference already exists)/i.test(strippedRef) ||
     /is at [0-9a-f]+ but expected [0-9a-f]+/i.test(normalized) ||
     /unable to resolve reference ''/i.test(normalized)
   ) {
@@ -190,9 +194,17 @@ function classifyUpdateRefError(refName: string, stderr: string, status: number)
   return gitError("IO_ERROR", `ref storage error for ${refName}: ${detail}`);
 }
 
-/** Gracefully shut down a child process and ALWAYS wait until `close` fires (drains zombies). */
+const closedChildren = new WeakSet<ChildProcessWithoutNullStreams>();
+
+function trackChildClose(child: ChildProcessWithoutNullStreams): void {
+  child.once("close", () => {
+    closedChildren.add(child);
+  });
+}
+
+/** Gracefully shut down a child process and ALWAYS wait until `close` fires (drains stdio + zombies, Minor #2). */
 function terminateAndDrainChild(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) {
+  if (closedChildren.has(child)) {
     return Promise.resolve();
   }
   return new Promise<void>((resolve) => {
@@ -204,14 +216,34 @@ function terminateAndDrainChild(child: ChildProcessWithoutNullStreams): Promise<
       resolve();
     };
     child.once("close", finish);
-    child.once("exit", () => {
-      // Wait briefly for close, fallback resolve if already dead
-      setTimeout(finish, 200);
-    });
+    child.stdout.resume();
+    child.stderr.resume();
     try {
       child.stdin.end();
     } catch {
       // ignore
+    }
+    const destroyStdio = () => {
+      try {
+        child.stdin.destroy();
+      } catch {
+        // ignore
+      }
+      try {
+        child.stdout.destroy();
+      } catch {
+        // ignore
+      }
+      try {
+        child.stderr.destroy();
+      } catch {
+        // ignore
+      }
+    };
+    if (child.exitCode !== null || child.signalCode !== null) {
+      destroyStdio();
+    } else {
+      child.once("exit", destroyStdio);
     }
     const killTimer = setTimeout(() => {
       try {
@@ -219,6 +251,7 @@ function terminateAndDrainChild(child: ChildProcessWithoutNullStreams): Promise<
       } catch {
         // ignore
       }
+      destroyStdio();
     }, 1500);
     killTimer.unref();
   });
@@ -274,6 +307,7 @@ class BatchCheck {
     if (this.child !== null) return { child: this.child, gen: this.generation };
     const gen = ++this.generation;
     const child = startGit(this.git, this.gitdir, ["cat-file", "--batch-check"]);
+    trackChildClose(child);
     this.child = child;
     this.buf = Buffer.alloc(0);
 
@@ -320,6 +354,11 @@ class BatchCheck {
       return;
     }
     const parts = line.split(" ");
+    if (parts.length === 2 && OID_RE.test(parts[0]!) && parts[1] === "submodule") {
+      this.pending = null;
+      p.resolve({ oid: parts[0]!, type: "submodule", size: 0 });
+      return;
+    }
     if (parts.length !== 3 || !OID_RE.test(parts[0]!)) {
       // Keep `this.pending` intact so `retire()` rejects it cleanly (Minor #1).
       this.retire(gen, gitError("REPO_CORRUPT", `unexpected batch-check header: ${line}`));
@@ -389,6 +428,7 @@ class BatchCatFile {
     targetPath: string;
     mode: number;
     fh: fs.FileHandle | null;
+    pendingIo: Promise<void> | null;
     writing: boolean;
     resolve: (bytes: number) => void;
     reject: (err: Error) => void;
@@ -409,17 +449,24 @@ class BatchCatFile {
     const act = this.active;
     this.active = null;
     if (act) {
-      const fh = act.fh;
-      act.fh = null;
       const doneErr = err ?? gitError("IO_ERROR", "cat-file --batch terminated");
-      if (fh) {
-        void fh
-          .close()
-          .catch(() => undefined)
-          .then(() => act.reject(doneErr));
-      } else {
+      const cleanup = (async () => {
+        // Wait for any in-flight `fs.open`, `fh.write`, or `fh.close` to settle BEFORE rejecting
+        // so extractTree's `finally` never unlinks the reservation while file I/O is pending (Minor #3).
+        if (act.pendingIo !== null) {
+          await act.pendingIo.catch(() => undefined);
+          act.pendingIo = null;
+        }
+        const fh = act.fh;
+        act.fh = null;
+        if (fh) {
+          await fh.close().catch(() => undefined);
+        }
+      })().finally(() => {
         act.reject(doneErr);
-      }
+      });
+      this.retired.add(cleanup);
+      void cleanup.finally(() => this.retired.delete(cleanup));
     }
     if (proc) {
       const drain = terminateAndDrainChild(proc);
@@ -433,6 +480,7 @@ class BatchCatFile {
     if (this.child !== null) return { child: this.child, gen: this.generation };
     const gen = ++this.generation;
     const child = startGit(this.git, this.gitdir, ["cat-file", "--batch"]);
+    trackChildClose(child);
     this.child = child;
     this.buf = Buffer.alloc(0);
 
@@ -506,18 +554,20 @@ class BatchCatFile {
       act.state = "body";
       act.writing = true;
       proc.stdout.pause();
-      void fs.open(act.targetPath, "wx", act.mode).then(
-        (fh) => {
+      const openTask = fs.open(act.targetPath, "wx", act.mode).then(
+        async (fh) => {
           if (gen !== this.generation || this.active !== act) {
-            void fh.close().catch(() => undefined);
+            await fh.close().catch(() => undefined);
             return;
           }
+          act.pendingIo = null;
           act.fh = fh;
           act.writing = false;
           proc.stdout.resume();
           this.pump(gen);
         },
         (err: NodeJS.ErrnoException) => {
+          act.pendingIo = null;
           const mapped =
             err.code === "EEXIST"
               ? gitError("INVALID_PATH", `file case or path collision at ${act.targetPath}`, err)
@@ -525,6 +575,7 @@ class BatchCatFile {
           this.retire(gen, mapped);
         },
       );
+      act.pendingIo = openTask;
       return;
     }
 
@@ -539,7 +590,7 @@ class BatchCatFile {
         act.writing = true;
         proc.stdout.pause();
         const fh = act.fh!;
-        void (async () => {
+        const writeTask = (async () => {
           let offset = 0;
           while (offset < slice.length) {
             const { bytesWritten } = await fh.write(slice, offset, slice.length - offset);
@@ -549,18 +600,21 @@ class BatchCatFile {
         })().then(
           () => {
             if (gen !== this.generation || this.active !== act) return;
+            act.pendingIo = null;
             act.writing = false;
             if (act.remaining === 0) act.state = "lf";
             proc.stdout.resume();
             this.pump(gen);
           },
           (err: Error) => {
+            act.pendingIo = null;
             this.retire(
               gen,
               gitError("IO_ERROR", `cannot write ${act.targetPath}: ${err.message}`, err),
             );
           },
         );
+        act.pendingIo = writeTask;
         return;
       } else {
         return;
@@ -582,21 +636,24 @@ class BatchCatFile {
         // the extraction cleanly rather than leaving it and `GitRepo.close()` hanging (Major #12).
         act.writing = true;
         proc.stdout.pause();
-        void fh.close().then(
+        const closeTask = fh.close().then(
           () => {
             if (gen !== this.generation || this.active !== act) return;
+            act.pendingIo = null;
             this.active = null;
             if (this.child === proc) proc.stdout.resume();
             act.resolve(total);
           },
           (err: Error) => {
             if (gen !== this.generation || this.active !== act) return;
+            act.pendingIo = null;
             this.retire(
               gen,
               gitError("IO_ERROR", `cannot close ${act.targetPath}: ${err.message}`, err),
             );
           },
         );
+        act.pendingIo = closeTask;
       } else {
         this.active = null;
         act.resolve(total);
@@ -630,6 +687,7 @@ class BatchCatFile {
         targetPath,
         mode,
         fh: null,
+        pendingIo: null,
         writing: false,
         resolve,
         reject,
@@ -704,15 +762,27 @@ async function hashDiskFileSafely(
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let settled = false;
+      let closed = false;
+      let pendingErr: Error | null = null;
       const fail = (err: Error) => {
-        if (settled) return;
-        settled = true;
+        if (pendingErr === null) pendingErr = err;
+        try {
+          child.stdin.destroy();
+        } catch {
+          // ignore
+        }
         try {
           child.kill("SIGKILL");
         } catch {
           // ignore
         }
-        reject(err);
+        child.stdout.resume();
+        child.stderr.resume();
+        if (closed || child.pid === undefined) {
+          if (settled) return;
+          settled = true;
+          reject(pendingErr);
+        }
       };
       child.stdout.on("data", (c: Buffer) => stdout.push(c));
       child.stderr.on("data", (c: Buffer) => stderr.push(c));
@@ -723,8 +793,13 @@ async function hashDiskFileSafely(
       });
       child.on("error", fail);
       child.on("close", (code, signal) => {
+        closed = true;
         if (settled) return;
         settled = true;
+        if (pendingErr !== null) {
+          reject(pendingErr);
+          return;
+        }
         if (signal !== null || code !== 0) {
           const msg = Buffer.concat(stderr).toString("utf8").trim();
           reject(
@@ -858,7 +933,7 @@ function parseLsTreeZ(buf: Buffer, withSize: boolean, stripPrefix: string): GitT
 }
 
 function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
-  const hookScope = new AsyncLocalStorage<symbol>();
+  const hookScope = new AsyncLocalStorage<ReadonlySet<symbol>>();
   const activeHooks = new Set<symbol>();
   const batchCheck = new BatchCheck(git, gitdir);
   const batchCat = new BatchCatFile(git, gitdir);
@@ -1000,29 +1075,45 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
           throw gitError("INVALID_REF", `HEAD points to non-ref target: ${ref}`);
         }
 
-        const resolveCommit = async (): Promise<string | null> => {
-          const rev = await runGit(
+        // Use exact non-DWIM `show-ref --verify -- <ref>` so an unborn `refs/heads/main` can
+        // never resolve to `refs/heads/refs/heads/main` (Major #13).
+        const resolveExactCommit = async (): Promise<string | null> => {
+          const shown = await runGit(git, gitdir, ["show-ref", "--verify", "--", ref], {
+            allowNonZero: true,
+          });
+          if (shown.status !== 0) return null;
+          const line = stripSingleTrailingNewline(
+            decodeStrictUtf8(shown.stdout, "show-ref --verify"),
+          );
+          const sp = line.indexOf(" ");
+          if (sp === -1 || line.slice(sp + 1) !== ref) {
+            throw gitError("INVALID_REF", `unexpected show-ref output for ${ref}: ${line}`);
+          }
+          const rawOid = line.slice(0, sp);
+          if (!OID_RE.test(rawOid)) {
+            throw gitError("INVALID_REF", `ref ${ref} resolved to invalid oid ${rawOid}`);
+          }
+          // Peel annotated tags (if any) strictly by OID (no ref DWIM).
+          const peeled = await runGit(
             git,
             gitdir,
-            ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
-            {
-              allowNonZero: true,
-            },
+            ["rev-parse", "--verify", "--quiet", `${rawOid}^{commit}`],
+            { allowNonZero: true },
           );
-          if (rev.status === 0) {
-            const oid = stripSingleTrailingNewline(rev.stdout.toString("ascii"));
-            if (!OID_RE.test(oid)) {
-              throw gitError("INVALID_REF", `ref ${ref} resolved to invalid oid ${oid}`);
-            }
-            return oid;
+          if (peeled.status !== 0) {
+            throw gitError("INVALID_REF", `ref ${ref} (${rawOid}) does not resolve to a commit`);
           }
-          return null;
+          const oid = stripSingleTrailingNewline(peeled.stdout.toString("ascii"));
+          if (!OID_RE.test(oid)) {
+            throw gitError("INVALID_REF", `ref ${ref} peeled to invalid oid ${oid}`);
+          }
+          return oid;
         };
 
-        const first = await resolveCommit();
+        const first = await resolveExactCommit();
         if (first !== null) return { ref, commit: first };
 
-        // Distinguish unborn branch vs broken loose/packed ref vs concurrent first-commit race (Major #8).
+        // Distinguish unborn branch vs broken loose/packed ref vs concurrent first-commit race.
         const checkLooseAndRetry = async (): Promise<{ ref: string; commit: string } | null> => {
           const loosePath = path.join(gitdir, ...ref.split("/"));
           let looseExists = false;
@@ -1040,8 +1131,8 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
             }
           }
           if (looseExists) {
-            // A concurrent first commit may have published the loose ref just before lstat: retry peel!
-            const retried = await resolveCommit();
+            // A concurrent first commit may have published the loose ref just before lstat: retry!
+            const retried = await resolveExactCommit();
             if (retried !== null) return { ref, commit: retried };
             throw gitError("INVALID_REF", `loose ref ${ref} exists but is invalid or empty`);
           }
@@ -1057,12 +1148,19 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
           return { ref, commit: null };
         }
         if (existsRes.status === 0) {
-          const retried = await resolveCommit();
+          const retried = await resolveExactCommit();
           if (retried !== null) return { ref, commit: retried };
           throw gitError("INVALID_REF", `ref ${ref} exists but does not resolve to a valid commit`);
         }
-        // Fallback for older Git lacking `show-ref --exists`: retry peel, then inspect loose + packed refs.
-        const retried = await resolveCommit();
+        // Only fall back to legacy inspection when `show-ref --exists` is genuinely unsupported
+        // by an older Git; any other nonzero exit (e.g. corrupt packed-refs) is an error (Minor #4).
+        if (!/unknown option.*exists|usage: git show-ref/i.test(existsRes.stderr)) {
+          throw gitError(
+            "INVALID_REF",
+            `cannot inspect ref ${ref}: ${existsRes.stderr || `exit ${existsRes.status}`}`,
+          );
+        }
+        const retried = await resolveExactCommit();
         if (retried !== null) return { ref, commit: retried };
         const raced = await checkLooseAndRetry();
         if (raced !== null) return raced;
@@ -1081,8 +1179,11 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
         for (const line of packed.split(/\r?\n/)) {
           if (line.length === 0 || line.startsWith("#") || line.startsWith("^")) continue;
           const sp = line.indexOf(" ");
-          if (sp !== -1 && line.slice(sp + 1) === ref) {
-            const retriedPacked = await resolveCommit();
+          if (sp === -1 || !OID_RE.test(line.slice(0, sp)) || sp + 1 >= line.length) {
+            throw gitError("INVALID_REF", `malformed packed-refs line: ${line}`);
+          }
+          if (line.slice(sp + 1) === ref) {
+            const retriedPacked = await resolveExactCommit();
             if (retriedPacked !== null) return { ref, commit: retriedPacked };
             throw gitError(
               "INVALID_REF",
@@ -1168,11 +1269,11 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
             return resolveSubtreeOid(row.commit, opts.prefix);
           }
           const sub = await batchCheck.query(`${row.rootTree}:${opts.prefix}`);
-          if (sub === null) {
-            // Confirm genuine absence vs dangling/missing subtree object (Major #9).
+          if (sub === null || sub.type !== "tree") {
+            // Confirm genuine non-tree mode/absence vs corrupt tree-mode entry pointing to
+            // a missing or non-tree object (Minor #6).
             return resolveSubtreeOid(row.commit, opts.prefix);
           }
-          if (sub.type !== "tree") return null;
           return sub.oid;
         };
 
@@ -1395,7 +1496,13 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
             }
           }
 
-          const indexLines: string[] = [];
+          const indexChunks: Buffer[] = [];
+          const pushRawDelete = (rawPath: Buffer) => {
+            indexChunks.push(Buffer.from(`0 ${ZERO_OID}\t`, "ascii"), rawPath, Buffer.from([0]));
+          };
+          const pushUtf8Line = (line: string) => {
+            indexChunks.push(Buffer.from(line, "utf8"));
+          };
           let cachedIndexEntries: Buffer[] | null = null;
           const getRawIndexEntries = async (): Promise<Buffer[]> => {
             if (cachedIndexEntries !== null) return cachedIndexEntries;
@@ -1412,18 +1519,18 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
             cachedIndexEntries = rawList;
             return rawList;
           };
-          const listIndexedUnder = async (targetPrefix: string): Promise<string[]> => {
+          const listIndexedUnder = async (targetPrefix: string): Promise<Buffer[]> => {
             const targetBuf = Buffer.from(targetPrefix, "utf8");
             const slashBuf = Buffer.from(`${targetPrefix}/`, "utf8");
-            const out: string[] = [];
-            // Match raw path bytes BEFORE decoding UTF-8 so unrelated non-UTF-8 entries outside
-            // `targetPrefix` never break a scoped edit (Minor #4).
+            const out: Buffer[] = [];
+            // Keep raw path bytes without decoding UTF-8 so deleting/replacing a validly named
+            // subtree with non-UTF-8 descendants succeeds identically to native gix (Minor #7).
             for (const raw of await getRawIndexEntries()) {
               const exact = raw.length === targetBuf.length && raw.equals(targetBuf);
               const under =
                 raw.length > slashBuf.length && raw.subarray(0, slashBuf.length).equals(slashBuf);
               if (exact || under) {
-                out.push(decodeStrictUtf8(raw, "ls-files"));
+                out.push(raw);
               }
             }
             return out;
@@ -1453,15 +1560,15 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
 
           if (change.kind === "replace") {
             if (loadParent && prefix !== "") {
-              for (const p of await listIndexedUnder(prefix)) {
-                indexLines.push(`0 ${ZERO_OID}\t${p}\0`);
+              for (const raw of await listIndexedUnder(prefix)) {
+                pushRawDelete(raw);
               }
             }
             if (change.files !== null) {
               if (change.files.length > 0) await assertNoTrackedAncestorFile(false);
               const hashed = await hashCommitFiles(change.files);
               for (const f of hashed) {
-                indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
+                pushUtf8Line(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
               }
             }
           } else {
@@ -1470,25 +1577,25 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
               const full = joinPrefix(prefix, rel);
               const matching = loadParent ? await listIndexedUnder(full) : [];
               if (matching.length > 0) {
-                for (const p of matching) indexLines.push(`0 ${ZERO_OID}\t${p}\0`);
+                for (const raw of matching) pushRawDelete(raw);
               } else {
-                indexLines.push(`0 ${ZERO_OID}\t${full}\0`);
+                pushUtf8Line(`0 ${ZERO_OID}\t${full}\0`);
               }
             }
             if (change.upsert.length > 0) await assertNoTrackedAncestorFile(true);
             const hashed = await hashCommitFiles(change.upsert);
             for (const f of hashed) {
-              indexLines.push(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
+              pushUtf8Line(`${f.mode} ${f.oid}\t${joinPrefix(prefix, f.rel)}\0`);
             }
           }
 
-          if (indexLines.length > 0) {
+          if (indexChunks.length > 0) {
             const ui = await runGit(
               git,
               gitdir,
               ["update-index", "--replace", "-z", "--index-info"],
               {
-                input: Buffer.from(indexLines.join(""), "utf8"),
+                input: Buffer.concat(indexChunks),
                 env: indexEnv,
               },
             );
@@ -1530,18 +1637,155 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
           const frozenSnapshot = Object.freeze({ commit: commitOid, tree: treeOid });
           const token = Symbol("beforeMoveRef");
           activeHooks.add(token);
+          const nextHooks = new Set(hookScope.getStore());
+          nextHooks.add(token);
           try {
-            await hookScope.run(token, () => beforeMoveRef(frozenSnapshot));
+            await hookScope.run(nextHooks, () => beforeMoveRef(frozenSnapshot));
           } finally {
             activeHooks.delete(token);
           }
         }
 
-        const expectedOld = expectedParent ?? ZERO_OID;
+        if (expectedParent === null) {
+          // Strict creation CAS under Git's `<ref>.lock`: older accepted Git versions (e.g. 2.51.0)
+          // allow `update-ref --no-deref <ref> <oid> <ZERO_OID>` to overwrite a dangling symref
+          // (Major #12). Hold `<ref>.lock`, verify strict loose + packed absence and D/F
+          // non-conflict (delegating packed-refs parsing to Git plumbing), then publish atomically.
+          const refSegs = refName.split("/");
+          const refPath = path.join(gitdir, ...refSegs);
+          // Explicitly detect loose ancestor D/F conflicts across Unix and Windows.
+          for (let i = 1; i < refSegs.length; i += 1) {
+            const ancPath = path.join(gitdir, ...refSegs.slice(0, i));
+            try {
+              const ancStat = await fs.lstat(ancPath);
+              if (ancStat.isSymbolicLink() || !ancStat.isDirectory()) {
+                throw gitError("CAS_CONFLICT", `ref namespace conflict for ${refName}`);
+              }
+            } catch (err) {
+              if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+            }
+          }
+          try {
+            await fs.mkdir(path.dirname(refPath), { recursive: true });
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === "EEXIST" || code === "ENOTDIR") {
+              throw gitError("CAS_CONFLICT", `ref namespace conflict for ${refName}`, err);
+            }
+            throw gitError(
+              "IO_ERROR",
+              `cannot create ref parent for ${refName}: ${(err as Error).message}`,
+              err,
+            );
+          }
+          const lockPath = `${refPath}.lock`;
+          let lockFh: fs.FileHandle | null = null;
+          try {
+            lockFh = await fs.open(lockPath, "wx");
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === "EEXIST") {
+              throw gitError("CAS_CONFLICT", `ref ${refName} is locked`, err);
+            }
+            throw gitError(
+              "IO_ERROR",
+              `cannot lock ref ${refName}: ${(err as Error).message}`,
+              err,
+            );
+          }
+          let published = false;
+          try {
+            let removeEmptyDir = false;
+            try {
+              const st = await fs.lstat(refPath);
+              if (st.isDirectory() && !st.isSymbolicLink()) {
+                const hasOnlyEmptyDirs = async (dir: string): Promise<boolean> => {
+                  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+                    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+                      if (!(await hasOnlyEmptyDirs(path.join(dir, entry.name)))) return false;
+                    } else {
+                      return false;
+                    }
+                  }
+                  return true;
+                };
+                if (!(await hasOnlyEmptyDirs(refPath))) {
+                  throw gitError(
+                    "CAS_CONFLICT",
+                    `ref ${refName} conflicts with existing nested loose ref`,
+                  );
+                }
+                removeEmptyDir = true;
+              } else {
+                throw gitError("CAS_CONFLICT", `ref ${refName} already exists (expected absent)`);
+              }
+            } catch (err) {
+              if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+            }
+            // Check exact ref & descendants in loose + packed-refs via Git's own parser.
+            const subRes = await runGit(
+              git,
+              gitdir,
+              ["for-each-ref", "--format=%(refname)", "--", refName],
+              { allowNonZero: true },
+            );
+            if (subRes.status !== 0) {
+              throw gitError(
+                "IO_ERROR",
+                `cannot inspect refs under ${refName}: ${subRes.stderr || `exit ${subRes.status}`}`,
+              );
+            }
+            const refSlash = `${refName}/`;
+            for (const line of subRes.stdout.toString("utf8").split(/\r?\n/)) {
+              if (line === refName || line.startsWith(refSlash)) {
+                throw gitError(
+                  "CAS_CONFLICT",
+                  `ref ${refName} conflicts with existing ref ${line}`,
+                );
+              }
+            }
+            // Check strict ancestor refs for packed D/F conflicts (loose ancestors already failed mkdir).
+            for (let i = 2; i < refSegs.length; i += 1) {
+              const anc = refSegs.slice(0, i).join("/");
+              const ancRes = await runGit(git, gitdir, ["show-ref", "--verify", "--", anc], {
+                allowNonZero: true,
+              });
+              if (ancRes.status === 0) {
+                throw gitError(
+                  "CAS_CONFLICT",
+                  `ref ${refName} conflicts with existing ancestor ref ${anc}`,
+                );
+              }
+            }
+            if (removeEmptyDir) {
+              const rmEmptyTree = async (dir: string): Promise<void> => {
+                for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+                  await rmEmptyTree(path.join(dir, entry.name));
+                }
+                await fs.rmdir(dir);
+              };
+              await rmEmptyTree(refPath);
+            }
+            await lockFh.writeFile(`${commitOid}\n`, "ascii");
+            await lockFh.close();
+            lockFh = null;
+            await fs.rename(lockPath, refPath);
+            published = true;
+          } finally {
+            if (lockFh !== null) {
+              await lockFh.close().catch(() => undefined);
+            }
+            if (!published) {
+              await fs.rm(lockPath, { force: true }).catch(() => undefined);
+            }
+          }
+          return commitOid;
+        }
+
         const upd = await runGit(
           git,
           gitdir,
-          ["update-ref", "--no-deref", refName, commitOid, expectedOld],
+          ["update-ref", "--no-deref", refName, commitOid, expectedParent],
           {
             allowNonZero: true,
           },
@@ -1554,11 +1798,15 @@ function openPlumbingRepo(git: GitProgram, gitdir: string): GitRepo {
     },
 
     close(): Promise<void> {
-      const activeHook = hookScope.getStore();
-      if (activeHook !== undefined && activeHooks.has(activeHook)) {
-        return Promise.reject(
-          gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
-        );
+      const inheritedHooks = hookScope.getStore();
+      if (inheritedHooks !== undefined) {
+        for (const tok of inheritedHooks) {
+          if (activeHooks.has(tok)) {
+            return Promise.reject(
+              gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
+            );
+          }
+        }
       }
       if (closePromise !== null) return closePromise;
       closing = true;

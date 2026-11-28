@@ -204,7 +204,18 @@ export class AgentStateRepo {
         if (head.commit !== null) {
           const listed = await repo.listTree(head.commit, rel);
           if (listed !== null && this.holdsExactly(this.filterEntries(head.commit, listed), kept)) {
-            return { commit: head.commit.slice(0, SHORT), changed: false };
+            // Also compare the RAW subtree OID so extra symlinks/gitlinks filtered out by
+            // `listTree` still trigger a clean replacement commit (Minor #1).
+            const headRows = await repo.walkHistory({
+              fromCommit: head.commit,
+              prefix: rel,
+              limit: 1,
+              maxWalk: 1,
+            });
+            const expectedTree = kept.length === 0 ? EMPTY_TREE_OID : treeOidOf(kept);
+            if (headRows.length > 0 && headRows[0]!.tree === expectedTree) {
+              return { commit: head.commit.slice(0, SHORT), changed: false };
+            }
           }
         }
         const commit = await repo.commit(
@@ -442,4 +453,64 @@ export class AgentStateRepo {
       });
     });
   }
+}
+
+const EMPTY_TREE_OID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+interface TreeNode {
+  files: Map<string, string>;
+  dirs: Map<string, TreeNode>;
+}
+
+/** Exact Git SHA-1 tree OID for a set of 100644 files (used to detect unfiltered non-blob entries). */
+function treeOidOf(files: readonly SourceFile[]): string {
+  const root: TreeNode = { files: new Map(), dirs: new Map() };
+  for (const file of files) {
+    const segs = file.rel.split("/");
+    let cur = root;
+    for (let i = 0; i < segs.length - 1; i += 1) {
+      const seg = segs[i]!;
+      let next = cur.dirs.get(seg);
+      if (!next) {
+        next = { files: new Map(), dirs: new Map() };
+        cur.dirs.set(seg, next);
+      }
+      cur = next;
+    }
+    cur.files.set(segs[segs.length - 1]!, blobOid(file.body));
+  }
+  const hashNode = (node: TreeNode): Buffer => {
+    const entries: Array<{ sortKey: Buffer; mode: string; name: Buffer; oid: Buffer }> = [];
+    for (const [name, oidHex] of node.files) {
+      const nameBuf = Buffer.from(name, "utf8");
+      entries.push({
+        sortKey: nameBuf,
+        mode: "100644",
+        name: nameBuf,
+        oid: Buffer.from(oidHex, "hex"),
+      });
+    }
+    for (const [name, child] of node.dirs) {
+      const nameBuf = Buffer.from(name, "utf8");
+      entries.push({
+        sortKey: Buffer.concat([nameBuf, Buffer.from([0x2f])]),
+        mode: "40000",
+        name: nameBuf,
+        oid: hashNode(child),
+      });
+    }
+    entries.sort((a, b) => Buffer.compare(a.sortKey, b.sortKey));
+    const parts: Buffer[] = [];
+    let bodyLen = 0;
+    for (const e of entries) {
+      const prefix = Buffer.from(`${e.mode} `, "ascii");
+      parts.push(prefix, e.name, Buffer.from([0]), e.oid);
+      bodyLen += prefix.length + e.name.length + 1 + e.oid.length;
+    }
+    const h = createHash("sha1");
+    h.update(`tree ${bodyLen}\0`);
+    for (const part of parts) h.update(part);
+    return h.digest();
+  };
+  return hashNode(root).toString("hex");
 }

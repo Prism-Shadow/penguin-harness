@@ -225,6 +225,54 @@ impl Read for ExactLenReader {
     }
 }
 
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WinFileId {
+    vol: u32,
+    idx_hi: u32,
+    idx_lo: u32,
+}
+
+#[cfg(windows)]
+fn win_file_id(file: &File) -> io::Result<WinFileId> {
+    use std::os::windows::io::AsRawHandle;
+    #[repr(C)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+    #[repr(C)]
+    struct ByHandleFileInformation {
+        file_attributes: u32,
+        creation_time: FileTime,
+        last_access_time: FileTime,
+        last_write_time: FileTime,
+        volume_serial_number: u32,
+        file_size_high: u32,
+        file_size_low: u32,
+        number_of_links: u32,
+        file_index_high: u32,
+        file_index_low: u32,
+    }
+    extern "system" {
+        fn GetFileInformationByHandle(
+            h_file: *mut std::ffi::c_void,
+            lp_file_information: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+    let mut info = std::mem::MaybeUninit::<ByHandleFileInformation>::zeroed();
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let info = unsafe { info.assume_init() };
+    Ok(WinFileId {
+        vol: info.volume_serial_number,
+        idx_hi: info.file_index_high,
+        idx_lo: info.file_index_low,
+    })
+}
+
 fn open_regular_source_file(path: &str) -> Result<File> {
     // Reject symlinks and non-regular files (e.g. FIFOs/sockets/dirs) BEFORE opening so a FIFO
     // cannot stall libuv workers indefinitely.
@@ -272,6 +320,23 @@ fn open_regular_source_file(path: &str) -> Result<File> {
             format!("opened descriptor is not a regular file: {path}"),
         ));
     }
+    // Verify opened descriptor matches pre-open lstat identity/metadata (Minor #8 parity with CLI).
+    if fmeta.len() != lmeta.len() || fmeta.modified().ok() != lmeta.modified().ok() {
+        return Err(git_err(
+            "SOURCE_CHANGED",
+            format!("{path} changed during open"),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if fmeta.dev() != lmeta.dev() || fmeta.ino() != lmeta.ino() {
+            return Err(git_err(
+                "SOURCE_CHANGED",
+                format!("{path} inode changed during open"),
+            ));
+        }
+    }
     Ok(file)
 }
 
@@ -280,6 +345,9 @@ fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash:
     let before = file
         .metadata()
         .map_err(|e| git_err("IO_ERROR", format!("cannot stat {path}: {e}")))?;
+    #[cfg(windows)]
+    let before_win_id = win_file_id(&file)
+        .map_err(|e| git_err("IO_ERROR", format!("cannot query file id for {path}: {e}")))?;
     let expected = before.len();
     let before_mtime = before.modified().ok();
     let mut reader = ExactLenReader {
@@ -325,8 +393,8 @@ fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash:
             format!("{path} metadata changed during read"),
         ));
     }
-    // Check pathname replacement parity with CLI/Dugite (Minor #7): reject if the pathname now
-    // points to a different inode, non-regular file, missing path, or modified metadata.
+    // Check pathname replacement parity with CLI/Dugite (Minor #8): reject if the pathname now
+    // points to a different file identity, non-regular file, missing path, or modified metadata.
     let post_lstat = fs::symlink_metadata(path).map_err(|e| {
         git_err(
             "SOURCE_CHANGED",
@@ -349,6 +417,38 @@ fn write_blob_from_file(repo: &gix::Repository, path: &str) -> Result<gix::hash:
             return Err(git_err(
                 "SOURCE_CHANGED",
                 format!("{path} inode replaced during read"),
+            ));
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        let post_handle = fs::OpenOptions::new()
+            .access_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|e| git_err("SOURCE_CHANGED", format!("{path} replaced during read: {e}")))?;
+        let post_meta = post_handle
+            .metadata()
+            .map_err(|e| git_err("SOURCE_CHANGED", format!("{path} restat failed: {e}")))?;
+        if (post_meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+            || !post_meta.is_file()
+            || post_meta.len() != expected
+            || (before_mtime.is_some() && post_meta.modified().ok() != before_mtime)
+        {
+            return Err(git_err(
+                "SOURCE_CHANGED",
+                format!("{path} replaced during read"),
+            ));
+        }
+        let post_win_id = win_file_id(&post_handle)
+            .map_err(|e| git_err("SOURCE_CHANGED", format!("{path} id check failed: {e}")))?;
+        if post_win_id != before_win_id {
+            return Err(git_err(
+                "SOURCE_CHANGED",
+                format!("{path} file identity replaced during read"),
             ));
         }
     }
@@ -585,8 +685,18 @@ fn walk_history_sync(
     limit: usize,
     max_walk: usize,
 ) -> Result<Vec<NativeHistoryEntry>> {
+    if !prefix.is_empty() && !is_safe_rel_path(prefix) {
+        return Err(git_err("INVALID_PATH", format!("unsafe prefix: {prefix}")));
+    }
     let mut out = Vec::new();
     let start_id = oid_of(from_commit).map_err(|e| git_err("INVALID_OID", e.reason))?;
+    if limit == 0 || max_walk == 0 {
+        return Ok(out);
+    }
+    let shallow_set: HashSet<gix::hash::ObjectId> = match repo.shallow_commits() {
+        Ok(Some(list)) => list.iter().copied().collect(),
+        _ => HashSet::new(),
+    };
     let mut oid = Some(start_id);
     let mut tree = subtree_oid(repo, start_id, prefix)?;
     let current = tree;
@@ -598,10 +708,9 @@ fn walk_history_sync(
             break;
         }
         walked += 1;
-        let commit = match repo.find_commit(curr_oid) {
-            Ok(c) => c,
-            Err(_) => break,
-        };
+        let commit = repo.find_commit(curr_oid).map_err(|e| {
+            git_err("REPO_CORRUPT", format!("cannot read commit {curr_oid}: {e}"))
+        })?;
         let decoded = commit
             .decode()
             .map_err(|e| git_err("REPO_CORRUPT", format!("commit {curr_oid} malformed: {e}")))?;
@@ -613,9 +722,36 @@ fn walk_history_sync(
             .map_err(|e| git_err("REPO_CORRUPT", format!("commit {curr_oid} committer time invalid: {e}")))?
             .seconds;
         oldest = Some((curr_oid, committer_time));
-        let parent = decoded.parents().next();
+        let parent = if shallow_set.contains(&curr_oid) {
+            None
+        } else {
+            decoded.parents().next()
+        };
         let before = match parent {
-            Some(p) => subtree_oid(repo, p, prefix)?,
+            Some(p) => {
+                // In a non-shallow repository, a referenced first-parent commit absent from ODB
+                // is repository corruption, not subtree absence (Minor #11).
+                match repo.try_find_object(p) {
+                    Ok(Some(obj)) => {
+                        obj.try_into_commit().map_err(|e| {
+                            git_err("REPO_CORRUPT", format!("parent {p} of {curr_oid} is not a commit: {e}"))
+                        })?;
+                    }
+                    Ok(None) => {
+                        return Err(git_err(
+                            "REPO_CORRUPT",
+                            format!("missing parent commit {p} referenced by {curr_oid}"),
+                        ));
+                    }
+                    Err(e) => {
+                        return Err(git_err(
+                            "REPO_CORRUPT",
+                            format!("cannot read parent commit {p} of {curr_oid}: {e}"),
+                        ));
+                    }
+                }
+                subtree_oid(repo, p, prefix)?
+            }
             None => None,
         };
         if before != Some(curr_tree) {
@@ -661,7 +797,17 @@ fn extract_lock_path_for(dest: &Path) -> Result<std::path::PathBuf> {
         .map_err(|e| git_err("IO_ERROR", format!("cannot canonicalize {}: {e}", dest.display())))?;
     #[allow(unused_mut)]
     let mut key_str = canonical.to_string_lossy().into_owned();
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        // Strip Windows verbatim prefix to match Node/libuv `fs.realpath` (Major #14).
+        if let Some(rest) = key_str.strip_prefix(r"\\?\UNC\") {
+            key_str = format!(r"\\{rest}");
+        } else if let Some(rest) = key_str.strip_prefix(r"\\?\") {
+            key_str = rest.to_string();
+        }
+        key_str = key_str.to_lowercase();
+    }
+    #[cfg(target_os = "macos")]
     {
         key_str = key_str.to_lowercase();
     }
@@ -1170,22 +1316,157 @@ fn prepare_commit_sync(
     })
 }
 
-fn has_non_conflict_io_error(err: &(dyn std::error::Error + 'static)) -> bool {
-    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
-    while let Some(e) = cur {
-        if let Some(io_err) = e.downcast_ref::<io::Error>() {
-            if io_err.kind() != io::ErrorKind::AlreadyExists {
-                return true;
-            }
+
+struct RefLockGuard {
+    path: std::path::PathBuf,
+    armed: bool,
+}
+impl Drop for RefLockGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
         }
-        cur = e.source();
     }
-    let msg = err.to_string();
-    msg.contains("Permission denied")
-        || msg.contains("Read-only file system")
-        || msg.contains("No space left on device")
-        || msg.contains("Input/output error")
-        || msg.contains("Too many open files")
+}
+
+enum LooseRefState {
+    Absent,
+    Directory,
+    Object(gix::hash::ObjectId),
+    Symbolic,
+    Invalid,
+}
+
+fn read_loose_ref_under_lock(ref_path: &Path) -> Result<LooseRefState> {
+    let meta = match fs::symlink_metadata(ref_path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(LooseRefState::Absent),
+        Err(e) => {
+            return Err(git_err(
+                "IO_ERROR",
+                format!("cannot stat loose ref {}: {e}", ref_path.display()),
+            ))
+        }
+    };
+    if meta.file_type().is_symlink() {
+        return Ok(LooseRefState::Invalid);
+    }
+    if meta.is_dir() {
+        return Ok(LooseRefState::Directory);
+    }
+    let bytes = fs::read(ref_path).map_err(|e| {
+        git_err(
+            "IO_ERROR",
+            format!("cannot read loose ref {}: {e}", ref_path.display()),
+        )
+    })?;
+    let trimmed = std::str::from_utf8(&bytes).ok().map(|s| s.trim_end_matches(['\r', '\n']));
+    let Some(text) = trimmed else {
+        return Ok(LooseRefState::Invalid);
+    };
+    if text.starts_with("ref:") {
+        return Ok(LooseRefState::Symbolic);
+    }
+    match gix::hash::ObjectId::from_hex(text.as_bytes()) {
+        Ok(oid) => Ok(LooseRefState::Object(oid)),
+        Err(_) => Ok(LooseRefState::Invalid),
+    }
+}
+
+/// Read packed-refs freshly from disk while holding `<ref>.lock` using gitoxide's canonical
+/// `gix::refs::packed::Buffer` parser (never a stale pre-lock snapshot) (Major #11).
+fn read_fresh_packed_refs(
+    git_dir: &Path,
+    object_hash: gix::hash::Kind,
+) -> Result<Vec<(String, gix::hash::ObjectId)>> {
+    let packed_path = git_dir.join("packed-refs");
+    let bytes = match fs::read(&packed_path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(git_err(
+                "IO_ERROR",
+                format!("cannot read packed-refs {}: {e}", packed_path.display()),
+            ))
+        }
+    };
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let buf = gix::refs::packed::Buffer::from_bytes(&bytes, object_hash).map_err(|e| {
+        git_err("REPO_CORRUPT", format!("corrupt packed-refs: {e}"))
+    })?;
+    let iter = buf.iter().map_err(|e| {
+        git_err("REPO_CORRUPT", format!("cannot iterate packed-refs: {e}"))
+    })?;
+    let mut out = Vec::new();
+    for item in iter {
+        let r = item.map_err(|e| {
+            git_err("REPO_CORRUPT", format!("malformed packed-refs entry: {e}"))
+        })?;
+        let name = r.name.as_bstr().to_string();
+        let oid = r.target();
+        out.push((name, oid));
+    }
+    Ok(out)
+}
+
+/// Verify a directory under `refs/` contains only empty subdirectories (no loose refs / files /
+/// symlinks), returning `Ok(true)` if empty-only or `Ok(false)` if any non-directory entry exists.
+fn dir_has_only_empty_subdirs(dir: &Path) -> Result<bool> {
+    let entries = fs::read_dir(dir).map_err(|e| {
+        git_err(
+            "IO_ERROR",
+            format!("cannot read ref directory {}: {e}", dir.display()),
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            git_err(
+                "IO_ERROR",
+                format!("cannot inspect ref directory {}: {e}", dir.display()),
+            )
+        })?;
+        let ft = entry.file_type().map_err(|e| {
+            git_err(
+                "IO_ERROR",
+                format!("cannot inspect ref entry {}: {e}", entry.path().display()),
+            )
+        })?;
+        if ft.is_dir() && !ft.is_symlink() {
+            if !dir_has_only_empty_subdirs(&entry.path())? {
+                return Ok(false);
+            }
+        } else {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn remove_empty_dir_tree(dir: &Path) -> Result<()> {
+    let entries = fs::read_dir(dir).map_err(|e| {
+        git_err(
+            "IO_ERROR",
+            format!("cannot read empty ref directory {}: {e}", dir.display()),
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            git_err(
+                "IO_ERROR",
+                format!("cannot inspect empty ref directory {}: {e}", dir.display()),
+            )
+        })?;
+        let p = entry.path();
+        remove_empty_dir_tree(&p)?;
+    }
+    fs::remove_dir(dir).map_err(|e| {
+        git_err(
+            "IO_ERROR",
+            format!("cannot remove empty ref directory {}: {e}", dir.display()),
+        )
+    })
 }
 
 fn cas_ref_sync(
@@ -1194,107 +1475,177 @@ fn cas_ref_sync(
     new_commit: &str,
     expected_parent: Option<&str>,
 ) -> Result<()> {
-    use gix::refs::transaction::{PreviousValue, RefEdit};
-    use gix::refs::{FullName, Target};
+    use gix::refs::FullName;
 
+    // Never allow non-ref repository metadata paths like `info/exclude` (Major #10).
+    if !ref_name.starts_with("refs/") {
+        return Err(git_err(
+            "INVALID_REF",
+            format!("ref name must start with refs/: {ref_name}"),
+        ));
+    }
     let full_name: FullName = ref_name
         .try_into()
         .map_err(|e| git_err("INVALID_REF", format!("invalid ref name {ref_name}: {e}")))?;
     let new_id = oid_of(new_commit).map_err(|e| git_err("INVALID_OID", e.reason))?;
+    let expected_oid = match expected_parent {
+        Some(hex) => Some(oid_of(hex).map_err(|e| git_err("INVALID_OID", e.reason))?),
+        None => None,
+    };
 
-    match expected_parent {
-        Some(hex) => {
-            let old_id = oid_of(hex).map_err(|e| git_err("INVALID_OID", e.reason))?;
-            let edit = RefEdit::update(
-                full_name,
-                new_id,
-                PreviousValue::MustExistAndMatch(Target::Object(old_id)),
-                "",
-            );
-            repo.edit_reference(edit).map_err(|e| {
-                if has_non_conflict_io_error(&e) {
-                    git_err("IO_ERROR", format!("ref storage error for {ref_name}: {e}"))
-                } else {
-                    git_err("CAS_CONFLICT", format!("ref update refused for {ref_name}: {e}"))
+    // Perform BOTH existing-ref CAS and creation CAS directly under Git's `<ref>.lock` so
+    // `packed-refs` is always read freshly from disk AFTER acquiring the lock (Major #11),
+    // creation strictly refuses any existing loose/packed ref or symref, and an empty former ref
+    // directory is removed before publish (Minor #9).
+    let ref_rel = full_name.as_bstr().to_string();
+    let git_dir = repo.git_dir();
+    let ref_path = git_dir.join(&ref_rel);
+    // Check ancestor ref paths explicitly (cross-platform D/F detection on Unix + Windows).
+    {
+        let mut anc = git_dir.to_path_buf();
+        let segs: Vec<&str> = ref_rel.split('/').collect();
+        for seg in &segs[..segs.len().saturating_sub(1)] {
+            anc.push(seg);
+            if let Ok(m) = fs::symlink_metadata(&anc) {
+                if m.file_type().is_symlink() || !m.is_dir() {
+                    return Err(git_err(
+                        "CAS_CONFLICT",
+                        format!("ref namespace conflict for {ref_name}: {} is not a directory", anc.display()),
+                    ));
                 }
-            })?;
-            Ok(())
-        }
-        _ => {
-            // Strict creation CAS: gix-ref 0.70.0 `PreviousValue::MustNotExist` treats an existing
-            // ref equal to `new_id` as a no-op success instead of conflict. Acquire Git's `.lock`
-            // file directly, verify strict absence AND D/F namespace non-conflict across BOTH
-            // loose and packed refs under lock, then publish atomically.
-            let ref_rel = full_name.as_bstr().to_string();
-            let ref_path = repo.git_dir().join(&ref_rel);
-            if let Some(parent) = ref_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    if e.kind() == io::ErrorKind::AlreadyExists || e.kind() == io::ErrorKind::NotADirectory {
-                        git_err("CAS_CONFLICT", format!("ref namespace conflict for {ref_name}: {e}"))
-                    } else {
-                        git_err("IO_ERROR", format!("cannot create ref parent {}: {e}", parent.display()))
-                    }
-                })?;
             }
-            let lock_path = repo.git_dir().join(format!("{ref_rel}.lock"));
-            let mut lock_file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&lock_path)
-                .map_err(|e| {
-                    if e.kind() == io::ErrorKind::AlreadyExists {
-                        git_err("CAS_CONFLICT", format!("ref {ref_name} is locked"))
-                    } else {
-                        git_err("IO_ERROR", format!("cannot lock {ref_name}: {e}"))
+        }
+    }
+    if let Some(parent) = ref_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists
+                || e.kind() == io::ErrorKind::NotADirectory
+            {
+                git_err("CAS_CONFLICT", format!("ref namespace conflict for {ref_name}: {e}"))
+            } else {
+                git_err(
+                    "IO_ERROR",
+                    format!("cannot create ref parent {}: {e}", parent.display()),
+                )
+            }
+        })?;
+    }
+    let lock_path = git_dir.join(format!("{ref_rel}.lock"));
+    let mut lock_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .map_err(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists {
+                git_err("CAS_CONFLICT", format!("ref {ref_name} is locked"))
+            } else {
+                git_err("IO_ERROR", format!("cannot lock {ref_name}: {e}"))
+            }
+        })?;
+    let mut guard = RefLockGuard {
+        path: lock_path.clone(),
+        armed: true,
+    };
+
+    let loose = read_loose_ref_under_lock(&ref_path)?;
+    match expected_oid {
+        Some(old_id) => match loose {
+            LooseRefState::Object(cur_oid) => {
+                if cur_oid != old_id {
+                    return Err(git_err(
+                        "CAS_CONFLICT",
+                        format!("ref {ref_name} is at {cur_oid} but expected {old_id}"),
+                    ));
+                }
+            }
+            LooseRefState::Symbolic => {
+                return Err(git_err(
+                    "CAS_CONFLICT",
+                    format!("ref {ref_name} is symbolic (expected direct ref {old_id})"),
+                ));
+            }
+            LooseRefState::Directory => {
+                return Err(git_err(
+                    "CAS_CONFLICT",
+                    format!("ref {ref_name} is a directory (expected {old_id})"),
+                ));
+            }
+            LooseRefState::Invalid => {
+                return Err(git_err(
+                    "CAS_CONFLICT",
+                    format!("loose ref {ref_name} is invalid (expected {old_id})"),
+                ));
+            }
+            LooseRefState::Absent => {
+                let packed = read_fresh_packed_refs(git_dir, repo.object_hash())?;
+                let found = packed.iter().find(|(name, _)| name == &ref_rel).map(|(_, oid)| *oid);
+                match found {
+                    Some(cur_oid) if cur_oid == old_id => {}
+                    Some(cur_oid) => {
+                        return Err(git_err(
+                            "CAS_CONFLICT",
+                            format!("packed ref {ref_name} is at {cur_oid} but expected {old_id}"),
+                        ));
                     }
-                })?;
-            let result = (|| -> Result<()> {
-                let existing = repo.try_find_reference(full_name.as_bstr()).map_err(|e| {
-                    git_err("INVALID_REF", format!("cannot inspect {ref_name}: {e}"))
-                })?;
-                if existing.is_some() {
+                    None => {
+                        return Err(git_err(
+                            "CAS_CONFLICT",
+                            format!("ref {ref_name} is missing (expected {old_id})"),
+                        ));
+                    }
+                }
+            }
+        },
+        None => {
+            let mut remove_empty_dir = false;
+            match loose {
+                LooseRefState::Absent => {}
+                LooseRefState::Directory => {
+                    if !dir_has_only_empty_subdirs(&ref_path)? {
+                        return Err(git_err(
+                            "CAS_CONFLICT",
+                            format!("ref {ref_name} conflicts with existing nested loose ref"),
+                        ));
+                    }
+                    remove_empty_dir = true;
+                }
+                LooseRefState::Object(_) | LooseRefState::Symbolic | LooseRefState::Invalid => {
                     return Err(git_err(
                         "CAS_CONFLICT",
                         format!("ref {ref_name} already exists (expected absent)"),
                     ));
                 }
-                // Check loose + packed refs for D/F conflicts (`refs/heads/topic` vs `refs/heads/topic/sub`).
-                let ref_slash = format!("{ref_rel}/");
-                let refs_platform = repo.references().map_err(|e| {
-                    git_err("IO_ERROR", format!("cannot iterate refs for {ref_name}: {e}"))
-                })?;
-                let iter = refs_platform.all().map_err(|e| {
-                    git_err("IO_ERROR", format!("cannot list refs for {ref_name}: {e}"))
-                })?;
-                for item in iter {
-                    let r = item.map_err(|e| {
-                        git_err("IO_ERROR", format!("cannot read ref entry while locking {ref_name}: {e}"))
-                    })?;
-                    let other = r.name().as_bstr().to_string();
-                    if other == ref_rel
-                        || other.starts_with(&ref_slash)
-                        || ref_rel.starts_with(&format!("{other}/"))
-                    {
-                        return Err(git_err(
-                            "CAS_CONFLICT",
-                            format!("ref {ref_name} conflicts with existing ref {other}"),
-                        ));
-                    }
-                }
-                lock_file
-                    .write_all(format!("{new_id}\n").as_bytes())
-                    .map_err(|e| git_err("IO_ERROR", format!("cannot write lock for {ref_name}: {e}")))?;
-                drop(lock_file);
-                fs::rename(&lock_path, &ref_path)
-                    .map_err(|e| git_err("IO_ERROR", format!("cannot publish {ref_name}: {e}")))?;
-                Ok(())
-            })();
-            if result.is_err() {
-                let _ = fs::remove_file(&lock_path);
             }
-            result
+            let ref_slash = format!("{ref_rel}/");
+            let packed = read_fresh_packed_refs(git_dir, repo.object_hash())?;
+            for (other, _) in &packed {
+                if other == &ref_rel
+                    || other.starts_with(&ref_slash)
+                    || ref_rel.starts_with(&format!("{other}/"))
+                {
+                    return Err(git_err(
+                        "CAS_CONFLICT",
+                        format!("ref {ref_name} conflicts with existing packed ref {other}"),
+                    ));
+                }
+            }
+            if remove_empty_dir {
+                remove_empty_dir_tree(&ref_path)?;
+            }
         }
     }
+
+    lock_file
+        .write_all(format!("{new_id}\n").as_bytes())
+        .map_err(|e| git_err("IO_ERROR", format!("cannot write lock for {ref_name}: {e}")))?;
+    lock_file
+        .flush()
+        .map_err(|e| git_err("IO_ERROR", format!("cannot flush lock for {ref_name}: {e}")))?;
+    drop(lock_file);
+    fs::rename(&lock_path, &ref_path)
+        .map_err(|e| git_err("IO_ERROR", format!("cannot publish {ref_name}: {e}")))?;
+    guard.armed = false;
+    Ok(())
 }
 
 // ---- NativeRepo handle & AsyncTasks ------------------------------------------------
@@ -1372,6 +1723,9 @@ impl Task for ListTreeTask {
     type JsValue = Option<Vec<NativeTreeEntry>>;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        if !self.prefix.is_empty() && !is_safe_rel_path(&self.prefix) {
+            return Err(git_err("INVALID_PATH", format!("unsafe prefix: {}", self.prefix)));
+        }
         let local = self.repo.to_thread_local();
         let cid = oid_of(&self.commit_oid).map_err(|e| git_err("INVALID_OID", e.reason))?;
         let Some(tree_id) = subtree_oid(&local, cid, &self.prefix)? else {

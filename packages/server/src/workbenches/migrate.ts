@@ -66,11 +66,24 @@ async function convertTree(dir: string): Promise<void> {
 }
 
 async function convertHistory(base: string): Promise<void> {
+  const baseStat = await fs.lstat(base);
+  if (baseStat.isSymbolicLink() || !baseStat.isDirectory()) {
+    throw new Error(`Cannot migrate history: ${base} is a symbolic link or not a directory.`);
+  }
   for (const entry of await fs.readdir(base, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
     const dir = path.join(base, entry.name);
     const index = path.join(dir, "versions.json");
-    if (!(await exists(index))) continue;
+    let indexStat: import("node:fs").Stats;
+    try {
+      indexStat = await fs.lstat(index);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw e;
+    }
+    if (indexStat.isSymbolicLink() || !indexStat.isFile()) {
+      throw new Error(`Cannot migrate history: ${index} is a symbolic link or not a regular file.`);
+    }
     const versions = JSON.parse(await fs.readFile(index, "utf8")) as LegacyVersion[];
     const updated: LegacyVersion[] = [];
     // Build beside the old revision directories: hashes can converge after the rename.
@@ -80,6 +93,16 @@ async function convertHistory(base: string): Promise<void> {
       if (!/^[a-f0-9]{12}$/.test(version.revision))
         throw new Error(`Invalid workbench history revision: ${version.revision}`);
       const source = path.join(dir, version.revision);
+      const sourceStat = await fs.lstat(source).catch((e: NodeJS.ErrnoException) => {
+        if (e.code === "ENOENT") return null;
+        throw e;
+      });
+      if (!sourceStat) throw new Error(`Missing workbench history: ${source}`);
+      if (sourceStat.isSymbolicLink() || !sourceStat.isDirectory()) {
+        throw new Error(
+          `Cannot migrate history: ${source} is a symbolic link or not a real directory.`,
+        );
+      }
       const folder = await readFolder(source, entry.name);
       if (!folder) throw new Error(`Missing workbench history: ${source}`);
       if (updated.some((v) => v.revision === folder.revision)) continue;
@@ -96,23 +119,50 @@ async function convertHistory(base: string): Promise<void> {
     for (const revision of await fs.readdir(staged))
       await fs.rename(path.join(staged, revision), path.join(dir, revision));
     await fs.rmdir(staged);
-    await fs.writeFile(index, JSON.stringify(updated, null, 2));
+    const tmpIndex = path.join(dir, `.versions.json.penguin-tmp-${process.pid}-${Date.now()}`);
+    await fs.writeFile(tmpIndex, JSON.stringify(updated, null, 2));
+    await fs.rename(tmpIndex, index);
   }
 }
 
 /** The run in flight per Agent directory: every caller for one Agent awaits the same run. */
 const running = new Map<string, Promise<void>>();
+/** Per-Agent-dir hold gate preventing direct migrations from racing with archive swaps (Major #3). */
+const migrationHeld = new Map<string, Promise<void>>();
+
+/**
+ * Prevents `migrateWorkbenches(agentDir, ...)` from starting while `work` runs (e.g. an Agent
+ * State archive swap) and drains any already-running migration for `agentDir` first.
+ */
+export async function whileAgentMigrationHeld<T>(
+  agentDir: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const key = path.resolve(agentDir);
+  for (let h = migrationHeld.get(key); h; h = migrationHeld.get(key)) await h;
+  let release!: () => void;
+  migrationHeld.set(key, new Promise<void>((r) => (release = r)));
+  try {
+    const active = running.get(key);
+    if (active) await active.catch(() => undefined);
+    return await work();
+  } finally {
+    migrationHeld.delete(key);
+    release();
+  }
+}
 
 /**
  * Every one-time step an Agent's workbenches need, in order: the Workflow conversion, then the
  * move into Agent State (./migrate-state.ts). Any caller may await it before touching the
  * workbenches, concurrently with others.
  */
-export function migrateWorkbenches(
+export async function migrateWorkbenches(
   agentDir: string,
   engine: GitEngine | (() => GitEngine),
 ): Promise<void> {
   const key = path.resolve(agentDir);
+  for (let h = migrationHeld.get(key); h; h = migrationHeld.get(key)) await h;
   const inFlight = running.get(key);
   if (inFlight) return inFlight;
   const run = (async () => {

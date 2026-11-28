@@ -86,15 +86,27 @@ export function runGit(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let settled = false;
+    let closed = false;
+    let pendingErr: Error | null = null;
     const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
+      if (pendingErr === null) pendingErr = err;
+      try {
+        child.stdin.destroy();
+      } catch {
+        // ignore
+      }
       try {
         child.kill("SIGKILL");
       } catch {
         // ignore
       }
-      reject(err);
+      child.stdout.resume();
+      child.stderr.resume();
+      if (closed || child.pid === undefined) {
+        if (settled) return;
+        settled = true;
+        reject(pendingErr);
+      }
     };
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
@@ -105,8 +117,13 @@ export function runGit(
       if (err.code !== "EPIPE") fail(err);
     });
     child.on("close", (code, signal) => {
+      closed = true;
       if (settled) return;
       settled = true;
+      if (pendingErr !== null) {
+        reject(pendingErr);
+        return;
+      }
       if (signal !== null) {
         reject(new Error(`git ${args[0] ?? ""}: killed by ${signal}`));
         return;

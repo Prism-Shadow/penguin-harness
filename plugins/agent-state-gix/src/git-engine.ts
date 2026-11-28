@@ -114,7 +114,7 @@ function toNativeFile(f: GitCommitFile): NativeRepoCommitFileInput {
 }
 
 function wrapRepo(handle: NativeRepo): GitRepo {
-  const hookScope = new AsyncLocalStorage<symbol>();
+  const hookScope = new AsyncLocalStorage<ReadonlySet<symbol>>();
   const activeHooks = new Set<symbol>();
   let closing = false;
   let closed = false;
@@ -269,8 +269,10 @@ function wrapRepo(handle: NativeRepo): GitRepo {
           const frozenSnapshot = Object.freeze({ commit: preparedCommit, tree: preparedTree });
           const token = Symbol("beforeMoveRef");
           activeHooks.add(token);
+          const nextHooks = new Set(hookScope.getStore());
+          nextHooks.add(token);
           try {
-            await hookScope.run(token, () => beforeMoveRef(frozenSnapshot));
+            await hookScope.run(nextHooks, () => beforeMoveRef(frozenSnapshot));
           } finally {
             activeHooks.delete(token);
           }
@@ -286,11 +288,15 @@ function wrapRepo(handle: NativeRepo): GitRepo {
     },
 
     close(): Promise<void> {
-      const activeHook = hookScope.getStore();
-      if (activeHook !== undefined && activeHooks.has(activeHook)) {
-        return Promise.reject(
-          gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
-        );
+      const inheritedHooks = hookScope.getStore();
+      if (inheritedHooks !== undefined) {
+        for (const tok of inheritedHooks) {
+          if (activeHooks.has(tok)) {
+            return Promise.reject(
+              gitError("IO_ERROR", "cannot close GitRepo from inside beforeMoveRef hook"),
+            );
+          }
+        }
       }
       if (closePromise !== null) return closePromise;
       closing = true;
