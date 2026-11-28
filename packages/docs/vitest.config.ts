@@ -4,8 +4,13 @@
  * types). Tests cover pure modules and content integrity only, so a node
  * environment with no plugins suffices.
  */
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
-  test: { environment: "node" },
+  test: {
+    environment: "node",
+    // references/doc-samples/*.test.ts are standalone executable samples verified
+    // via `pnpm --filter @prismshadow/penguin-docs references:verify-samples`.
+    exclude: [...configDefaults.exclude, "references/**"],
+  },
 });

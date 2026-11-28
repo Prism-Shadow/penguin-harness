@@ -18,9 +18,10 @@ import { extractJsDoc, markdownFirstBlockToHast, slugOf } from "./jsdoc.js";
 import type { VerifiedSample, VerifiedSamplesFile } from "./types.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = path.resolve(HERE, "..");
-const REPO = process.env.PENGUIN_REFS_REPO || path.resolve(PKG_ROOT, "../../..");
-const SAMPLES_DIR = path.join(PKG_ROOT, "doc-samples");
+const REFS_ROOT = path.resolve(HERE, "..");
+const DOCS_PKG_ROOT = path.resolve(REFS_ROOT, "..");
+const REPO = process.env.PENGUIN_REFS_REPO || path.resolve(REFS_ROOT, "../../..");
+const SAMPLES_DIR = path.join(REFS_ROOT, "doc-samples");
 const OUT_FILE = path.join(SAMPLES_DIR, "verified-samples.json");
 const ALLOW_FAIL = process.argv.includes("--report-failures");
 
@@ -216,7 +217,7 @@ function extractRegions(filePath: string): {
         code: displayCode,
         twoslashSource,
         line: openRegion.startLine,
-        file: toPosixRel(PKG_ROOT, filePath),
+        file: toPosixRel(REFS_ROOT, filePath),
       });
       openRegion = null;
     }
@@ -334,7 +335,8 @@ export function computeSamplesSourceHash(repoDir: string = REPO): string {
 function resolveRuntimeDeps(repoDir: string): { tsxBin: string; loaderHookUrl: string } {
   const candidates = [
     process.env.PENGUIN_TSX_BIN,
-    path.join(PKG_ROOT, "node_modules/.bin/tsx"),
+    path.join(DOCS_PKG_ROOT, "node_modules/.bin/tsx"),
+    path.join(REFS_ROOT, "node_modules/.bin/tsx"),
     path.join(repoDir, "node_modules/.bin/tsx"),
     process.env.PENGUIN_NODE_MODULES
       ? path.join(process.env.PENGUIN_NODE_MODULES, ".bin/tsx")
@@ -500,7 +502,7 @@ export async function runDocSamples(): Promise<void> {
         const args = ["--import", loaderHookUrl, tf];
         const stdout = execFileSync(tsxBin, args, {
           encoding: "utf8",
-          cwd: PKG_ROOT,
+          cwd: REFS_ROOT,
           env: {
             ...process.env,
             PENGUIN_REFS_REPO: REPO,
@@ -555,7 +557,7 @@ export async function runDocSamples(): Promise<void> {
           .split(/\r\n|\r|\n/)
           .slice(0, 6)
           .join("\n");
-        console.error(`  FAIL ${toPosixRel(PKG_ROOT, tf)}:\n${msg}`);
+        console.error(`  FAIL ${toPosixRel(REFS_ROOT, tf)}:\n${msg}`);
         for (const [key, reg] of regions) {
           const hast = hastByKey.get(key);
           verified[key] = {

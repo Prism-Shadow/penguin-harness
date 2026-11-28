@@ -14,12 +14,14 @@ import { createPagesRenderer } from "./render/pages.js";
 import type { ExtractedData, VerifiedSample, VerifiedSamplesFile } from "./types.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = path.resolve(HERE, "..");
-const REPO = process.env.PENGUIN_REFS_REPO || path.resolve(PKG_ROOT, "../../..");
-const OUT = process.env.PENGUIN_REFS_OUT || path.join(PKG_ROOT, "dist");
+const REFS_ROOT = path.resolve(HERE, "..");
+const DOCS_PKG_ROOT = path.resolve(REFS_ROOT, "..");
+const REPO = process.env.PENGUIN_REFS_REPO || path.resolve(REFS_ROOT, "../../..");
+const OUT = process.env.PENGUIN_REFS_OUT || path.join(REFS_ROOT, "dist");
 const ALLOW_UNVERIFIED = process.argv.includes("--allow-unverified-samples");
 const OWNED_MARKER = ".penguin-refs-generated";
-const OWNED_GENERATOR_ID = "@prismshadow/penguin-references";
+const OWNED_GENERATOR_ID = "@prismshadow/penguin-docs/references";
+const ACCEPTED_GENERATOR_IDS = new Set([OWNED_GENERATOR_ID, "@prismshadow/penguin-references"]);
 const ROOT_INDEX_HTML =
   '<!doctype html><meta charset="utf-8"><title>PenguinHarness References</title><meta http-equiv="refresh" content="0; url=references/"><p><a href="references/">References</a></p>';
 
@@ -98,7 +100,8 @@ function hasValidOwnershipMarker(refsOutDir: string): boolean {
       gitSha?: unknown;
     };
     return (
-      parsed.generatedBy === OWNED_GENERATOR_ID &&
+      typeof parsed.generatedBy === "string" &&
+      ACCEPTED_GENERATOR_IDS.has(parsed.generatedBy) &&
       parsed.version === 1 &&
       typeof parsed.gitSha === "string" &&
       parsed.gitSha.length > 0
@@ -108,20 +111,24 @@ function hasValidOwnershipMarker(refsOutDir: string): boolean {
     const lines = raw.trimEnd().split("\n");
     return (
       lines.length === 2 &&
-      lines[0] === `generatedBy=${OWNED_GENERATOR_ID}` &&
+      Boolean(lines[0]?.startsWith("generatedBy=")) &&
+      ACCEPTED_GENERATOR_IDS.has(lines[0]?.slice("generatedBy=".length) ?? "") &&
       Boolean(lines[1]?.startsWith("gitSha=") && lines[1].length > "gitSha=".length)
     );
   }
 }
 
 function assertSafeCleanDir(canonicalOut: string, refsOutDir: string, repoDir: string): void {
-  const canonicalPkg = canonicalExisting(PKG_ROOT);
+  const canonicalRefs = canonicalExisting(REFS_ROOT);
+  const canonicalDocsPkg = canonicalExisting(DOCS_PKG_ROOT);
   const canonicalRepo = canonicalExisting(repoDir);
   const canonicalTarget = canonicalExisting(refsOutDir);
 
   if (
-    isPathInsideOrEqual(canonicalTarget, canonicalPkg) ||
-    isPathInsideOrEqual(path.join(canonicalPkg, "src"), canonicalTarget) ||
+    isPathInsideOrEqual(canonicalTarget, canonicalRefs) ||
+    isPathInsideOrEqual(canonicalTarget, canonicalDocsPkg) ||
+    isPathInsideOrEqual(path.join(canonicalRefs, "src"), canonicalTarget) ||
+    isPathInsideOrEqual(path.join(canonicalDocsPkg, "src"), canonicalTarget) ||
     isPathInsideOrEqual(canonicalTarget, canonicalRepo)
   ) {
     throw new Error(
@@ -199,8 +206,10 @@ function loadTwoslashCss(): string {
     const resolved = req.resolve("@shikijs/twoslash/style-rich.css");
     return fs.readFileSync(resolved, "utf8");
   } catch {
-    const fallback = path.join(PKG_ROOT, "node_modules/@shikijs/twoslash/style-rich.css");
-    if (fs.existsSync(fallback)) return fs.readFileSync(fallback, "utf8");
+    for (const base of [DOCS_PKG_ROOT, REFS_ROOT]) {
+      const fallback = path.join(base, "node_modules/@shikijs/twoslash/style-rich.css");
+      if (fs.existsSync(fallback)) return fs.readFileSync(fallback, "utf8");
+    }
     console.warn("Warning: @shikijs/twoslash/style-rich.css not found; Twoslash styles omitted.");
     return "";
   }
@@ -210,11 +219,11 @@ function loadVerifiedSamples(
   repoDir: string,
   allowUnverified: boolean,
 ): Record<string, VerifiedSample> {
-  const verifiedPath = path.join(PKG_ROOT, "doc-samples/verified-samples.json");
+  const verifiedPath = path.join(REFS_ROOT, "doc-samples/verified-samples.json");
   if (!fs.existsSync(verifiedPath)) {
     if (allowUnverified) return {};
     throw new Error(
-      `Missing ${verifiedPath}. Run "npm run verify-samples" (or pass --allow-unverified-samples) before building.`,
+      `Missing ${verifiedPath}. Run "pnpm --filter @prismshadow/penguin-docs references:verify-samples" (or pass --allow-unverified-samples) before building.`,
     );
   }
   const raw = JSON.parse(fs.readFileSync(verifiedPath, "utf8")) as Partial<VerifiedSamplesFile>;
@@ -227,7 +236,7 @@ function loadVerifiedSamples(
     }
     if (raw.sourceHash !== expectedHash) {
       throw new Error(
-        `Verified samples artifact ${verifiedPath} is stale (sourceHash mismatch). Re-run "verify-samples" before building.`,
+        `Verified samples artifact ${verifiedPath} is stale (sourceHash mismatch). Re-run "pnpm --filter @prismshadow/penguin-docs references:verify-samples" before building.`,
       );
     }
   }

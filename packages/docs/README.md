@@ -17,6 +17,16 @@ description: One-line summary rendered under the title
 
 Navigation (sections, order, prev/next) is defined once in `src/lib/nav.ts`; a vitest check (`test/content.test.ts`) keeps nav and content in sync — every navigated slug must have both language files with a title, and no orphan files may exist. Internal links are written as absolute doc paths (`[Core Interfaces](/interfaces)`).
 
+## API References
+
+`references/` is an internal static API-reference generator owned by this package (not a separate workspace package). It extracts kernel exports, modules, components, interfaces, HTTP routes, CLI commands, and contribution slots directly from the repository AST and verifies executable Twoslash doc-samples.
+
+```bash
+pnpm --filter @prismshadow/penguin-docs references:verify-samples
+pnpm --filter @prismshadow/penguin-docs references:build
+pnpm --filter @prismshadow/penguin-docs build:references
+```
+
 ## Development
 
 ```bash
