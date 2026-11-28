@@ -1,0 +1,10 @@
+{
+  "name": "penguin-references-demo",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "shiki": "^3.4.0",
+    "@shikijs/twoslash": "^3.4.0",
+    "@shikijs/transformers": "^3.4.0"
+  }
+}
