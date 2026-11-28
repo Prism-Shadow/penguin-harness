@@ -8,9 +8,9 @@
  *   randomUUID), parking a draft and saving a shortcut still mint their ids instead of throwing.
  */
 import { describe, expect, it, vi } from "vitest";
-import { draftKey, saveDraft } from "../src/features/chat/draft-cache";
-import { parkActiveDraft } from "../src/features/chat/draft-sessions";
-import { newShortcutId } from "../src/features/chat/user-shortcuts";
+import { draftKey, saveDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
+import { parkActiveDraft } from "@prismshadow/penguin-library-session/web/chat/draft-sessions";
+import { newShortcutId } from "@prismshadow/penguin-library-session/web/chat/user-shortcuts";
 import { randomHex } from "../src/lib/random-id";
 import { memoryStorage } from "./helpers/storage";
 

@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteSession } from "../src/api/endpoints";
-import { discardUnstartedSession } from "../src/features/chat/unstarted-session";
+import { discardUnstartedSession } from "@prismshadow/penguin-library-session/web/chat/unstarted-session";
 import { createSessionsStore } from "../src/state/sessions";
 import { apiError, stubFetch } from "./helpers/fetch";
 

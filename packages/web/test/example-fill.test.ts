@@ -10,8 +10,8 @@
  * - Given an example with skills, selecting an example with none clears the selection.
  */
 import { describe, expect, it } from "vitest";
-import { buildExampleFill } from "../src/features/chat/example-fill";
-import { buildSkillsMessage } from "../src/features/chat/skill-use";
+import { buildExampleFill } from "@prismshadow/penguin-library-session/web/chat/example-fill";
+import { buildSkillsMessage } from "@prismshadow/penguin-library-session/web/chat/skill-use";
 
 const PROMPT = "Build a cute penguin sledding game.";
 

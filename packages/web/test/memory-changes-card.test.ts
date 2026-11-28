@@ -17,8 +17,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { MemoryChangesCard } from "../src/features/chat/memory-changes-card";
-import { deletedChangeKeys, type ScopeFiles } from "../src/features/chat/memory-nav";
+import { MemoryChangesCard } from "@prismshadow/penguin-library-session/web/chat/memory-changes-card";
+import {
+  deletedChangeKeys,
+  type ScopeFiles,
+} from "@prismshadow/penguin-library-session/web/chat/memory-nav";
 import type { MemoryChangeRow } from "../src/lib/amsp/memory-changes";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

@@ -13,7 +13,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageStream, type StreamRenderContext } from "../src/features/chat/message-stream";
+import {
+  MessageStream,
+  type StreamRenderContext,
+} from "@prismshadow/penguin-library-session/web/chat/message-stream";
 
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";

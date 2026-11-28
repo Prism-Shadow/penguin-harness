@@ -4,8 +4,8 @@ import { MemoryRouter } from "react-router";
 import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "../src/web-app/sidebar/sidebar";
 import { sidebarDeps } from "../src/web-app/sidebar/deps";
-import { sessionListDeps } from "../src/features/session-list/deps";
-import { MainSessionListSection } from "../src/features/session-list/main-sidebar-fragments";
+import { sessionListDeps } from "@prismshadow/penguin-library-session/web/session-list/deps";
+import { MainSessionListSection } from "@prismshadow/penguin-library-session/web/session-list/main-sidebar-fragments";
 import { PagesContext } from "../src/lib/web-app-pages";
 import { mount, unmountAll, type, run } from "./helpers/dom";
 const fixture = vi.hoisted(() => ({

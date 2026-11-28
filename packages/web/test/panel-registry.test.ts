@@ -21,7 +21,7 @@ import {
   registerDockPanel,
   subscribeDockPanels,
   type DockPanelDefinition,
-} from "../src/features/dock/panel-registry";
+} from "@prismshadow/penguin-library-session/web/dock/panel-registry";
 
 /** The registry is module-level: each test takes back everything it registered. */
 const cleanups: (() => void)[] = [];

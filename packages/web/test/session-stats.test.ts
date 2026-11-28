@@ -22,7 +22,7 @@ import {
   SessionElapsed,
   SessionStatsList,
   sessionElapsedSplit,
-} from "../src/features/chat/session-stats";
+} from "@prismshadow/penguin-library-session/web/chat/session-stats";
 import { createTaskStatsTracker } from "../src/lib/amsp/task-stats";
 import { S } from "../src/lib/strings";
 import { elementsOf, readMarkup, seenText } from "./helpers/markup";

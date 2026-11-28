@@ -35,7 +35,7 @@ import {
   readLauncherHidden,
   subscribeLauncherHidden,
   writeLauncherHidden,
-} from "../dock";
+} from "@prismshadow/penguin-library-session/web";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import {

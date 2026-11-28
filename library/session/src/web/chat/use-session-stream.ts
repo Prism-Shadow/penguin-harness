@@ -1,0 +1,491 @@
+/**
+ * Session stream hook (connect-first + dedupe on use): React adapter layer — the protocol state machine lives in
+ * lib/amsp/stream-controller.ts (pure logic, unit-testable).
+ *
+ * 1. On entering a Session, connect SSE first; events are handed to the controller (buffered if
+ *    history isn't ready yet);
+ * 2. The history stream renders history — the newest Tasks first, older windows and the fill
+ *    behind them, with how far the bytes have come (`transfer`) — then replays the buffer
+ *    (overlap deduped); on load failure, expose error and a retry entry point;
+ * 3. Disconnects are auto-reconnected by the browser (Last-Event-ID built in; server replays from
+ *    its buffer), and a connection that went silent is reopened by api/sse.ts from the last id
+ *    seen; resync_required → controller rebuilds the model and keeps consuming the same
+ *    connection;
+ * 4. task_state in the stream is the authoritative run state (server pushes the current snapshot
+ *    on subscribe); initialStatus only serves as the first-frame placeholder, driving the input
+ *    area state and the Session list badge;
+ * 5. The pending-approval table is keyed by `origin + toolCallId` (approvalKey); on reconnect the
+ *    server re-sends still-pending requests.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  GoalServerEvent,
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  SessionStatus,
+  SubagentRuntimeInfo,
+} from "@prismshadow/penguin-server/api";
+import {
+  apiSocket,
+  createStreamController,
+  createStreamModel,
+  getGoal,
+  machineForSession,
+  openHistoryStream,
+  openSessionStream,
+  openTraceBodyStream,
+  probeSession,
+} from "@prismshadow/penguin-web/internal";
+import type {
+  ChatItem,
+  HistoryTransfer,
+  OlderHistoryState,
+  PendingApproval,
+  StreamController,
+  StreamModel,
+  ThinkingItem,
+  ToolCallItem,
+} from "@prismshadow/penguin-web/internal";
+
+import type { GoalBannerState } from "./goal-use";
+
+export type {
+  HistoryTransfer,
+  OlderHistoryState,
+  PendingApproval,
+} from "@prismshadow/penguin-web/internal";
+
+/** Fetches the whole of an item's folded values (see the stream controller's loadBodies). */
+export interface ElidedBodies {
+  load: (item: ToolCallItem | ThinkingItem) => void;
+}
+
+/** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
+const BUMP_MIN_INTERVAL_MS = 120;
+
+export interface SessionStreamState {
+  /**
+   * The Session everything below describes (null: none, a draft). It trails the `sessionId`
+   * argument by one render after a switch: until the reset below has run, the state is still the
+   * previous Session's, and nothing may act on it as the new one's.
+   */
+  sessionId: string | null;
+  /** Owner confirmed by a history transfer, including a deep link ahead of the sidebar. */
+  historyMachineId: string | null;
+  /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
+  model: StreamModel;
+  /**
+   * Backfilled older-window items, oldest first — the transcript renders
+   * `[...prefixItems, ...model.items]`. Empty until the user scrolls up past the tail
+   * window (see loadOlder); ids are negative and unique, so keys/anchors stay clean.
+   */
+  prefixItems: readonly ChatItem[];
+  /** Nested subagent models owned by backfilled windows (the subagents panel merges them with model.subagents). */
+  prefixSubagents: ReadonlyMap<string, StreamModel>;
+  /** Outline entries existing before the oldest loaded window (global turn-numbering offset). */
+  outlineOffset: number;
+  /** Scroll-up backfill state (top affordance: spinner / retry / beginning-of-history). */
+  older: OlderHistoryState;
+  /** Prepend the previous history window (triggered near the top of the loaded transcript). */
+  loadOlder: () => void;
+  version: number;
+  /** First subscription and each subsequent reconnect. */
+  subscriptionGeneration?: number;
+  /** True until history finishes loading. */
+  loading: boolean;
+  taskState: SessionStatus;
+  /** Queued follow-up count from the stream's task_state events (auto-sent once the session is idle). */
+  queuedFollowUps: number;
+  /** Steering messages queued on the server but not yet delivered (from task_state events): keeps the composer's hint and its content across reloads. */
+  pendingSteering: PendingSteeringInfo[];
+  /** Steering a finished run never delivered (from task_state events): the composer takes each back into its draft, so an interrupt never eats the typed message. */
+  returnedSteering: PendingSteeringInfo[];
+  /** Queued follow-up tasks (from task_state events): per-entry content + recall handle; empty on old servers (the count above still renders a plain hint). */
+  pendingFollowUps: PendingFollowUpInfo[];
+  /**
+   * Live subagent children of this session's runtime (from task_state events and the
+   * subscribe snapshot): the panel's structural running marks. Empty for dead/unloaded
+   * runtimes and on old servers — the topology then falls back to its text heuristics.
+   */
+  subagents: SubagentRuntimeInfo[];
+  /** approvalKey(origin, toolCallId) → pending approval. */
+  pendingApprovals: ReadonlyMap<string, PendingApproval>;
+  /** Recorded when this client clicks an approval decision (marks it as "manual"). */
+  markLocalDecision: (toolCallId: string) => void;
+  /** Removed from the pending table immediately after this client submits a decision (optimistic update; keyed by approvalKey). */
+  resolveApproval: (key: string) => void;
+  /** History load failure message (paired with retry to show a retry entry point). */
+  error: string | null;
+  /** What the failed load threw, for judging whether it is a defect worth a report; null with no failure. */
+  errorCause: unknown;
+  /** Re-fetch history (only meaningful after a load failure). */
+  retry: () => void;
+  /** Start fresh subscriptions when a remote machine returns. */
+  reconnect: () => void;
+  /**
+   * The hold (useSessionStream's `hold`) kept this Session's reads from opening: nothing has been
+   * asked of its machine, and they open once the hold lifts.
+   */
+  held: boolean;
+  /**
+   * How far the reads behind the transcript have come: the window it waits on, an older window,
+   * and the fill behind the first paint. All null for a Session on this server.
+   */
+  transfer: HistoryTransfer;
+  /** Reads the window the transcript waits on again now (Retry now while the machine is waited for). */
+  retryNow: () => void;
+  /** Unfolds an item's folded values: their whole text is fetched and put in place. */
+  bodies: ElidedBodies;
+  /**
+   * Goal-banner state: an in-flight goal restored from the Session's GOAL.json on load (only
+   * when still active), then kept live by goal_* server events; terminal states reached during this
+   * page's lifetime stay visible until the session changes. Null = no banner.
+   */
+  goal: GoalBannerState | null;
+}
+
+const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
+const EMPTY_PREFIX: readonly ChatItem[] = [];
+const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
+const IDLE_OLDER: OlderHistoryState = {
+  hasMore: false,
+  loading: false,
+  error: null,
+  errorCause: null,
+  beyondTail: false,
+};
+const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };
+
+export function useSessionStream(
+  sessionId: string | null,
+  initialStatus: SessionStatus,
+  /** Notification of a server auto-generated title (for updating the list in place); held in a ref, doesn't trigger a reconnect. */
+  onSessionTitle: (sessionId: string, title: string) => void,
+  source: string,
+  /**
+   * The Session's machine is known to be down (the machines account reads it as away): its
+   * history and live subscription do not open until this lifts, so nothing retries against a
+   * machine that cannot answer. Only an opening is held — reads already open for this Session
+   * stay open when its machine goes away, so the transcript on screen is never torn down.
+   */
+  hold = false,
+): SessionStreamState {
+  const [subscriptionGeneration, setSubscriptionGeneration] = useState(0);
+  const [version, setVersion] = useState(0);
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
+  /** The Session, source and connection generation the reads were last opened for. */
+  const openedRef = useRef<string | null>(null);
+  const openKey = JSON.stringify([sessionId, source, connectionGeneration]);
+  const held = !!sessionId && hold && openedRef.current !== openKey;
+  const [loading, setLoading] = useState(true);
+  const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
+  const [queuedFollowUps, setQueuedFollowUps] = useState(0);
+  const [pendingSteering, setPendingSteering] = useState<PendingSteeringInfo[]>([]);
+  const [returnedSteering, setReturnedSteering] = useState<PendingSteeringInfo[]>([]);
+  const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
+  const [subagents, setSubagents] = useState<SubagentRuntimeInfo[]>([]);
+  const [error, setErrorText] = useState<string | null>(null);
+  const [errorCause, setErrorCause] = useState<unknown>(null);
+  const setError = useCallback((message: string | null, cause?: unknown) => {
+    setErrorText(message);
+    setErrorCause(message === null ? null : (cause ?? null));
+  }, []);
+  const [pendingTick, setPendingTick] = useState(0);
+  const [goal, setGoal] = useState<GoalBannerState | null>(null);
+  const [describes, setDescribes] = useState({ sessionId, source });
+  const [transfer, setTransfer] = useState<HistoryTransfer>(NO_TRANSFER);
+  const [historyOwner, setHistoryOwner] = useState<{
+    sessionId: string;
+    source: string;
+    machineId: string;
+  } | null>(null);
+
+  /**
+   * A history still loading after this is said out loud, with where the call went and what the
+   * socket is doing: a conversation that never draws has otherwise nothing to show for itself —
+   * no error, no failed request, an open socket — and "black until F5" was the whole report.
+   */
+  const SLOW_HISTORY_MS = 15_000;
+
+  /** Fold one goal_* event into the banner state (a mid-goal join without goal_started keeps prior fields where known). */
+  const onGoalEvent = useCallback((ev: GoalServerEvent) => {
+    setGoal((prev) => {
+      if (ev.type === "goal_started") {
+        return { objective: ev.objective, status: "active", budget: ev.budget, used: 0, rounds: 0 };
+      }
+      if (ev.type === "goal_round") {
+        return {
+          objective: prev?.objective ?? "",
+          status: "active",
+          budget: ev.budget,
+          used: ev.used,
+          rounds: ev.round,
+        };
+      }
+      return {
+        objective: prev?.objective ?? "",
+        status: ev.outcome,
+        budget: prev?.budget ?? -1,
+        used: ev.used,
+        rounds: ev.rounds,
+      };
+    });
+  }, []);
+  const onTitleRef = useRef(onSessionTitle);
+  onTitleRef.current = onSessionTitle;
+
+  const controllerRef = useRef<StreamController | null>(null);
+  /** `loading` as the controller last reported it, readable from a timer. */
+  const loadingRef = useRef(true);
+  // Empty model placeholder before the controller is established (first frame).
+  const placeholderRef = useRef<StreamModel | null>(null);
+  if (placeholderRef.current === null) placeholderRef.current = createStreamModel();
+  const rafRef = useRef<number | null>(null);
+  const throttleRef = useRef<number | null>(null);
+  const lastBumpAtRef = useRef(0);
+
+  // Coalesce high-frequency deltas: multiple pushes within one frame trigger only a single
+  // re-render, and commits are additionally spaced ≥BUMP_MIN_INTERVAL_MS apart. Every commit
+  // re-renders (and re-parses) the currently streaming message at its full accumulated length,
+  // so per-frame commits during a large streamed reply go O(n²) and freeze the main thread —
+  // the interval caps that at a bounded, invisible staleness. Inside the interval a single
+  // trailing timer is armed (the flush): the final deltas always land even if no further push
+  // ever arrives.
+  const bump = useCallback(() => {
+    if (rafRef.current !== null || throttleRef.current !== null) return;
+    const commit = () => {
+      lastBumpAtRef.current = Date.now();
+      setVersion((v) => v + 1);
+    };
+    const wait = lastBumpAtRef.current + BUMP_MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      throttleRef.current = window.setTimeout(() => {
+        throttleRef.current = null;
+        commit();
+      }, wait);
+      return;
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      commit();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      // Draft state (no session to connect to): reset to idle. If the previous session's running
+      // state lingers, the draft input area would misjudge "still running" and disable sending —
+      // so "A is still running" would block sending in the new draft B after switching.
+      controllerRef.current?.dispose();
+      controllerRef.current = null;
+      setDescribes({ sessionId: null, source });
+      setTaskState("idle");
+      setQueuedFollowUps(0);
+      setPendingSteering([]);
+      setReturnedSteering([]);
+      setPendingFollowUps([]);
+      setSubagents([]);
+      setLoading(false);
+      setError(null);
+      setGoal(null);
+      setTransfer(NO_TRANSFER);
+      setPendingTick((t) => t + 1);
+      setVersion((v) => v + 1);
+      return;
+    }
+    setVersion((v) => v + 1);
+    setDescribes({ sessionId, source });
+    setLoading(true);
+    setError(null);
+    setTransfer(NO_TRANSFER);
+    // First-frame placeholder: the task_state snapshot from the stream (pushed on subscribe)
+    // subsequently overrides it as the authoritative state.
+    setTaskState(initialStatus);
+    setGoal(null);
+    setQueuedFollowUps(0);
+    setPendingSteering([]);
+    setReturnedSteering([]);
+    setPendingFollowUps([]);
+    setSubagents([]);
+    setPendingTick((t) => t + 1);
+    if (held) {
+      // Waiting for the machine: nothing is asked of it. The previous Session's controller went
+      // with its cleanup; the empty placeholder stands in until the hold lifts.
+      controllerRef.current = null;
+      return;
+    }
+    openedRef.current = openKey;
+
+    // Restore an in-flight goal's banner (only when still active — a long-finished goal
+    // shouldn't greet every visit); live goal_* events override this snapshot. Fetched from
+    // the stream's onOpen (below), never before it: reading the DB before subscribing races a
+    // goal that finishes in that window — its goal_finished isn't replayed to a fresh
+    // subscription, so a stale `active` read would pin a "running" banner forever. Once
+    // subscribed, the DB already reflects the terminal status for anything that finished before
+    // we connected, and anything finishing after arrives live on the stream.
+    let goalFetchStale = false;
+    const hydrateGoal = () => {
+      void getGoal(sessionId)
+        .then((res) => {
+          if (goalFetchStale || !res.goal || res.goal.status !== "active") return;
+          setGoal((prev) => prev ?? res.goal);
+        })
+        .catch(() => undefined);
+    };
+
+    const controller = createStreamController({
+      sessionId,
+      // The whole window rides through: `live` (in-progress stream tail) lets the controller
+      // seed the currently streaming message after a reload, and `page` (the windowed-history
+      // envelope) drives tail-first loading (see stream-controller).
+      openHistory: (query, handlers) => openHistoryStream(sessionId, query, handlers),
+      openBody: (ref, handlers) => openTraceBodyStream(sessionId, ref, handlers),
+      onTransfer: (reading) => {
+        const machineId =
+          reading.window?.machineId ?? reading.fill?.machineId ?? reading.older?.machineId;
+        if (machineId)
+          setHistoryOwner((previous) =>
+            previous?.sessionId === sessionId &&
+            previous.source === source &&
+            previous.machineId === machineId
+              ? previous
+              : { sessionId, source, machineId },
+          );
+        setTransfer(reading);
+      },
+      onTaskState: setTaskState,
+      onQueuedFollowUps: setQueuedFollowUps,
+      onPendingSteering: setPendingSteering,
+      onReturnedSteering: setReturnedSteering,
+      onPendingFollowUps: setPendingFollowUps,
+      onSubagents: setSubagents,
+      onLoading: (value) => {
+        loadingRef.current = value;
+        setLoading(value);
+      },
+      onError: setError,
+      onModelChange: bump,
+      onPendingChange: () => setPendingTick((t) => t + 1),
+      onSessionTitle: (sid, title) => onTitleRef.current?.(sid, title),
+      onGoalEvent,
+    });
+    controllerRef.current = controller;
+    loadingRef.current = true;
+    const slow = window.setTimeout(() => {
+      if (!loadingRef.current) return;
+      const target = machineForSession(sessionId);
+      console.warn(
+        `[chat] the history of ${sessionId} is still loading after ${SLOW_HISTORY_MS} ms ` +
+          `(asked of ${target === null ? "this server" : `machine ${target}`}); socket: ${JSON.stringify(apiSocket.report())}`,
+      );
+    }, SLOW_HISTORY_MS);
+
+    // Connect-first: subscribe to the stream before fetching history.
+    const conn = openSessionStream(sessionId, {
+      onRecord: controller.handleRecord,
+      onServerEvent: controller.handleServer,
+      // Hydrate the goal banner only once the subscription is live (fires on first connect and
+      // every reconnect); the prev/active guards keep it from clobbering a live banner.
+      onOpen: () => {
+        setSubscriptionGeneration((n) => n + 1);
+        hydrateGoal();
+      },
+      // A stream refused for good (401/403/404) is reported as closed: ask whether this
+      // browser is still signed in (api/session-probe.ts).
+      onError: (closed) => {
+        if (closed) void probeSession();
+      },
+    });
+    void controller.load();
+
+    return () => {
+      // Closed: whatever opens next for this Session is an opening the hold may keep.
+      openedRef.current = null;
+      goalFetchStale = true;
+      window.clearTimeout(slow);
+      controller.dispose();
+      conn.close();
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (throttleRef.current !== null) {
+        window.clearTimeout(throttleRef.current);
+        throttleRef.current = null;
+      }
+    };
+    // initialStatus only serves as the first-frame placeholder; it doesn't rebuild the connection
+    // on parent re-renders. `held` lifting is what opens a held Session's reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, source, connectionGeneration, held]);
+
+  const reconnect = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setConnectionGeneration((current) => current + 1);
+  }, []);
+
+  const markLocalDecision = useCallback((toolCallId: string) => {
+    controllerRef.current?.markLocalDecision(toolCallId);
+  }, []);
+
+  const resolveApproval = useCallback((key: string) => {
+    controllerRef.current?.resolveApproval(key);
+  }, []);
+
+  const retry = useCallback(() => {
+    void controllerRef.current?.retry();
+  }, []);
+
+  const loadOlder = useCallback(() => {
+    void controllerRef.current?.loadOlder();
+  }, []);
+
+  const retryNow = useCallback(() => {
+    controllerRef.current?.retryNow();
+  }, []);
+
+  const bodiesRef = useRef<ElidedBodies>({
+    load: (item) => controllerRef.current?.loadBodies(item),
+  });
+
+  // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
+  void pendingTick;
+
+  return {
+    subscriptionGeneration,
+    sessionId: describes.source === source ? describes.sessionId : null,
+    historyMachineId:
+      historyOwner && historyOwner.sessionId === sessionId && historyOwner.source === source
+        ? historyOwner.machineId
+        : null,
+    model: controllerRef.current?.model ?? placeholderRef.current,
+    prefixItems: controllerRef.current?.prefixItems ?? EMPTY_PREFIX,
+    prefixSubagents: controllerRef.current?.prefixSubagents ?? EMPTY_SUBAGENTS,
+    outlineOffset: controllerRef.current?.outlineOffset ?? 0,
+    older: controllerRef.current?.older ?? IDLE_OLDER,
+    loadOlder,
+    version,
+    loading:
+      loading ||
+      (!!sessionId && (describes.source !== source || describes.sessionId !== sessionId)),
+    taskState,
+    queuedFollowUps,
+    pendingSteering,
+    returnedSteering,
+    pendingFollowUps,
+    subagents,
+    pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,
+    markLocalDecision,
+    resolveApproval,
+    error,
+    errorCause,
+    retry,
+    reconnect,
+    held,
+    transfer,
+    retryNow,
+    bodies: bodiesRef.current,
+    goal,
+  };
+}

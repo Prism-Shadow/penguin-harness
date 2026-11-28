@@ -27,7 +27,7 @@ import type {
   ModelInfo,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
-import { useAgentSkills } from "../src/features/chat/use-agent-skills";
+import { useAgentSkills } from "@prismshadow/penguin-library-session/web/chat/use-agent-skills";
 import {
   forgetSessionMachines,
   machineForSession,
@@ -50,7 +50,7 @@ afterEach(async () => {
 });
 
 describe("a Session's memory on a machine", () => {
-  type Listing = typeof import("../src/features/chat/use-memory-listing");
+  type Listing = typeof import("@prismshadow/penguin-library-session/web/chat/use-memory-listing");
 
   function memoryServer() {
     const answer = (request: FetchRequest) => {
@@ -118,7 +118,8 @@ describe("a Session's memory on a machine", () => {
 
   it("reads the memory of the machine the Session is on, and never stands one server's in for the other's", async () => {
     const server = memoryServer();
-    const listing = await import("../src/features/chat/use-memory-listing");
+    const listing =
+      await import("@prismshadow/penguin-library-session/web/chat/use-memory-listing");
     const page = await visit(listing, MACHINE);
     expect(page.text()).toBe(`${MACHINE}-note.md`);
     expect(server.fetch.requests.every((r) => r.machine === MACHINE)).toBe(true);

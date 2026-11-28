@@ -185,11 +185,13 @@ function unnamedHints(file: Pick<SourceFile, "path" | "text" | "id">): string[] 
 describe("native title tooltips", () => {
   const scan = scanSources();
 
+  /** The app's own JSX, and the session library's web half compiled in beside it. */
+  const isAppJsx = (file: SourceFile) =>
+    (file.root === "web" || file.root === "library:session") && file.name.endsWith(".tsx");
+
   it("are not used anywhere in the web app", () => {
     expectEveryRootScanned(scan);
-    const hits = scan.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
-      .flatMap(nativeTitles);
+    const hits = scan.files.filter(isAppJsx).flatMap(nativeTitles);
     expect(
       hits,
       "Use data-tooltip (read by TooltipLayer) or <Tooltip>, and an aria-label where the title " +
@@ -198,9 +200,7 @@ describe("native title tooltips", () => {
   });
 
   it("leave no element whose hint was its only name without an aria-label", () => {
-    const hits = scan.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
-      .flatMap(unnamedHints);
+    const hits = scan.files.filter(isAppJsx).flatMap(unnamedHints);
     expect(
       hits,
       "A data-tooltip names nothing to assistive technology: give a wordless element an " +

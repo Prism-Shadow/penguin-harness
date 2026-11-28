@@ -1,19 +1,23 @@
 /**
  * The static-import boundaries between the Web App's libraries and its feature modules, as a
  * ratchet. The module tree checks the dependencies it can see (slots, `@Use`); a plain `import`
- * is invisible to it, so these rules are held here, over every file under `src/`:
+ * is invisible to it, so these rules are held here, over every file of the two trees the app
+ * compiles in — its own `src/`, and the session domain's web half at `library/session/src/web`
+ * (its chat, session-list and dock modules):
  *
- * 1. A library — anything outside `features/` and `web-app/` (`lib/`, `api/`, `state/`, `rescue/`,
- *    `components/`, the root files) — imports nothing under `features/`. The one exception is the
- *    composition root, `web-root.ts`, which imports each feature's `module.ts` to list it in the
- *    tree.
- * 2. A file of one module directory — `features/<a>/`, or `web-app/`, the frame's module — reaches
- *    another only through its `index.ts` (or `index.tsx`), never one of its inner files.
- * 3. No import cycle between module directories. An edge `features/a -> features/b` is reported
+ * 1. A library — anything outside a module directory (in `src/`: `lib/`, `api/`, `state/`,
+ *    `rescue/`, `components/`, the root files; in the web half, its face `index.ts`) — imports
+ *    nothing under a module directory. The two exceptions are the trees' composition roots:
+ *    `web-root.ts` imports each feature's `module.ts` to list it in the tree, and the web
+ *    half's face re-exports its three modules' classes and public faces for it.
+ * 2. A file of one module directory — `features/<a>/` or `web-app/`, the frame's module, in
+ *    `src/`; a top-level directory of the web half — reaches another only through its
+ *    `index.ts` (or `index.tsx`), never one of its inner files.
+ * 3. No import cycle between module directories. An edge between two of them is reported
  *    when it lies on a cycle, i.e. both ends sit in the same strongly connected component.
- * 4. A `module.ts` or `<name>.module.ts` (a module class) is imported by the composition root
- *    and nothing else: a module reaches another through slots and interfaces, never through its
- *    class.
+ * 4. A `module.ts` or `<name>.module.ts` (a module class) is imported by its tree's
+ *    composition root and nothing else: a module reaches another through slots and interfaces,
+ *    never through its class.
  *
  * The code predates the rules, so what breaks them today is listed, one line per edge, in
  * `module-boundaries.baseline.txt`. A violation missing from the baseline fails; so does a
@@ -27,6 +31,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
+const SESSION_WEB = fileURLToPath(new URL("../../../library/session/src/web", import.meta.url));
 const BASELINE = fileURLToPath(new URL("./module-boundaries.baseline.txt", import.meta.url));
 
 /** Every `.ts`/`.tsx` under `dir`, as POSIX paths relative to it. */
@@ -62,22 +67,47 @@ function resolveImport(
   return candidates.find(isFile);
 }
 
-/** The composition root: the one file that lists module classes. */
-const COMPOSITION_ROOT = "web-root.ts";
-
 /** Whether a file declares a module class. */
 const isModuleFile = (file: string): boolean => /(^|\/|\.)module\.ts$/.test(file);
 
 /**
- * The module directory a file belongs to: `features/<name>`, or `web-app` for the frame, whose
- * modules (the web-app and its sidebar) reach features through their index files like any feature;
- * null for a library.
+ * Where one tree's modules live, and the one file that composes them. The two trees the rules
+ * run over differ in shape: `src/` nests its modules under `features/` beside the frame's
+ * `web-app`, while the web half's modules are its top-level directories.
  */
-function moduleDirOf(file: string): string | null {
-  if (file.startsWith("web-app/")) return "web-app";
-  const match = /^features\/([^/]+)\//.exec(file);
-  return match === null ? null : `features/${match[1]}`;
+interface RootRules {
+  /** The module directory a file belongs to, `null` for a library. */
+  moduleDirOf(file: string): string | null;
+  /** The composition root: the one file that lists module classes. */
+  compositionRoot: string;
+  /** Modules a library may reach beyond an index file, for their public surface. */
+  libraryModules: readonly string[];
+  /** Whether a file is a module's index, the one face another module may reach it through. */
+  isModuleIndex(file: string): boolean;
 }
+
+const SRC_RULES: RootRules = {
+  moduleDirOf(file) {
+    if (file.startsWith("web-app/")) return "web-app";
+    const match = /^features\/([^/]+)\//.exec(file);
+    return match === null ? null : `features/${match[1]}`;
+  },
+  compositionRoot: "web-root.ts",
+  // The web-app itself is the library's module: a library file may use the router's types.
+  libraryModules: ["web-app"],
+  isModuleIndex: (file) => /^(features\/[^/]+|web-app)\/index\.tsx?$/.test(file),
+};
+
+const SESSION_WEB_RULES: RootRules = {
+  moduleDirOf(file) {
+    const match = /^([^/]+)\//.exec(file);
+    return match === null ? null : match[1]!;
+  },
+  // The half's face, whose module-class re-exports the app's composition root consumes.
+  compositionRoot: "index.ts",
+  libraryModules: [],
+  isModuleIndex: (file) => /^[^/]+\/index\.tsx?$/.test(file),
+};
 
 /** Inter-feature edges that lie on a cycle: both ends in one strongly connected component. */
 function cycleEdges(edges: ReadonlyMap<string, ReadonlySet<string>>): string[] {
@@ -125,8 +155,9 @@ interface Scan {
   unresolved: string[];
 }
 
-/** Applies the rules to a set of files; `read` and `isFile` take src-relative paths. */
+/** Applies the rules to a set of files; `read` and `isFile` take tree-relative paths. */
 function scan(
+  rules: RootRules,
   files: readonly string[],
   read: (rel: string) => string,
   isFile: (rel: string) => boolean,
@@ -135,24 +166,27 @@ function scan(
   const unresolved: string[] = [];
   const featureEdges = new Map<string, Set<string>>();
   for (const file of files) {
-    const own = moduleDirOf(file);
+    const own = rules.moduleDirOf(file);
     for (const spec of specifiers(read(file))) {
       const target = resolveImport(file, spec, isFile);
       if (target === undefined) unresolved.push(`${file}: ${spec}`);
       if (target == null || !/\.tsx?$/.test(target)) continue;
-      if (isModuleFile(target) && file !== COMPOSITION_ROOT) {
+      if (isModuleFile(target) && file !== rules.compositionRoot) {
         violations.add(`${file} -> ${target}`);
         continue;
       }
-      const other = moduleDirOf(target);
+      const other = rules.moduleDirOf(target);
       if (other === null || other === own) continue;
-      if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
-      if (own === null) {
-        // A library may use WebApp's public surface (the router's types); never a feature.
-        if (other !== "web-app") violations.add(`${file} -> ${target}`);
+      // A tree's composition root may also re-export a module's public face.
+      if (file === rules.compositionRoot && (isModuleFile(target) || rules.isModuleIndex(target))) {
         continue;
       }
-      if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target)) {
+      if (own === null) {
+        // A library may use WebApp's public surface (the router's types); never a feature.
+        if (!rules.libraryModules.includes(other)) violations.add(`${file} -> ${target}`);
+        continue;
+      }
+      if (!rules.isModuleIndex(target)) {
         violations.add(`${file} -> ${target}`);
       }
       const set = featureEdges.get(own) ?? new Set<string>();
@@ -164,15 +198,25 @@ function scan(
   return { violations: [...violations].sort(), unresolved };
 }
 
-function scanSrc(): Scan {
+/** Applies the rules to every file of one tree on disk. */
+function scanTree(root: string, rules: RootRules): Scan {
   const isFile = (rel: string): boolean => {
     try {
-      return statSync(join(SRC, rel)).isFile();
+      return statSync(join(root, rel)).isFile();
     } catch {
       return false;
     }
   };
-  return scan(sourceFiles(SRC), (rel) => readFileSync(join(SRC, rel), "utf8"), isFile);
+  return scan(rules, sourceFiles(root), (rel) => readFileSync(join(root, rel), "utf8"), isFile);
+}
+
+function scanSrc(): Scan {
+  const app = scanTree(SRC, SRC_RULES);
+  const sessionWeb = scanTree(SESSION_WEB, SESSION_WEB_RULES);
+  return {
+    violations: [...app.violations, ...sessionWeb.violations].sort(),
+    unresolved: [...app.unresolved, ...sessionWeb.unresolved],
+  };
 }
 
 function baseline(): string[] {
@@ -200,6 +244,7 @@ describe("the import scan", () => {
     "features/models/model.ts": 'import type { C } from "../chat/chat-page";',
   };
   const result = scan(
+    SRC_RULES,
     Object.keys(files),
     (rel) => files[rel]!,
     (rel) => rel in files,
@@ -233,6 +278,7 @@ describe("the import scan", () => {
       "features/chat/chat-page.tsx": 'import { ChatModule } from "./module";',
     };
     const result = scan(
+      SRC_RULES,
       Object.keys(tree),
       (rel) => tree[rel]!,
       (rel) => rel in tree,
@@ -262,6 +308,7 @@ describe("the import scan", () => {
       "main.tsx": 'import type { AppRouterProps } from "./web-app/router";',
     };
     const result = scan(
+      SRC_RULES,
       Object.keys(tree),
       (rel) => tree[rel]!,
       (rel) => rel in tree,
@@ -274,6 +321,7 @@ describe("the import scan", () => {
 
   it("reports a relative import that lands on no file", () => {
     const broken = scan(
+      SRC_RULES,
       ["lib/a.ts"],
       () => 'import "./missing";',
       () => false,
@@ -282,7 +330,7 @@ describe("the import scan", () => {
   });
 });
 
-describe("module boundaries in packages/web/src", () => {
+describe("module boundaries in packages/web/src and library/session/src/web", () => {
   const actual = scanSrc();
   const recorded = baseline();
 

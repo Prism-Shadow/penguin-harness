@@ -22,7 +22,7 @@ import {
   orderGroups,
   saveGroupOrder,
   type GroupOrderStorage,
-} from "../src/features/session-list/group-order";
+} from "@prismshadow/penguin-library-session/web/session-list/group-order";
 
 import { TEMP_WORKSPACE_GROUP_KEY, groupSessionsByWorkspace } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";

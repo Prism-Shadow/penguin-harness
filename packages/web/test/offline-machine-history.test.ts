@@ -30,15 +30,15 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import type { HistoryStreamHandlers, HistoryStreamQuery } from "../src/api/sse";
-import { MachineCover } from "../src/features/chat/machine-cover";
+import { MachineCover } from "@prismshadow/penguin-library-session/web/chat/machine-cover";
 import {
   OfflineHistoryNote,
   offlineCover,
   offlineItems,
   useMachineHold,
   useOfflineSessionHistory,
-} from "../src/features/chat/offline-session-history";
-import { useSessionStream } from "../src/features/chat/use-session-stream";
+} from "@prismshadow/penguin-library-session/web/chat/offline-session-history";
+import { useSessionStream } from "@prismshadow/penguin-library-session/web/chat/use-session-stream";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
 import { S } from "../src/lib/strings";
 import { button, click, mount, run, settle, unmountAll } from "./helpers/dom";

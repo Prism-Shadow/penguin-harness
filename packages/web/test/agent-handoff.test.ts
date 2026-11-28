@@ -12,7 +12,10 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { filterAgents, stagedSendRoute } from "../src/features/chat/agent-handoff";
+import {
+  filterAgents,
+  stagedSendRoute,
+} from "@prismshadow/penguin-library-session/web/chat/agent-handoff";
 
 const agent = (agentId: string, name?: string): AgentSummary => ({
   agentId,

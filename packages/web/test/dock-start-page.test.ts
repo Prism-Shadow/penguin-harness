@@ -13,9 +13,9 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createElement as h, useSyncExternalStore } from "react";
 import { click, mount, run, unmountAll, waitFor } from "./helpers/dom";
 
-let dock: typeof import("../src/features/dock/dock-state");
-let DockPanel: typeof import("../src/features/dock/dock-panel").DockPanel;
-let registerDockPanel: typeof import("../src/features/dock/panel-registry").registerDockPanel;
+let dock: typeof import("@prismshadow/penguin-library-session/web/dock/dock-state");
+let DockPanel: typeof import("@prismshadow/penguin-library-session/web/dock/dock-panel").DockPanel;
+let registerDockPanel: typeof import("@prismshadow/penguin-library-session/web/dock/panel-registry").registerDockPanel;
 
 /** A media query that never matches (jsdom has no `matchMedia`): a wide window, a mouse. */
 const unmatchedQuery = (media: string) => ({
@@ -31,9 +31,10 @@ const unmatchedQuery = (media: string) => ({
 
 beforeAll(async () => {
   vi.stubGlobal("matchMedia", unmatchedQuery);
-  dock = await import("../src/features/dock/dock-state");
-  ({ DockPanel } = await import("../src/features/dock/dock-panel"));
-  ({ registerDockPanel } = await import("../src/features/dock/panel-registry"));
+  dock = await import("@prismshadow/penguin-library-session/web/dock/dock-state");
+  ({ DockPanel } = await import("@prismshadow/penguin-library-session/web/dock/dock-panel"));
+  ({ registerDockPanel } =
+    await import("@prismshadow/penguin-library-session/web/dock/panel-registry"));
 });
 
 const unregister: (() => void)[] = [];

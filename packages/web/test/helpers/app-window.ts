@@ -5,7 +5,7 @@
  * desktop band, the sidebar's fold and width, the phone's drawer.
  */
 import { createElement as h } from "react";
-import type { ChatDrafts } from "../../src/features/chat";
+import type { ChatDrafts } from "@prismshadow/penguin-library-session/web/chat";
 import { CompanyProvider } from "../../src/features/company/company-state";
 import { PagesContext } from "../../src/lib/web-app-pages";
 import { BackgroundProvider } from "../../src/state/background";

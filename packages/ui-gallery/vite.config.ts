@@ -22,8 +22,9 @@
  * static host serves each page. The vitest config stays separate (vitest's embedded vite types
  * conflict with vite 7's).
  *
- * The package source and the app's live outside this Vite root, which the dev server's file
- * watcher does not cover by default; the plugin below watches both.
+ * The package source, the app's, and the session domain's web half the app compiles in live
+ * outside this Vite root, which the dev server's file watcher does not cover by default; the
+ * plugin below watches the three.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -41,7 +42,7 @@ import { deepPagePaths } from "./src/lib/page-paths";
 const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 function watchPackageSources(): Plugin {
-  const roots = [at("../ui/src/"), at("../web/src/")];
+  const roots = [at("../ui/src/"), at("../web/src/"), at("../../library/session/src/web/")];
   const stylesheets = [
     at("./src/styles.css"),
     at("./src/app/app.css"),
@@ -138,6 +139,27 @@ export default defineConfig({
   ],
   resolve: {
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+    // The framed Web App boots the session domain's web half through the same face specifiers
+    // the app's build aliases (packages/web/vite.config.ts): the face the composition root
+    // lists the moved modules through, and the app's internals the half consumes (src/internal.ts).
+    alias: [
+      {
+        find: /^@prismshadow\/penguin-library-session\/web$/,
+        replacement: at("../../library/session/src/web/index.ts"),
+      },
+      {
+        find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
+        replacement: `${at("../../library/session/src/web")}/$1`,
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal$/,
+        replacement: at("../web/src/internal.ts"),
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal-hub$/,
+        replacement: at("../web/src/internal-hub.ts"),
+      },
+    ],
   },
   // The app's module classes use standard decorators; the dev server must lower them, as in
   // the app's own config.

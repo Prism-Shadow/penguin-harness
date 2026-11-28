@@ -1,4 +1,4 @@
-import { useMainSidebarController, useSidebarApps } from "../../features/session-list";
+import { useMainSidebarController, useSidebarApps } from "@prismshadow/penguin-library-session/web";
 import { navPagesOf, useWebAppPages } from "../index";
 import { sidebarDeps } from "./deps";
 import type { MainSidebarProps } from "../../lib/main-sidebar-bindings";

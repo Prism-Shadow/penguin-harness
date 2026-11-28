@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { usePageWorkspace } from "../../lib/page-workspace-context";
 import { sessionAppPair, slotDomId } from "../../lib/session-app-dock";
-import { isNarrow } from "../dock";
+import { isNarrow } from "@prismshadow/penguin-library-session/web";
 
 /** During dragover the data store is protected. The ID was readable at the native dragstart. */
 export function useAppDockDrop() {

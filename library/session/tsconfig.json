@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "paths": {
       "@prismshadow/penguin-library-agent/types": ["../agent/src/types.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
@@ -12,5 +13,6 @@
       "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

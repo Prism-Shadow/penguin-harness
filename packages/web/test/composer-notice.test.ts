@@ -22,7 +22,7 @@ import {
   userText,
 } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
-import { composerNotice } from "../src/features/chat/composer-notice";
+import { composerNotice } from "@prismshadow/penguin-library-session/web/chat/composer-notice";
 import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
 import {
   createStreamModel,

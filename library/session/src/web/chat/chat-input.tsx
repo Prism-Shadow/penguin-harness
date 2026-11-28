@@ -1,0 +1,2941 @@
+/**
+ * Chat input area: a unified input card —
+ * a multi-line textarea occupies the card's top area (auto-grows; Enter sends, Shift+Enter
+ * inserts a newline, image paste supported), with all controls collected onto a **single bottom
+ * row** that never shares a line with the text body: attachments + approval mode (saved
+ * immediately on change) + help text (to the right of approval mode) | context usage (ring
+ * indicator) + Model + send (up arrow);
+ * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
+ * selector sits to the left of the send button (provider logo + name; it opens the model-picker
+ * dialog — search, provider-group rail, configured-key-first listing — see ModelCatalogSelect). Once
+ * the Session exists the same selector switches the conversation's model in place (the parent
+ * confirms and compacts on the current model first); the subagent composer shows a read-only
+ * logo + name there instead;
+ * Draft state also renders a thinking-level picker left of the model selector (backed by the
+ * Agent settings: picking a level writes through to the Agent config and applies to the session
+ * created on first send); in session state the level is fixed (llmConfig is assembled once per
+ * session), shown as a read-only tag from session_meta;
+ * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
+ * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
+ * selection without sending). Matching is positional: a slash opens the menu from any caret
+ * position, running a command removes just that token, and Escape only dismisses the menu —
+ * the rest of the draft is never touched;
+ * `/agent` and `/model` are the two **switch** commands, both offered in an active Session
+ * only — a draft has no conversation to switch, and picks its Agent and model in the draft
+ * page's own selectors. Both are staged rather than immediate: running one consumes its token
+ * and opens a picker (agents / models), and the pick becomes a highlighted chip above the text
+ * body instead of switching on the spot. The user
+ * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
+ * a new chat for that agent (the current Session is not sent to), a model chip opens a new
+ * conversation on the picked model that continues this one, which itself stays as it is (the
+ * toolbar's model picker is the in-place switch). A model fork additionally waits for this
+ * Session to be idle (it branches off a Trace that a run or a compaction is still appending
+ * to) and says so above the composer rather than just disabling Send. With an empty text body
+ * the default auto-message is filled in. Only one chip at a time (picking either clears the other, picking
+ * the model already in use clears the staging, and both are exclusive with goal mode); a chip is
+ * removed via backspace at the start of the text or its x button, and both are cached with the
+ * draft so they survive a session switch or reload along with the text they belong to;
+ * The "+" menu carries the input add-ons: image upload, file attachment (any type, several at a
+ * time — they ride the task request as base64 data URLs, and the server writes them into the
+ * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
+ * opens them by path), and goal mode; staged images and files show as removable tiles at the
+ * top of the card — the images first, each at its own ratio — and an attachments-only message is
+ * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
+ * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
+ * with an overlay bounded to that region while the drag is over it.
+ * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
+ * selector: a top search box filtering by name and localized description, plus a checklist;
+ * clicking a row toggles its selection without closing the menu; the button = book icon + label +
+ * selected-count badge, disabled while running/compacting). With skills selected, sending with an
+ * empty text body is allowed — the sent text automatically falls back to S.chat.skillsAutoMessage.
+ * When sent, the text body wraps in a `[use_skills]` block (the handoff's rest-of-message body is
+ * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
+ * initialSkills (read once on mount; once the installed list is ready, names not in that list are
+ * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
+ * selects it. The draft screen's example cards and the scheduled-tasks panel's AI dialog reach
+ * in through `controlRef` to fill the text body — a fill, never a send: the user presses Send.
+ * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
+ * an empty composer shows Stop (abort), and typing turns that same button into Send, which
+ * follows the remembered mid-run send mode — steer (delivered between turns as a
+ * [user_steering] user message) or queue-as-follow-up — chosen from the "+" menu's settings
+ * row (available in draft state too, persisted in localStorage); sending is disabled with a
+ * reason shown while compacting.
+ * The toolbar is a single left/right row: settings controls left (scrolling horizontally when
+ * the card is too narrow), status + model + the action button right (never shrinking), so a
+ * phone viewport never pushes the action button off-screen.
+ * Renders only the card body itself: outer positioning such as bottom-docking or vertical
+ * centering is decided by the page.
+ *
+ * This module is the composer's container: the draft, sending, attachments, slash matching, IME,
+ * paste and drop, history recall and the draft cache live here. What it draws with is the UI
+ * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the attachment tiles
+ * (`AttachmentList`, `AttachmentImage`, `AttachmentFile`), the `MenuSelect` pickers on
+ * `ToolbarTrigger`s, `SendButton` and portaled slash menus — and the model picker bound to
+ * the catalog (model-select.tsx) and the context gauge (context-gauge.tsx).
+ */
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import type {
+  AgentSummary,
+  ApprovalMode,
+  ModelInfo,
+  ModelRefDto,
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  RecalledMessageResponse,
+  SessionSandbox,
+  SessionStatus,
+  SkillMetadataItem,
+  TaskInputPart,
+} from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  AttachmentFile,
+  AttachmentImage,
+  AttachmentList,
+  CheckIcon,
+  ChevronDown,
+  Chip,
+  ChipRow,
+  ComposerCard,
+  ConfirmModal,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  MenuSelect,
+  Notice,
+  MenuTitle,
+  PickerList,
+  ProviderLogo,
+  SendButton,
+  SlashMenuRows,
+  noAutofill,
+  toastError,
+  toastInfo,
+  type MenuSelectOption,
+  type TagInputChip,
+} from "@prismshadow/penguin-ui";
+
+import {
+  BOOK_ICON,
+  S,
+  agentDisplayName,
+  buildSkillsMessage,
+  fitTextarea,
+  formatBytes,
+  humanizeTokens,
+  isLongPaste,
+  localizedShortText,
+  longPasteFileName,
+  skillSlashItems,
+  splitBySize,
+  splitDroppedFiles,
+  useAgentAvatarSrc,
+  useAuth,
+  useLocale,
+} from "@prismshadow/penguin-web/internal";
+import {
+  ModelCatalogSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  SkillIcon,
+  SkillPickList,
+  ThinkingLevelSelect,
+  employeesLast,
+  isEmployee,
+  modelLabel,
+  sameModelRef,
+  thinkingLevelLabel,
+  toggleSkillName,
+} from "@prismshadow/penguin-web/internal-hub";
+import type {
+  ComposerReference,
+  DraftUploads,
+  PermissionPick,
+} from "@prismshadow/penguin-web/internal";
+
+import { useDictation } from "./voice/dictation";
+import { useDraftHeight } from "./use-draft-height";
+
+import { PermissionSelect } from "./permission-select";
+
+import { filterAgents, stagedSendRoute } from "./agent-handoff";
+
+import { sessionModelPickerDisabled } from "./model-switch";
+import { matchSlash, removeSlashToken } from "./slash-token";
+
+import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { useGoalPluginGate } from "./goal-plugin-gate";
+import type { GoalPluginGate } from "./goal-plugin-gate";
+import { toggled, type ComposerSwitches } from "./prompt-modes";
+import { mergeRecalledDraft } from "./recall-draft";
+import { buildExampleFill } from "./example-fill";
+import {
+  caretOnFirstLine,
+  caretOnLastLine,
+  historyStepBack,
+  historyStepForward,
+  type HistoryStep,
+} from "./input-history";
+
+import { isStopAction, midRunAction } from "./composer-send";
+import { composerNotice } from "./composer-notice";
+import { RefusedHandoffNotice } from "./refused-handoff-notice";
+import { FileDropZone } from "./drop-zone";
+import { ContextGauge } from "./context-gauge";
+
+import { ReferenceChip } from "./reference-chip";
+import { readSteerMode, writeSteerMode } from "./steer-mode";
+import type { SteerMode } from "./steer-mode";
+
+/**
+ * Agent candidate panel for the `/agent` switch picker, on the shared PickerList (search, scroll
+ * cap, keyboard navigation, current-entry marker). The row is the Agent avatar (the same identity
+ * tile the draft Agent picker uses), the agentId in monospace — the id is what identifies an Agent
+ * everywhere else in the app — and the display name after it when it differs. The conversation's
+ * own Agent is marked like the model list marks the session's model; picking it is still a real
+ * action (a fresh conversation with the same Agent), not a no-op. The organizations' employees
+ * come last, under a label of their own (agent-employment.ts).
+ */
+function AgentMenuList({
+  agents,
+  currentAgentId,
+  onPick,
+  avatarSrc,
+}: {
+  agents: AgentSummary[];
+  /** Each Agent's own picture (lib/agent-avatar.ts), on the machine the list lives on. */
+  avatarSrc: (agentId: string) => string | undefined;
+  /** The Agent this conversation already belongs to (marked ✓); undefined while it is unknown. */
+  currentAgentId?: string;
+  onPick: (agent: AgentSummary) => void;
+}) {
+  const [query, setQuery] = useState("");
+  return (
+    <PickerList
+      items={employeesLast(filterAgents(agents, query))}
+      groupLabel={(a) => (isEmployee(a) ? S.agent.employeesSection : null)}
+      itemKey={(a) => a.agentId}
+      isCurrent={(a) => a.agentId === currentAgentId}
+      query={query}
+      onQueryChange={setQuery}
+      // Quick search: supports agentId / display name
+      searchPlaceholder={S.chat.agentSearchPlaceholder}
+      emptyText={S.chat.agentsNoMatch}
+      onPick={onPick}
+      renderRow={(a) => (
+        <>
+          <AgentAvatar
+            id={a.agentId}
+            size={16}
+            className="shrink-0 rounded"
+            src={avatarSrc(a.agentId)}
+          />
+          <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
+          {a.name && a.name !== a.agentId && (
+            <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+              {a.name}
+            </span>
+          )}
+        </>
+      )}
+    />
+  );
+}
+
+/**
+ * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
+ * Queue as a follow-up / Interrupt, the full explanation hover-only via each pill's title (the
+ * toolbar's "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
+ * the control where an item's description sits — so the menu reads as one list. Clicking a
+ * pill keeps the menu open — it's a setting, not an action — and the row is never disabled:
+ * the preference is settable before and during a run.
+ */
+function SteerModeRow({
+  steerMode,
+  onChangeSteerMode,
+}: {
+  steerMode: SteerMode;
+  onChangeSteerMode: (mode: SteerMode) => void;
+}) {
+  // Compact pills, no bordered wrapper: the control must not out-height an item's 16px text
+  // line by more than the row paddings absorb — h-5 pills inside py-1 land the row at the
+  // same 28px an item's text + py-1.5 does, so the menu keeps one line rhythm.
+  const modeButton = (mode: SteerMode, label: string, hint: string) => (
+    <button
+      type="button"
+      data-tooltip={hint}
+      data-tooltip-extra
+      aria-pressed={steerMode === mode}
+      onClick={() => onChangeSteerMode(mode)}
+      className={`h-5 whitespace-nowrap rounded px-1.5 text-xs transition-colors duration-150 ${
+        steerMode === mode
+          ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+          : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex w-full items-center gap-2 px-3 py-1 text-xs">
+      <GlyphIcon d={ICONS.sliders} className="shrink-0 text-gray-400 dark:text-gray-500" />
+      <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
+        {S.chat.steerModeLabel}
+      </span>
+      <div
+        role="group"
+        aria-label={S.chat.steerModeLabel}
+        className="flex shrink-0 items-center gap-px"
+      >
+        {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
+        {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+        {modeButton("interrupt", S.chat.steerModeInterrupt, S.chat.steerModeInterruptHint)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Multi-select skills dropdown (bottom toolbar, after approval mode): the book icon in the +
+ * button's square, the selected count on its corner (none at 0); the menu body is the
+ * shared SkillPickList (search box + toggle rows), without its bulk row — picking skills to send
+ * a message with is a per-message act on a handful of names, not a set to fill in. Multi-select
+ * semantics: clicking a row toggles its selection and **the menu stays open**; closes on Escape /
+ * click outside (built into Dropdown). Popup direction depends on context (same as the approval
+ * mode selector).
+ */
+function SkillSelect({
+  skills,
+  selected,
+  onToggle,
+  disabled,
+  direction = "up",
+}: {
+  skills: SkillMetadataItem[];
+  selected: string[];
+  onToggle: (name: string) => void;
+  disabled: boolean;
+  direction?: "up" | "down";
+}) {
+  // Icon only, the + button's square; the selected count rides the corner (the chip row above
+  // the input mirrors the selection too). The panel is unmounted while closed, so its search box
+  // starts empty on every open. As wide as reasonably possible so descriptions stay readable;
+  // portal placement clamps it to the viewport.
+  return (
+    <MenuSelect
+      trigger={{
+        glyph: BOOK_ICON,
+        ariaLabel: S.chat.skillsSelect,
+        badge: selected.length,
+        disabled,
+      }}
+      direction={direction}
+      menuClass="w-[26rem]"
+    >
+      <SkillPickList
+        skills={skills}
+        selected={selected}
+        onToggle={onToggle}
+        emptyHint={S.chat.skillsEmptyHint}
+      />
+    </MenuSelect>
+  );
+}
+
+/** One entry of the composer's "+" extension menu. */
+interface PlusMenuItem {
+  key: string;
+  /** A 24×24 line path, or a mark of its own (a plugin's icon). */
+  icon: string | ReactNode;
+  label: string;
+  desc: string;
+  /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
+  active: boolean;
+  /** Grayed out and inert (e.g. goal mode while a run is in progress); the menu still opens. */
+  disabled?: boolean;
+  /** Drawn greyed but still picked: an offer whose pick does what `trailing` names (an install). */
+  offer?: boolean;
+  /** Words at the row's end: what picking an offer does. */
+  trailing?: ReactNode;
+  onSelect: () => void;
+}
+
+/**
+ * The composer's "+" extension menu: a general-purpose entry point for input add-ons (goal
+ * mode today; future modes, plugins, apps, files slot in as further items) plus input
+ * settings (`footer`, currently the mid-run send mode row). Data-driven — the caller passes
+ * the item list and footer; the menu itself knows nothing about the entries. The button is
+ * never disabled: settings must stay reachable during a run, so unavailable *items* gray out
+ * individually instead.
+ */
+function PlusMenu({
+  items,
+  footer,
+  direction = "up",
+}: {
+  items: PlusMenuItem[];
+  footer?: ReactNode;
+  direction?: "up" | "down";
+}) {
+  // Every entry is a toggle marked while engaged, and a pick closes the menu before it acts —
+  // an upload entry opens the file dialog, which must happen inside the click. The description
+  // runs on after the name, muted, and is what gives way when the row runs out of room.
+  return (
+    <MenuSelect
+      trigger={{ glyph: ICONS.plus, ariaLabel: S.chat.plusMenu }}
+      options={items.map((item) => ({
+        value: item.key,
+        glyph: item.icon,
+        label: item.offer ? <span className="text-fg-subtle">{item.label}</span> : item.label,
+        detail: item.desc,
+        disabled: item.disabled ?? false,
+        ...(item.trailing !== undefined ? { trailing: item.trailing } : {}),
+      }))}
+      value={items.filter((item) => item.active).map((item) => item.key)}
+      multiple
+      onChange={(key) => items.find((item) => item.key === key)?.onSelect()}
+      footer={footer}
+      direction={direction}
+      menuClass="w-72"
+    />
+  );
+}
+
+interface SlashCommand {
+  cmd: string;
+  desc: string;
+  modeName?: string;
+  run: () => void;
+}
+
+/**
+ * One file attachment staged in the composer. `dataUrl` is the base64 `data:` URL sent as the
+ * task input's `file` part; `name` / `size` only feed the chip (the server decides the name the
+ * file actually gets on disk).
+ */
+interface Attachment {
+  name: string;
+  size: number;
+  dataUrl: string;
+}
+
+/**
+ * The upload caps are no longer compiled in here: they are admin-settable and arrive on
+ * `/api/me` (see state/auth uploadLimits), so this check and the server's cannot drift apart and
+ * the toast can name the number actually in force. Enforcing it client-side at all is still
+ * worth it — an oversize pick is refused before the file is read, instead of costing the user a
+ * base64 encode, an upload 33% larger than the file, and a 413 to learn the same thing. The
+ * partition itself lives in lib/upload-limits (splitBySize), shared with the image intake.
+ */
+
+/** Reads one file as a base64 data URL; resolves to null on a read error rather than rejecting, so one unreadable file cannot drop the rest of the batch. */
+function readDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Approximate decoded byte size of a base64 data URL (for the recalled attachment's chip; display only). */
+function dataUrlBytes(dataUrl: string): number {
+  const body = dataUrl.slice(dataUrl.indexOf(",") + 1).replace(/[=\s]+/g, "");
+  return Math.floor((body.length * 3) / 4);
+}
+
+/** One-line summary of a queued steering message: its text, then image/file counts for what the text cannot show. */
+function steeringSummary(p: { text: string; images: number; files: number }): string {
+  const parts: string[] = [];
+  const line = p.text.replace(/\s+/g, " ").trim();
+  if (line) parts.push(line);
+  if (p.images > 0) parts.push(S.chat.imagesInMessage(p.images));
+  if (p.files > 0) parts.push(S.chat.filesInMessage(p.files));
+  return parts.join(" \u00b7 ");
+}
+
+/**
+ * One queued-message hint line (undelivered steering / queued follow-up) with its recall
+ * button (#287): the button withdraws the message server-side and puts its content back into
+ * the input box for editing and resending. No button when the channel offers no recall
+ * (old server: entries without ids, or no handler supplied).
+ *
+ * Icon-only, so the two localized strings become its accessible name instead of its body:
+ * `recallQueued` is the short one the button is *called* (aria-label), `recallQueuedTitle` the
+ * tooltip that says what happens. Sized like the other icon controls on a text-xs row, and
+ * `shrink-0` next to the truncating label so it survives narrow widths. It carries the icon
+ * set's gray (a step darker than the hint text it sits beside), not the label's: gray-400 on
+ * white is under the 3:1 an interactive control owes, and this one is interactive.
+ *
+ * Before the recall button, when the line can be sent now, an "Interrupt" text link: it stops
+ * the run and sends the message right after the turn it cut. Text rather than an icon, because
+ * what it does is a sentence of its own and the line already carries one icon control; the
+ * link wears the hint text's size and the recall icon's gray, so it reads as part of the line.
+ */
+function QueuedMessageLine({
+  label,
+  onRecall,
+  onInterrupt,
+  disabled,
+}: {
+  label: string;
+  onRecall?: () => void;
+  onInterrupt?: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">{label}</p>
+      {onInterrupt && (
+        <button
+          type="button"
+          data-tooltip={S.chat.interruptQueuedTitle}
+          disabled={disabled}
+          onClick={onInterrupt}
+          className="shrink-0 whitespace-nowrap px-0.5 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          {S.chat.interruptQueued}
+        </button>
+      )}
+      {onRecall && (
+        <button
+          type="button"
+          aria-label={S.chat.recallQueued}
+          data-tooltip={S.chat.recallQueuedTitle}
+          disabled={disabled}
+          onClick={onRecall}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={ICONS.undo} size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Appends the draft's attachments to a task input — images first (in pick order), then files.
+ * One place, because every send path submits the same draft: the normal send, the follow-up
+ * queue, the @ handoff and the `/model` switch.
+ */
+function appendAttachmentParts(
+  input: TaskInputPart[],
+  images: string[],
+  attachments: Attachment[],
+): void {
+  for (const url of images) input.push({ type: "image_url", imageUrl: url });
+  for (const file of attachments) {
+    input.push({ type: "file", fileName: file.name, dataUrl: file.dataUrl });
+  }
+}
+
+/**
+ * The message body: the staged quotations, then what was typed. Blank parts are dropped so a
+ * quotation sent with no sentence after it does not trail an empty line.
+ */
+function withReferences(references: readonly ComposerReference[], typed: string): string {
+  if (references.length === 0) return typed;
+  return [...references.map((r) => r.text), typed].filter((part) => part !== "").join("\n\n");
+}
+
+/**
+ * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
+ * Three entries: a surface that composes a whole prompt puts it in this composer instead of
+ * submitting it on its own, a surface that contributes one reference stages it beside
+ * whatever is already being typed, and a surface that only asks for an answer sends focus here.
+ */
+export interface ComposerControl {
+  /**
+   * Put a composed prompt in the text body and preselect the skills it pins — without sending
+   * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
+   * installed are dropped here, where the installed list already lives. Pass an empty list to
+   * leave the composer's own Skill selection untouched. Replacing text the user typed asks first.
+   * An empty prompt empties the text body: a reply's choice offers "Other…", and the answer it
+   * asks for is the one the user types here.
+   */
+  fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
+  /**
+   * Move focus to the text body and leave everything in it as it is, for a surface that asks
+   * for an answer in the user's own words without clearing what is there.
+   */
+  focus: () => void;
+  /**
+   * Stage a contribution as a chip rather than typing it into the draft — a file, a directory
+   * or a quoted range from the Files panel, or an excerpt selected in the conversation. The
+   * text rides the message when it is sent; what the composer shows is the thing it points at.
+   */
+  addReference: (reference: ComposerReference) => void;
+}
+
+/**
+ * Attention notices already put down, for the rest of the tab session (keys: `composerNotice`).
+ *
+ * Module state rather than storage: the notice reports a live mismatch between two settings, so
+ * a dismissal should not outlive the tab that saw it — reopening the app after changing either
+ * side deserves a fresh answer.
+ */
+const dismissedNotices = new Set<string>();
+
+export function ChatInput({
+  status,
+  onSend,
+  onSteer,
+  steeringDeliveredCount,
+  pendingSteering = [],
+  returnedSteering = [],
+  onRecallSteering,
+  onQueueFollowUp,
+  queuedFollowUps = 0,
+  pendingFollowUps = [],
+  onRecallFollowUp,
+  onInterruptSend,
+  onInterruptFollowUp,
+  onInterruptSteering,
+  onStop,
+  onCompact,
+  modelRef,
+  models,
+  onChangeModel,
+  onSwitchModel,
+  onPickSessionModel,
+  defaultModel,
+  thinkingLevel,
+  onChangeThinkingLevel,
+  turnThinkingLevel,
+  onChangeTurnThinkingLevel,
+  contextWindow,
+  compactionLimit,
+  onChangeCompactionLimit,
+  onOpenAgentSettings,
+  refusalHandoff,
+  onShowRefusal,
+  contextNow,
+  contextStale = false,
+  sessionId,
+  vision,
+  approvalMode,
+  approvalModes,
+  sandbox,
+  onChangePermission,
+  modeSaving,
+  autoFocus,
+  agents,
+  agentsMachineId = null,
+  machineId,
+  currentAgentId,
+  skills,
+  initialSkills,
+  initialSteeringSkills,
+  initialGoal,
+  goalPlugin = null,
+  switches,
+  banner,
+  onSkillsChange,
+  onHandoff,
+  initialText,
+  onTextChange,
+  history = [],
+  initialHandoffTargetId,
+  onHandoffTargetChange,
+  initialPendingModelRef,
+  onPendingModelChange,
+  controlRef,
+  draftUploads,
+  resizableDraft = false,
+  variant = "session",
+  cover = null,
+}: {
+  draftUploads?: DraftUploads;
+  status: SessionStatus;
+  /**
+   * Returns whether it succeeded: on failure the input draft is kept (not cleared).
+   * `goal` is non-null when goal mode is engaged: the text is the objective and the server
+   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited).
+   */
+  onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
+  /**
+   * Mid-run steering (session state only): while a Task is running, Enter/send queues the
+   * trimmed text **and any attached images and files** for the running agent — delivered
+   * between turns as a standalone `[user_steering]` user message followed by its images,
+   * with the files riding the text as `[attached file: <path>]` lines (#140: a file-only
+   * draft steers exactly like an image-only one). `"queued"` clears the text, images and
+   * files and shows the queued hint; `"not_running"` (409 race with completion) makes the
+   * input fall back to its full normal send path; `"failed"` keeps the draft. When absent
+   * (draft state), the input stays send-disabled while running, as before.
+   */
+  onSteer?: (
+    text: string,
+    images: string[],
+    files: { fileName: string; dataUrl: string }[],
+  ) => Promise<"queued" | "not_running" | "failed">;
+  /**
+   * Count of steering messages already visible in the message stream: the queued hint stays
+   * up until this increases past its value at queue time (i.e. the message was delivered).
+   */
+  steeringDeliveredCount?: number;
+  /**
+   * The server's undelivered-steering mirror (from task_state events): each entry renders as
+   * a "steering queued" line with its content, so the hint — and what was sent — survives
+   * reloads (#136). The local post-202 flag only bridges until the first event arrives.
+   */
+  pendingSteering?: PendingSteeringInfo[];
+  /**
+   * Steering a finished run never delivered — an interrupt while a tool was running is the
+   * ordinary way to produce one. This component takes each back into the draft as soon as it
+   * sees it, through the same recall channel a queued line's button uses, so the typed message
+   * lands in the input box instead of disappearing with the run.
+   */
+  returnedSteering?: PendingSteeringInfo[];
+  /**
+   * Recall an undelivered steering message (#287): resolves to its original content, which
+   * this component restores into the draft (text / images / files), or null when the recall
+   * failed (already delivered — the parent toasts). Renders the recall button on each
+   * pending-steering line when supplied.
+   */
+  onRecallSteering?: (steerId: string) => Promise<RecalledMessageResponse | null>;
+  /**
+   * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
+   * session holds it server-side and auto-sends it as an ordinary next task once the current
+   * run finishes. Offered as the "follow-up" choice of the mid-run mode switch; when absent,
+   * only steering is offered while running.
+   */
+  onQueueFollowUp?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
+  queuedFollowUps?: number;
+  /**
+   * Queued follow-up tasks with per-entry content (from task_state): renders one line each —
+   * with a recall button — instead of the bare count; empty on old servers (the count hint
+   * stays as the fallback).
+   */
+  pendingFollowUps?: PendingFollowUpInfo[];
+  /** Recall a queued follow-up (#287): same contract as onRecallSteering, for the follow-up queue. */
+  onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
+  /**
+   * Interrupt, then send (session state only): posts the full input with `interrupt` — a busy
+   * session stops its run and sends this right after the turn it cut; undelivered steering
+   * comes back to the draft as it does on Stop. Offered as the "interrupt" choice of the
+   * mid-run mode switch.
+   */
+  onInterruptSend?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Turns one queued follow-up into an interrupt (the Interrupt link on its line); false when it failed. */
+  onInterruptFollowUp?: (followUpId: string) => Promise<boolean>;
+  /** Turns one undelivered steering message into an interrupt (the Interrupt link on its line). */
+  onInterruptSteering?: (steerId: string) => Promise<boolean>;
+  /**
+   * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
+   * target agent (the current Session receives no message). Returns whether it succeeded
+   * (draft kept on failure). Supplied for an active Session only — a draft has no conversation
+   * to hand over, so `/agent` is not offered there (same gating as `/model`'s onSwitchModel).
+   */
+  onHandoff?: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
+  onStop: () => Promise<void>;
+  /** Manual context compaction (/compact). Optional: without it the command is not offered (the draft has no Session to compact, and the subagent variant has no compaction surface). */
+  onCompact?: () => Promise<void>;
+  /** Currently selected model reference ((provider, modelId) is the unique key); null = not yet chosen. */
+  modelRef: ModelRefDto | null;
+  /**
+   * Candidate model list: when supplied together with onChangeModel, renders the model selector
+   * to the left of the send button (draft state); with onPickSessionModel instead (session
+   * state), the same selector switches this conversation's model; with neither (the subagent
+   * composer), it only looks up the model's display name for the read-only badge.
+   */
+  models?: ModelInfo[];
+  /** Changes the selected model in draft state; not passed once the Session exists. */
+  onChangeModel?: (ref: ModelRefDto) => void;
+  /**
+   * Session state: the `/model` handoff — opens a NEW session on the picked model carrying this
+   * conversation and navigates there; the draft written after the pick is posted as the new
+   * session's first task, and this conversation stays as it is. Returns whether it succeeded
+   * (draft kept on failure). Only passed for an active session (the command is additionally
+   * gated on not running/compacting); picking the current model is a no-op.
+   */
+  onSwitchModel?: (ref: ModelRefDto, input: TaskInputPart[]) => Promise<boolean>;
+  /**
+   * Session state: a pick in the toolbar's model picker, which switches THIS conversation onto
+   * the picked model (compacting on the current one first). The parent owns the decision and
+   * the confirm dialog; the picker only reports the pick, and is disabled while a Task runs or
+   * a compaction is under way. Not passed to the subagent composer, whose badge stays display-only.
+   */
+  onPickSessionModel?: (ref: ModelRefDto) => void;
+  /** Project default model (marked "default" on the selector's candidate item). */
+  defaultModel?: ModelRefDto;
+  /**
+   * Draft state: the selected Agent's current thinking level ("" = no override / provider
+   * default; null while the Agent config is loading — the picker renders disabled). Supplied
+   * together with onChangeThinkingLevel; without the callback the picker isn't rendered.
+   */
+  thinkingLevel?: string | null;
+  /**
+   * Draft state: writes the picked level straight through to the Agent settings (the parent
+   * persists it via the agent-config API; the session created on first send picks it up and it
+   * becomes the Agent's new default).
+   */
+  onChangeThinkingLevel?: (level: string) => void;
+  /**
+   * Session state: the Session's thinking level to DISPLAY — the parent resolves it as "the
+   * user's pick for this session, else the Agent config's level" ("" = neither known yet),
+   * so the picker auto-follows the config until touched. A pick is the parent's own state:
+   * it pins the level on the Session (PATCH), and core applies it from the next LLM request
+   * (soft-limited; a pick mid-chat is confirmed first, offering to compact); nothing rides a
+   * task. Never written through to the Agent config (that behavior stays draft-only).
+   */
+  turnThinkingLevel?: string;
+  /** Session state: pins the thinking level on this session (effective from its next LLM request); also enables the editable picker. */
+  onChangeTurnThinkingLevel?: (level: string) => void;
+  /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
+  contextWindow?: number;
+  /**
+   * The Agent's CONFIGURED `compaction.max_context_length` (its seeded default when the config
+   * carries none), fetched by the parent alongside the Agent's thinking level. It gives the
+   * context ring the threshold it fills against, and it is the number the small-window notice
+   * below is judged against. Absent where no Agent config is at hand (the draft and subagent
+   * composers, and the moment before the fetch lands): the ring then falls back to the model
+   * window and the notice cannot be raised at all.
+   */
+  compactionLimit?: number;
+  /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
+  onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
+  /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
+  onOpenAgentSettings?: () => void;
+  /**
+   * The Session's refusal hand-off (`refusalHandoff`): its occurrence, and the provider's words
+   * when it sent any, raising its notice; absent off session state.
+   */
+  refusalHandoff?: { occurrence: string; message?: string } | null;
+  /** Opens the refused request's failure details from the notice's 「[详情]」; absent where the host cannot show them. */
+  onShowRefusal?: () => void;
+  /** Current context usage (total of the most recent main-session Request). */
+  contextNow: number;
+  /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
+  contextStale?: boolean;
+  /**
+   * Enables the context ring's composition panel, which is served by a Session-level endpoint.
+   * Omitted in the draft composer (no Session yet) and in the subagent composer (a child Session
+   * is not registered in the sessions table, so the endpoint cannot resolve it) — the ring stays
+   * the plain readout it has always been there.
+   */
+  sessionId?: string;
+  /** Whether the current model supports image input (models config's vision; assumed supported by default). */
+  vision: boolean;
+  /** Null while it is not known yet (a draft whose server has not answered): no level is drawn. */
+  approvalMode: ApprovalMode | null;
+  /**
+   * The approval modes the permission button may offer, in order (`approvalModeChoices`): all
+   * four, except that an organization's Session leaves out `always-ask` unless it is the current
+   * value. A preset whose approval mode is not listed is left out of the menu, unless it is the
+   * current preset. The button's level and title follow `approvalMode` whatever the list holds.
+   */
+  approvalModes: readonly ApprovalMode[];
+  /** The Session's own sandbox policy (the draft's pick before there is a Session). */
+  sandbox: SessionSandbox;
+  /** Saves a preset's approval mode and sandbox together; a returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangePermission: (pick: PermissionPick) => void | Promise<unknown>;
+  modeSaving: boolean;
+  autoFocus?: boolean;
+  /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
+  agents: AgentSummary[];
+  /** The machine `agents` lives on, for their pictures; null (the default) for this server. */
+  agentsMachineId?: string | null;
+  /**
+   * The machine the conversation runs on (null: this server), whose Sandbox settings the
+   * permission menu's More… opens. Not `agentsMachineId`: a Session's `/agent` candidates are
+   * this server's Agents wherever the Session runs.
+   */
+  machineId: string | null;
+  /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
+  currentAgentId?: string;
+  /**
+   * Skills installed on the current Agent (in session state, fetched by chat-page keyed on the
+   * Session's Agent; in draft state, fetched by draft-view keyed on the selected Agent; a failed
+   * fetch is treated as no skills): candidates for the bottom toolbar's skills dropdown, and the
+   * same source feeds the slash menu's skill command entries. When the Agent changes, the parent
+   * clears this first before refetching, and the selection clears along with it (doesn't linger
+   * across Agents).
+   */
+  skills: SkillMetadataItem[];
+  /**
+   * Initially selected skill names (draft restore; the skill library page's quick-invoke writes
+   * this into the draft cache): read once on mount; once the installed list is ready, names not
+   * in that list are pruned.
+   */
+  initialSkills?: string[];
+  /** The subset explicitly chosen for the running task in this draft. */
+  initialSteeringSkills?: string[] | undefined;
+  /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
+  initialGoal?: boolean;
+  /**
+   * The goal plugin check for the Agent this composer sends to (goal-plugin-gate.ts): while the
+   * goal chip is engaged and the plugin is missing, a notice above the input offers to install
+   * it and Send is held. Absent or null, nothing is checked and the server refuses instead.
+   */
+  goalPlugin?: GoalPluginGate | null;
+  /**
+   * The composer's switches (prompt-modes.ts): each one the Agent offers is a "+" menu entry, and
+   * each one on is a chip. The caller owns which are on and sends them with every Task but a goal,
+   * so a goal engaged here grays the entries out and hides the chips.
+   */
+  switches?: ComposerSwitches;
+  /** A notice drawn as the composer card's top band (`ComposerBanner`): what Send waits for. */
+  banner?: ReactNode;
+  /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
+  onSkillsChange?: (names: string[], steering?: string[]) => void;
+  /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
+  initialText?: string;
+  /**
+   * Callback when the user edits the text body (including paths that rewrite the text such as
+   * running a slash command); the clear after a successful send does **not** call back — at
+   * that point the parent has already cleared the draft cache entirely, and calling back would
+   * resurrect it.
+   */
+  onTextChange?: (text: string) => void;
+  /**
+   * This session's previous composer inputs (oldest → newest) for shell-style ↑/↓ recall
+   * (see input-history.ts for what qualifies). Omitted in draft state — a draft has no
+   * history to recall yet, and the arrows then keep their native meaning.
+   */
+  history?: string[];
+  /** Draft restore: the agentId of the staged handoff target (resolved once agents are ready; discarded if stale). */
+  initialHandoffTargetId?: string;
+  /** Callback when the staged handoff target changes (picked/removed; the clear after a successful send does not call back, same as onTextChange). */
+  onHandoffTargetChange?: (agentId: string | null) => void;
+  /**
+   * Draft restore: the staged `/model` switch target (resolved once models are ready; discarded
+   * when that model is gone or is the one this session already runs). Cached for the same
+   * reason as the handoff target — the composer text survives an unmount, so its chip must too,
+   * or Enter would post the message to the current session on the old model.
+   */
+  initialPendingModelRef?: ModelRefDto;
+  /** Callback when the staged model switch changes (picked/removed; the clear after a successful send does not call back, same as onTextChange). */
+  onPendingModelChange?: (ref: ModelRefDto | null) => void;
+  /**
+   * Which surface this composer serves. `"session"` (default) is the main conversation with
+   * every affordance. `"subagent"` drives one subagent child from the panel: the same body,
+   * skills, slash skill commands, thinking level, approval mode, context ring and model badge
+   * — minus what a child has no semantics for (goal mode, image/file attachments and the "+"
+   * menu carrying them, paste/drop file intake; /compact and the follow-up queue are already
+   * gated by their absent callbacks). The model badge is inert here: a child cannot switch
+   * model or agent.
+   */
+  variant?: "session" | "subagent";
+  /** The start page can give a long draft more writing space. */
+  resizableDraft?: boolean;
+  /**
+   * Handle for the one thing a parent reaches in and does: the draft screen's example cards
+   * fill this composer (see ComposerControl). A ref rather than a `fill` prop because it is a
+   * one-shot action, not state — the same example clicked twice has to land twice, which a
+   * prop can only express by carrying a nonce. Lifting the body text and the skill selection
+   * out of here instead would drag every other writer of them (slash commands, the recall
+   * restore, ↑/↓ history, the post-send clear) out with them.
+   */
+  controlRef?: RefObject<ComposerControl | null>;
+  /**
+   * What the input box shows in place of the editor while the conversation cannot be written to
+   * (its machine is out of reach), given whether anything is staged in the editor under it; null
+   * while it can. Everything typed, attached or picked stays as it was underneath.
+   */
+  cover?: ((drafted: boolean) => ReactNode) | null;
+}) {
+  const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
+  // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
+  // messages both come from here, so what the composer refuses is exactly what the server would.
+  const { uploadLimits } = useAuth();
+  const [text, setText] = useState(initialText ?? "");
+  /** Live text mirror for slash-command run() closures (the commands memo deliberately doesn't depend on text). */
+  const textRef = useRef(text);
+  textRef.current = text;
+  const [images, setImages] = useState<string[]>(() => draftUploads?.images ?? []);
+  // File attachments picked from the "+" menu (any type): held as base64 data URLs, exactly
+  // like images — a draft has no Session yet, so there is nothing to upload them to ahead of
+  // time; they travel with the task request and the server files them into the scratchpad.
+  const [attachments, setAttachments] = useState<Attachment[]>(() => draftUploads?.files ?? []);
+  useLayoutEffect(() => {
+    if (draftUploads) {
+      draftUploads.images = images;
+      draftUploads.files = attachments;
+    }
+  }, [images, attachments, draftUploads]);
+  /**
+   * Quotations staged from the Files panel. Held here rather than in the draft cache, exactly
+   * like attachments: what they quote is a file on disk that may have moved on by the time a
+   * stale draft is reopened, so they belong to this composer's life and not to the text's.
+   */
+  const [references, setReferences] = useState<ComposerReference[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+  // Slash token start where Escape closed the menu: it stays shut for that one token.
+  const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  // Switch pickers (opened by /model — session state, the model-picker dialog — and /agent, an
+  // upward panel). Each command consumes its slash token immediately (same as /compact), so closing
+  // a picker — Escape, click outside, or the picked-current-model no-op — can never re-open the
+  // slash menu, and there is no stale token range to recompute at pick time; whatever text remains
+  // is the draft (and becomes the new session's first message once the staged switch is sent).
+  const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
+  const [agentSwitchOpen, setAgentSwitchOpen] = useState(false);
+  // Staged handoff target from /agent (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
+  const [target, setTarget] = useState<AgentSummary | null>(null);
+  // Staged model switch from /model (chip too), cached in the draft exactly like the handoff
+  // target: the composer's text is cached and this component is keyed by session id, so a chip
+  // kept only in component state would disappear on a session switch while the text it belongs
+  // to came back — and Enter would then post that text to the current session on the old model.
+  const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null);
+  // Selected skills (dropdown checklist, multi-select): initial value comes from draft restore (quick-invoke pre-selection), cleared on successful send.
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(initialSkills ?? []);
+  const [steeringSkills, setSteeringSkills] = useState<string[]>(initialSteeringSkills ?? []);
+  // Cursor position (tracked via onChange/onSelect): the slash menu matches the token at the caret.
+  const [caret, setCaret] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Shell-style ↑/↓ history recall state (null = not navigating); ended by the text-mismatch effect below.
+  const historyNavRef = useRef<HistoryStep["nav"]>(null);
+  // Short placeholder on narrow screens: a long hint would wrap and get clipped in a single-line textarea.
+  const [narrow] = useState(() => window.matchMedia("(max-width: 767px)").matches);
+
+  const running = status === "running";
+  const compacting = status === "compacting";
+  // The draft's "anything sendable at all" rule, shared by canSend / canFollowUp / the
+  // steer-mode queue fallback and (negated) by the Stop face of the action button.
+  const draftHasContent =
+    text.trim().length > 0 ||
+    images.length > 0 ||
+    attachments.length > 0 ||
+    references.length > 0 ||
+    target !== null ||
+    pendingModel !== null ||
+    selectedSkills.length > 0;
+  // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
+  // exclusive with a staged /agent or /model switch (engaging either clears the other). Attached
+  // images and selected skills ride the round-1 message exactly as in a normal send: the images
+  // as image input (path lines only on a model without vision), the skills as a [use_skills]
+  // block. Later rounds restate the objective text alone.
+  const [goalOn, setGoalOn] = useState(initialGoal === true);
+  const [goalBudgetText, setGoalBudgetText] = useState("");
+  const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
+  const [goalBudgetDraft, setGoalBudgetDraft] = useState("");
+  /** The committed budget is always valid: the popover keeps invalid edits in its local draft. */
+  const goalBudget = goalOn ? parseBudgetInput(goalBudgetText) : null;
+  const goalBudgetDraftValue = parseBudgetInput(goalBudgetDraft);
+  const goalBudgetDraftInvalid = goalBudgetDraftValue === null;
+  const goalBudgetSummary =
+    goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
+      ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
+      : S.chat.goalBudgetUnlimited;
+  const goalGate = useGoalPluginGate(goalPlugin, goalOn);
+  /** The switches on, as their chips show them; none while a goal is engaged, which takes none. */
+  const switchesOn =
+    switches === undefined || goalOn
+      ? []
+      : switches.modes.filter((mode) => switches.on.includes(mode.name));
+  const flipSwitch = (name: string) => {
+    if (switches) switches.onChange(toggled(switches.on, name));
+  };
+  /** The switches as of the latest render, for an install that answers after it. */
+  const latestSwitches = useRef(switches);
+  latestSwitches.current = switches;
+  /**
+   * A mode the Agent lacks, picked from its offer: installed on the Agent, then switched on, as
+   * picking an installed one would. A refused install says why in a toast and turns nothing on.
+   */
+  const installSwitch = (name: string) => {
+    void switches?.install?.(name).then((installed) => {
+      const now = latestSwitches.current;
+      if (installed && now && !now.on.includes(name)) now.onChange([...now.on, name]);
+    });
+  };
+  /**
+   * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
+   * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
+   * Trace, so it waits for the session to be idle. Both the eligibility below and the send path
+   * read this one value, so the button and what the button does can't disagree.
+   */
+  const stagedRoute = stagedSendRoute({
+    handoffTarget: target !== null,
+    pendingModel: pendingModel !== null,
+    canSwitchModel: onSwitchModel !== undefined,
+    sessionBusy: running || compacting,
+  });
+  // Sending is also allowed with no text at all: attachments (images or files), a staged switch
+  // chip (/agent or /model) and selected skills each carry a message on their own — a handoff's
+  // first message may be just a [handoff_from] source block, and the empty-text fallbacks fill in
+  // the rest (S.chat.skillsAutoMessage with skills selected, S.chat.modelSwitchAutoMessage for a
+  // staged model switch — see sendNormal). Goal mode instead requires a text objective and a
+  // parseable budget — and an open editor showing an invalid draft disables Send outright:
+  // combined with the editor refusing to close over an invalid draft (below), no click sequence
+  // can fire a goal with a stale committed budget.
+  // Images may come along with a goal objective (they ride its round-1 message), but they don't
+  // substitute for the text; file attachments cannot — the server refuses them on a goal. Nor
+  // does a goal go out while its Agent lacks the goal plugin (the notice above says so).
+  const canSend =
+    !running &&
+    !compacting &&
+    !busy &&
+    (!onChangeModel || models?.some((m) => sameModelRef(m, modelRef))) &&
+    (goalOn
+      ? text.trim().length > 0 &&
+        attachments.length === 0 &&
+        goalBudget !== null &&
+        !(goalBudgetOpen && goalBudgetDraftInvalid) &&
+        !goalGate.holdsSend
+      : draftHasContent);
+
+  /**
+   * The budget editor is a fixed upward popover. Opening copies the committed value; closing
+   * commits a valid draft — so typing a budget and clicking straight onto Send keeps it (the
+   * Send mousedown closes the popover before the click lands). An INVALID draft refuses to
+   * close: silently reverting would let the very next click fire the goal with the stale
+   * committed budget — fix the draft or cancel with Escape (cancelGoalBudget below).
+   */
+  const setGoalBudgetEditorOpen = useCallback(
+    (open: boolean) => {
+      if (open) {
+        setGoalBudgetDraft(goalBudgetText);
+        setGoalBudgetOpen(true);
+        return;
+      }
+      if (parseBudgetInput(goalBudgetDraft) === null) return;
+      setGoalBudgetText(goalBudgetDraft.trim());
+      setGoalBudgetOpen(false);
+    },
+    [goalBudgetText, goalBudgetDraft],
+  );
+
+  /**
+   * Cancel the budget editor: close WITHOUT committing (reopening re-copies the committed
+   * value). Wired to the Dropdown's window-level Escape, so it is genuinely
+   * focus-independent — including after an invalid draft refused an outside-click close and
+   * focus already left the chip (e.g. sits in the objective textarea).
+   */
+  const cancelGoalBudget = useCallback(() => {
+    setGoalBudgetOpen(false);
+    textareaRef.current?.focus();
+  }, []);
+
+  /** Commit only valid input; Enter and the check button share this path. */
+  const saveGoalBudget = useCallback(() => {
+    if (parseBudgetInput(goalBudgetDraft) === null) return;
+    setGoalBudgetText(goalBudgetDraft.trim());
+    setGoalBudgetOpen(false);
+    textareaRef.current?.focus();
+  }, [goalBudgetDraft]);
+
+  /**
+   * Engage/exit goal mode; engaging clears any staged switch chip and every file attachment
+   * (genuinely exclusive: a handoff or a model switch opens another session, and the server
+   * refuses file attachments on a goal). Attached images and selected skills stay — they ride
+   * the round-1 message, like a normal send.
+   */
+  const toggleGoal = useCallback(
+    (on: boolean) => {
+      setGoalOn(on);
+      setGoalBudgetOpen(false);
+      setGoalBudgetDraft("");
+      if (on) {
+        setGoalBudgetText("");
+        setTarget(null);
+        onHandoffTargetChange?.(null);
+        setPendingModel(null);
+        onPendingModelChange?.(null);
+        // Images ride a goal's round-1 message, file attachments do not — the server refuses
+        // those, so clear them or canSend would stay silently false with the objective looking
+        // ready.
+        setAttachments([]);
+      }
+    },
+    [onHandoffTargetChange, onPendingModelChange],
+  );
+
+  // Mid-run steering: while running, Enter/send queues the text **and the attached images
+  // and files** for the running agent (delivered between turns as a [user_steering] user
+  // message followed by its images; files ride the text as [attached file: <path>] lines) —
+  // so an image or a file with no caption is a complete steering message on its own (#140).
+  // Selected skills stay in the draft for a later normal send: a [use_skills] block is
+  // task-level setup, not something to hand a turn already under way. A staged /agent or
+  // /model chip also blocks steering: the text belongs to the conversation that switch is
+  // about to open, not to the agent running here.
+  // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
+  // that happens to be active (e.g. a schedule fired) would silently repurpose it.
+  //
+  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered mid-run
+  // as a [user_steering] input) and "follow-up" (held server-side and auto-sent as an ordinary
+  // next task once this run finishes). Set from the "+" menu's settings row — available in
+  // draft state and active sessions alike — and **remembered** across sessions, reloads and
+  // browsers (a preference of the account, see steer-mode.ts).
+  const [steerMode, setSteerModeState] = useState<SteerMode>(() => readSteerMode());
+  const setSteerMode = (mode: SteerMode): void => {
+    setSteerModeState(mode);
+    writeSteerMode(mode);
+  };
+  const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  const interruptMode = steerMode === "interrupt" && onInterruptSend !== undefined;
+  // Which of the two channels this draft can use, or Stop when neither will take it — the whole
+  // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
+  // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
+  // meaningful while running: an idle Session is always Send (gated by canSend above) and a
+  // compacting one is always Stop (see isStopAction).
+  const midRun = midRunAction({
+    sending: busy,
+    goalOn,
+    canSteerChannel: onSteer !== undefined,
+    canQueueChannel: onQueueFollowUp !== undefined,
+    canInterruptChannel: onInterruptSend !== undefined,
+    followUpMode,
+    interruptMode,
+    stagedRoute,
+    hasHandoffTarget: target !== null,
+    hasPendingModel: pendingModel !== null,
+    hasText: text.trim().length > 0 || steeringSkills.some((name) => selectedSkills.includes(name)),
+    hasImages: images.length > 0,
+    hasFiles: attachments.length > 0,
+    hasContent: draftHasContent,
+  });
+  const steerAction = running && midRun === "steer";
+  const queueAction = running && midRun === "queue";
+  const interruptAction = running && midRun === "interrupt";
+  const canMidRunSend = steerAction || queueAction || interruptAction;
+  const midRunSendLabel =
+    midRun === "queue"
+      ? S.chat.followUpSend
+      : midRun === "interrupt"
+        ? S.chat.interruptSend
+        : S.chat.steerSend;
+  const stopAction = isStopAction(status, midRun);
+  // Display-only model badge text (see the badge below): the catalog's display name when the
+  // model is known, the raw id otherwise.
+  const lockedModelLabel = (() => {
+    const m = models?.find((x) => sameModelRef(x, modelRef));
+    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
+  })();
+  // Read from the module set at every render, so a dismissal survives a trip away and back and
+  // never suppresses another Session's or model's notice; a dismissal bumps the counter to render.
+  const [, setDismissals] = useState(0);
+  const attention = composerNotice({
+    sessionId,
+    model: modelRef,
+    refusalHandoff,
+    contextWindow,
+    compactionLimit,
+    dismissed: dismissedNotices,
+  });
+  // The Agent the threshold confirmation is about to name. Its display name where it has one,
+  // else the id, which is the same fallback the `/agent` picker draws rows with.
+  const currentAgent = agents.find((a) => a.agentId === currentAgentId);
+  const currentAgentName = currentAgent?.name || (currentAgentId ?? "");
+
+  // Queued hint: shown after a successful steer until the message shows up in the stream
+  // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
+  // stops being observable (task no longer running).
+  const [steerPending, setSteerPending] = useState(false);
+  const steerBaseline = useRef(0);
+  useEffect(() => {
+    if (!steerPending) return;
+    // ...and once the server's mirror has actually arrived, since from then on the mirror is
+    // what renders the hint. Dropping the bridge there is what keeps a recall in ANOTHER tab
+    // from stranding this one: that empties pendingSteering without a delivery and without
+    // ending the run, so a bridge still raised would fall back to the bare "steering queued"
+    // hint for a message that no longer exists (#287).
+    if (
+      !running ||
+      (steeringDeliveredCount ?? 0) > steerBaseline.current ||
+      pendingSteering.length > 0
+    ) {
+      setSteerPending(false);
+    }
+  }, [steerPending, running, steeringDeliveredCount, pendingSteering.length]);
+
+  // Recall a queued message back into the draft (#287): the server withdraws the entry and
+  // returns its original content. One recall at a time; the id doubles as the busy flag so
+  // every recall button disables while one is in flight.
+  const [recallingId, setRecallingId] = useState<string | null>(null);
+  /** Restores recalled content into the draft: its text goes in FRONT of whatever is currently typed (it was composed first), attachments likewise; caret parked at the end, applyHistory-style. */
+  const applyRecalled = (r: RecalledMessageResponse) => {
+    // The recall round-trip may have taken keystrokes: read the live value off the controlled
+    // textarea rather than this closure's render-time `text`, or anything typed while the
+    // DELETE was in flight would be overwritten by the merge.
+    const { text: merged, dropGoal } = mergeRecalledDraft({
+      recalledText: r.text,
+      currentText: textareaRef.current?.value ?? text,
+      recalledFiles: r.files.length,
+      goalOn,
+    });
+    setText(merged);
+    onTextChange?.(merged);
+    setCaret(merged.length);
+    if (r.images.length > 0) setImages((prev) => [...r.images, ...prev]);
+    if (r.files.length > 0) {
+      // A goal draft cannot carry the restored files — release the staged chip rather than
+      // strand them behind a dead Send (why: see mergeRecalledDraft).
+      if (dropGoal) toggleGoal(false);
+      setAttachments((prev) => [
+        ...r.files.map((f) => ({
+          name: f.fileName,
+          size: dataUrlBytes(f.dataUrl),
+          dataUrl: f.dataUrl,
+        })),
+        ...prev,
+      ]);
+    }
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      el.scrollTop = el.scrollHeight;
+    });
+  };
+  const recallQueued = async (
+    id: string,
+    recall: (id: string) => Promise<RecalledMessageResponse | null>,
+  ) => {
+    // `busy` too: a send in flight is about to clear the draft, which would wipe the
+    // restored content if the recall slid in between. Both conditions also disable the
+    // buttons, so this guard is only the race backstop — the refusal is never silent.
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      const r = await recall(id);
+      if (r) {
+        // The mirror entry is gone server-side; drop the local post-202 bridge flag with it,
+        // or the bare "steering queued" hint would resurrect once pendingSteering empties.
+        setSteerPending(false);
+        applyRecalled(r);
+      }
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  /**
+   * The Interrupt link on a queued line: the server stops the run and sends that message as
+   * soon as the run settles. Shares the recall's one-at-a-time flag, since both act on the
+   * same queue.
+   */
+  const interruptQueued = async (id: string, interrupt: (id: string) => Promise<boolean>) => {
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      // A steering message it took leaves the mirror without a delivery; drop the post-202
+      // bridge flag too, or the bare "steering queued" hint would come back.
+      if (await interrupt(id)) setSteerPending(false);
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  /**
+   * Steering a finished run never delivered returns to the draft on its own. Interrupting
+   * while a tool is still running is the ordinary way to produce one: core drops its queue as
+   * the run exits, so without this the message — and the text the user had already typed into
+   * it — would simply disappear.
+   *
+   * It goes through the same recall channel the queued lines' button uses, so the merge into
+   * the draft, the attachment restore and the one-at-a-time guard are all the existing ones.
+   * Ids are marked BEFORE the request, not after: a recall that loses the race to another tab
+   * answers 409, and a retry on the next render would spin.
+   */
+  const autoRecalledIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!onRecallSteering || busy || recallingId !== null) return;
+    // Oldest first, matching the order the user typed them.
+    const next = returnedSteering.find((p) => !autoRecalledIds.current.has(p.id));
+    if (!next) return;
+    autoRecalledIds.current.add(next.id);
+    void recallQueued(next.id, onRecallSteering);
+    // recallQueued is re-created every render; depending on it would re-run this on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnedSteering, onRecallSteering, busy, recallingId]);
+
+  /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
+  const toggleSkill = useCallback(
+    (name: string) => {
+      const next = toggleSkillName(selectedSkills, name);
+      setSelectedSkills(next);
+      const steering = next.filter(
+        (skill) => steeringSkills.includes(skill) || (running && skill === name),
+      );
+      setSteeringSkills(steering);
+      onSkillsChange?.(next, steering);
+    },
+    [selectedSkills, steeringSkills, running, onSkillsChange],
+  );
+
+  /** The text the last fill put in the box, so a fill over it untouched does not ask (fillPrompt). */
+  const lastFillRef = useRef<string | null>(null);
+  /**
+   * Fill from a surface that composed a prompt, without sending (see ComposerControl): the
+   * prompt REPLACES the text body — any draft is cleared first — and the pinned installed
+   * skills replace the selection, so switching examples cannot retain another task's skills.
+   */
+  const applyFill = useCallback(
+    (prompt: string, pinnedSkills: readonly string[]) => {
+      const fill = buildExampleFill({
+        prompt,
+        exampleSkills: pinnedSkills,
+        installedSkills: skills.map((s) => s.name),
+      });
+      setText(fill.text);
+      onTextChange?.(fill.text);
+      lastFillRef.current = fill.text;
+      setCaret(0);
+      if (
+        steeringSkills.length > 0 ||
+        fill.skills.length !== selectedSkills.length ||
+        fill.skills.some((name, i) => name !== selectedSkills[i])
+      ) {
+        setSteeringSkills([]);
+        setSelectedSkills(fill.skills);
+        onSkillsChange?.(fill.skills);
+      }
+      // After the commit: the textarea is controlled, so the value and its new height only
+      // exist once React has rendered them (same rAF convention as applyRecalled/applyHistory).
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        // The prompt owns the box, so its first line is the top of it — a long prompt showing
+        // only its last line reads as broken.
+        el.setSelectionRange(0, 0);
+        el.scrollTop = 0;
+      });
+    },
+    [skills, selectedSkills, steeringSkills, onTextChange, onSkillsChange],
+  );
+  /**
+   * Every fill passes here, whichever surface sent it (an example task, a saved shortcut, a
+   * schedule's prompt, a reply's choice or form): replacing text the user typed asks first. A
+   * fill over an empty box, over the same prompt, or over what an earlier fill put there
+   * untouched (browsing the examples, or a pick before the choice's "Other…") goes straight in.
+   * An empty fill is a clear, and its confirmation says so.
+   */
+  const [pendingFill, setPendingFill] = useState<{
+    prompt: string;
+    pinnedSkills: readonly string[];
+  } | null>(null);
+  const clearingFill = pendingFill?.prompt === "";
+  const fillPrompt = useCallback(
+    (prompt: string, pinnedSkills: readonly string[]) => {
+      const typed = textRef.current;
+      if (typed.trim() !== "" && typed !== prompt && typed !== lastFillRef.current) {
+        setPendingFill({ prompt, pinnedSkills });
+      } else applyFill(prompt, pinnedSkills);
+    },
+    [applyFill],
+  );
+  const addReference = useCallback((reference: ComposerReference) => {
+    setReferences((prev) => [...prev, reference]);
+    // The chip is above the text body, so the caret stays where it was; focus follows the
+    // gesture back to the composer, which is where the sentence about it gets typed.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+  const focusBody = useCallback(() => textareaRef.current?.focus(), []);
+  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference, focus: focusBody }), [
+    fillPrompt,
+    addReference,
+    focusBody,
+  ]);
+
+  /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
+  const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
+  const commands = useMemo<SlashCommand[]>(() => {
+    /** Removes just the slash token after a command runs (the rest of the text stays; the height re-measures itself off the new value, see the autoGrow layout effect). */
+    const clearInput = () => {
+      const match = slashMatchRef.current;
+      const next = match ? removeSlashToken(textRef.current, match) : "";
+      setText(next);
+      onTextChange?.(next);
+    };
+    const items: SlashCommand[] = [
+      ...(!running && onCompact
+        ? [
+            {
+              cmd: "/compact",
+              desc: S.chat.compact,
+              run: () => {
+                clearInput();
+                void onCompact();
+              },
+            },
+          ]
+        : []),
+      // Goal mode is offered wherever a main conversation is composed, the draft included (its
+      // first send starts the goal): only the subagent variant offers no way in.
+      ...(!running && variant !== "subagent"
+        ? [
+            {
+              cmd: "/goal",
+              desc: S.chat.goalModeDesc,
+              run: () => {
+                clearInput();
+                toggleGoal(!goalOn);
+              },
+            },
+          ]
+        : []),
+      // Model switch (active idle session only — the parent passes onSwitchModel just there;
+      // draft state has its own model picker). Gated on the model list being loaded: without
+      // it the picker would open empty. Running the command consumes the /model token (like
+      // /compact) and opens the picker; the rest of the draft stays.
+      ...(!running && onSwitchModel && models && models.length > 0
+        ? [
+            {
+              cmd: "/model",
+              desc: S.chat.switchModel,
+              run: () => {
+                clearInput();
+                setModelSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
+      // Agent handoff: same shape as /model — the command consumes its token and opens the
+      // agent picker, whose pick is staged as a chip and only acted on at send time. Gated the
+      // same way too: the parent passes onHandoff for an active Session only, because a draft
+      // has nothing to hand over (and already picks its Agent in the draft page's own
+      // selector). Candidates must exist, or the picker would open empty.
+      ...(!running && onHandoff && agents.length > 0
+        ? [
+            {
+              cmd: "/agent",
+              desc: S.chat.switchAgent,
+              run: () => {
+                clearInput();
+                setAgentSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
+      // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
+      ...skillSlashItems(skills, locale).map((s) => ({
+        cmd: s.cmd,
+        desc: s.desc,
+        run: () => {
+          clearInput();
+          toggleSkill(s.name);
+        },
+      })),
+    ];
+    if (!running && !goalOn && switches && variant !== "subagent") {
+      // An installed mode cannot take over a built-in command or an Agent's skill.
+      const taken = new Set([
+        "/compact",
+        "/goal",
+        "/model",
+        "/agent",
+        ...items.map((item) => item.cmd),
+      ]);
+      for (const mode of switches.modes) {
+        if (!mode.composerCommand) continue;
+        const cmd = "/" + mode.composerCommand;
+        if (taken.has(cmd)) continue;
+        taken.add(cmd);
+        items.push({
+          cmd,
+          desc: mode.description || mode.title,
+          modeName: mode.name,
+          run: () => {
+            clearInput();
+            switches.onChange(toggled(switches.on, mode.name));
+          },
+        });
+      }
+    }
+    return items;
+  }, [
+    running,
+    switches,
+    variant,
+    onCompact,
+    onSwitchModel,
+    onHandoff,
+    models,
+    agents,
+    onTextChange,
+    skills,
+    locale,
+    toggleSkill,
+    toggleGoal,
+    goalOn,
+  ]);
+  // Positional matching: a slash opens the menu from any caret position; running a command
+  // removes just the token, leaving the rest of the text intact. Doesn't reopen after Escape
+  // until the caret sits on a different token; suppressed while a switch picker is open (the
+  // picker took over the interaction, and its own search box owns the keyboard).
+  const slashTok =
+    (!running || onSteer !== undefined) &&
+    !busy &&
+    !compacting &&
+    !modelSwitchOpen &&
+    !agentSwitchOpen
+      ? matchSlash(text, caret)
+      : null;
+  slashMatchRef.current = slashTok;
+  const slashMatches =
+    slashTok && slashTok.start !== slashDismissed
+      ? commands.filter((c) => c.cmd.startsWith(`/${slashTok.query}`))
+      : [];
+  const slashOpen = slashMatches.length > 0;
+  const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
+
+  /** Stage a model as the /model chip (null = drop it), keeping the draft cache in step. */
+  const stageModel = (m: ModelInfo | null) => {
+    setPendingModel(m);
+    onPendingModelChange?.(m ? { provider: m.provider, modelId: m.modelId } : null);
+  };
+
+  /**
+   * /model pick: **stages** the model as a chip instead of switching on the spot — the user
+   * keeps typing and Enter/Send performs the fork (see sendNormal), so the message that opens
+   * the new session is the one they meant to write. Picking the CURRENT model **clears** the
+   * staging: forking a session onto the model it already runs is nothing but a lost
+   * conversation, so that pick can only mean "never mind, stay here" — leaving an earlier pick
+   * armed would fork onto it on the next Enter, the opposite of what was just asked for.
+   * Exclusive with a staged handoff target and with goal mode (the latest pick wins).
+   */
+  const pickSwitchModel = (m: ModelInfo) => {
+    setModelSwitchOpen(false);
+    textareaRef.current?.focus();
+    if (sameModelRef(m, modelRef)) {
+      stageModel(null);
+      return;
+    }
+    stageModel(m);
+    setTarget(null);
+    onHandoffTargetChange?.(null);
+    setGoalOn(false);
+  };
+
+  /**
+   * /agent pick: stages the target agent as the handoff chip — nothing is sent yet, and the
+   * draft text is left alone (Enter/Send hands it to the new chat; an empty body still opens
+   * one, carrying just the [handoff_from] block). Exclusive with a staged model switch and with
+   * goal mode, exactly like the model pick above; the target is cached in the draft so the chip
+   * survives a reload.
+   */
+  const pickHandoffTarget = (agent: AgentSummary) => {
+    setAgentSwitchOpen(false);
+    setTarget(agent);
+    onHandoffTargetChange?.(agent.agentId);
+    stageModel(null);
+    setGoalOn(false);
+    textareaRef.current?.focus();
+  };
+
+  /** Drop whichever switch chip is staged (the chips' x buttons, and Backspace at the start of the text). */
+  const clearSwitchTarget = () => {
+    if (target !== null) {
+      setTarget(null);
+      onHandoffTargetChange?.(null);
+    }
+    stageModel(null);
+  };
+
+  /**
+   * Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). The
+   * measurement holds the card's height (see textarea-fit.ts): the transcript above is sized by
+   * what the composer leaves, and a collapse it could see would slide it on every keystroke.
+   */
+  const autoGrow = () => {
+    const el = textareaRef.current;
+    if (!el || resizableDraft) return;
+    fitTextarea(el, (box) => Math.min(box.scrollHeight, 176));
+  };
+
+  /**
+   * The height follows the **rendered** value, measured in a layout effect — the single place
+   * that sizes the box, covering mount (a restored multi-line draft), typing, and the clear
+   * after a send alike.
+   *
+   * It must be a layout effect keyed on `text` rather than a call next to each `setText`: the
+   * textarea is controlled, so after `setText("")` the DOM still holds the old text until React
+   * commits. A `requestAnimationFrame` scheduled alongside the state update races that commit
+   * and, when it wins, measures the old multi-line content and re-pins the tall height — with
+   * nothing left to measure again, the composer stayed expanded after every send. A layout
+   * effect runs after the commit by construction, and before paint, so the box never flashes.
+   */
+  useLayoutEffect(autoGrow, [text, resizableDraft]);
+
+  // History navigation ends the moment the composer text no longer matches the recalled
+  // entry — one rule covering user edits, slash-command rewrites and the post-send clear
+  // alike (applyHistory updates the text and `recalled` in the same commit, so stepping
+  // itself never trips this).
+  useEffect(() => {
+    const nav = historyNavRef.current;
+    if (nav && text !== nav.recalled) historyNavRef.current = null;
+  }, [text]);
+
+  // Cursor placement on mount: move it to the end of a restored draft (by default the browser
+  // places the cursor at the start when focusing a textarea that already has content), so typing
+  // continues the text naturally, and sync the caret state to match (the slash menu matches the
+  // token at the cursor).
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el && el.value.length > 0) {
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+      el.scrollTop = el.scrollHeight;
+      setCaret(end);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Installed skills change (Agent switch triggers a refetch: parent clears first, then
+  // updates): the selection keeps only skills that are still available — the tick where it's
+  // cleared wipes the whole selection, so nothing lingers across Agents. The first tick on mount
+  // is skipped: at that point the installed list hasn't been fetched yet (skills is empty), and
+  // pruning would wrongly clear initialSkills (quick-invoke pre-selection); prune only once the
+  // list is ready for the first time (the parent's clear uses functional setState to preserve
+  // reference identity, so an empty-to-empty clear doesn't trigger this effect).
+  const skillsPruneReady = useRef(false);
+  useEffect(() => {
+    if (!skillsPruneReady.current) {
+      skillsPruneReady.current = true;
+      if (skills.length === 0) return;
+    }
+    const next = selectedSkills.filter((n) => skills.some((s) => s.name === n));
+    if (next.length === selectedSkills.length) return;
+    setSelectedSkills(next);
+    const steering = steeringSkills.filter((name) => next.includes(name));
+    setSteeringSkills(steering);
+    onSkillsChange?.(next, steering);
+  }, [skills, selectedSkills, steeringSkills, onSkillsChange]);
+
+  /**
+   * The two chips are restored from the draft cache by two effects that fire whenever their own
+   * list finishes loading — and `agents` and `models` are separate fetches, so either can land
+   * first, possibly after the user has already staged something by hand. `staged` is what keeps
+   * that from painting two chips at once (which sendNormal would silently resolve in favour of
+   * the handoff): a restore only fills an EMPTY slot. When the user has staged a chip or turned
+   * goal mode on in the meantime, that live intent is newer than the cached one and wins — the
+   * restore is dropped, not merely deferred, exactly as one pick drops the other.
+   *
+   * Only one of the two can be cached at a time anyway (each pick clears the other's cache
+   * entry), so in the ordinary case this changes nothing.
+   */
+  const staged = target !== null || pendingModel !== null || goalOn;
+
+  // Restore the cached handoff target: resolved once by id when agents becomes ready for
+  // the first time (discarded if stale); a chip the user manually removes afterward is not restored again.
+  const handoffRestored = useRef(false);
+  useEffect(() => {
+    if (handoffRestored.current || !initialHandoffTargetId || agents.length === 0) return;
+    handoffRestored.current = true;
+    if (staged) return;
+    const restored = agents.find((a) => a.agentId === initialHandoffTargetId);
+    if (restored) setTarget(restored);
+  }, [agents, initialHandoffTargetId, staged]);
+
+  // Restore the cached /model switch target, mirroring the handoff restore above: resolved once
+  // against the model list when it first becomes ready. Dropped when that model is no longer
+  // configured, or when it is the model this session already runs on (the cache outlived a
+  // fork), since staging either would leave a chip that can only lose the conversation.
+  const pendingModelRestored = useRef(false);
+  useEffect(() => {
+    if (pendingModelRestored.current || !initialPendingModelRef || !models || models.length === 0) {
+      return;
+    }
+    pendingModelRestored.current = true;
+    if (staged || !onSwitchModel) return;
+    const restored = models.find(
+      (m) => m.chatEligible !== false && sameModelRef(m, initialPendingModelRef),
+    );
+    if (restored && !sameModelRef(restored, modelRef)) setPendingModel(restored);
+  }, [models, initialPendingModelRef, modelRef, onSwitchModel, staged]);
+
+  /**
+   * The full normal send path (task / handoff / model switch), also the follow-up queue path
+   * and the fallback target when a steer hits the completion race: assembles the [use_skills]
+   * block, the attachments (images and files) and the staged switch from the whole draft; `post`
+   * decides where a message that switches nothing goes (default: onSend; follow-up mode:
+   * onQueueFollowUp). Deliberately not gated on `running` — the caller decides (send() gates the
+   * normal path; the steering fallback calls this directly after the server said 409
+   * not_running, when the local `status` may still lag behind).
+   */
+  // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
+  // (fewer params) is assignable too. Non-goal calls always pass null.
+  const sendNormal = async (
+    post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
+  ) => {
+    const t = text.trim();
+    // Goal mode: the trimmed text is the objective (no file attachments, no staged switch —
+    // both are cleared when the chip goes on). Selected skills prefix the round-1 message as a
+    // [use_skills] block, exactly like a normal send — the server strips leading marker blocks
+    // when recording the objective, and rounds after the first re-inject the objective alone.
+    if (goalOn) {
+      // No file attachments: they were already cleared when goal mode engaged (and blocked
+      // from being added since), so there is nothing to carry here.
+      setBusy(true);
+      try {
+        // Attached images ride the round-1 message (see the goalOn declaration above).
+        const goalInput: TaskInputPart[] = [
+          { type: "text", text: buildSkillsMessage(selectedSkills, t) },
+        ];
+        for (const url of images) goalInput.push({ type: "image_url", imageUrl: url });
+        const ok = await onSend(goalInput, { budget: goalBudget! });
+        if (ok) {
+          setText("");
+          setImages([]);
+          setSelectedSkills([]);
+          setSteeringSkills([]);
+          toggleGoal(false);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      return;
+    }
+    // A staged switch chip (from /agent or /model) redirects the send away from the current
+    // Session: an agent target hands the draft to a NEW chat for that agent, a model target
+    // forks this conversation onto that model. The two are mutually exclusive by construction
+    // (picking either clears the other); the model chip only exists where onSwitchModel does.
+    // "blocked" = a staged fork while this Session is running or compacting: canSend/canFollowUp
+    // already refuse, but this path is deliberately not gated on run state (the steering
+    // completion race calls it directly), so refuse here too rather than fall through to `post`
+    // — that would deliver the message to the very Session the user was switching away from.
+    if (stagedRoute === "blocked") return;
+    const switchModel = stagedRoute === "model" ? pendingModel : null;
+    // Empty text body: fall back to an auto-line rather than sending nothing — the localized
+    // skills invocation when skills are selected, otherwise the model-switch line for a staged
+    // switch. A handoff needs no fallback: its first message may legitimately be nothing but
+    // the [handoff_from] source block.
+    // Staged quotations go in front of what was typed: they are what the message is about, and
+    // the sentence after them reads as being about them.
+    const quoted = withReferences(references, t);
+    const bodyText =
+      quoted !== ""
+        ? quoted
+        : selectedSkills.length > 0
+          ? S.chat.skillsAutoMessage(selectedSkills)
+          : switchModel
+            ? S.chat.modelSwitchAutoMessage
+            : quoted;
+    // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (every branch wraps its body the same way).
+    const body = buildSkillsMessage(selectedSkills, bodyText);
+    const input: TaskInputPart[] = [];
+    if (body) input.push({ type: "text", text: body });
+    appendAttachmentParts(input, images, attachments);
+    setBusy(true);
+    try {
+      const ok = target
+        ? await onHandoff!(target, input)
+        : switchModel
+          ? await onSwitchModel!(
+              { provider: switchModel.provider, modelId: switchModel.modelId },
+              input,
+            )
+          : await post(input, null);
+      // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and attachments.
+      if (ok) {
+        setText("");
+        setImages([]);
+        setAttachments([]);
+        setReferences([]);
+        setTarget(null);
+        setPendingModel(null);
+        setSelectedSkills([]);
+        setSteeringSkills([]);
+      }
+    } finally {
+      setBusy(false);
+      textareaRef.current?.focus();
+    }
+  };
+
+  const send = async () => {
+    if (running) {
+      // Interrupt branch: the whole draft goes out through the normal composition path, posted
+      // with `interrupt` — the server stops this run and sends it right after the turn it cut.
+      if (interruptAction) {
+        await sendNormal(onInterruptSend!);
+        return;
+      }
+      // Queue branch: the whole draft goes out through the normal composition path, posted
+      // with queueIfBusy — the server holds it and auto-sends once this run finishes (a staged
+      // switch still opens its new chat directly: neither the handoff target nor the model fork
+      // is the session that is running). One branch for both ways of getting here — follow-up
+      // mode, and steer mode meeting a draft steering cannot carry — since the message sent is
+      // the same either way.
+      if (queueAction) {
+        await sendNormal(onQueueFollowUp!);
+        return;
+      }
+      // Steering branch: queue the trimmed text, the attached images and the attached files
+      // for the running agent; all are sent and cleared together — selected skills stay for
+      // a normal send (a staged switch chip blocks this branch outright, see midRunAction).
+      if (!steerAction) return;
+      const invoked = selectedSkills.filter((name) => steeringSkills.includes(name));
+      const typed = withReferences(references, text.trim());
+      const steerText = buildSkillsMessage(
+        invoked,
+        typed || (invoked.length ? S.chat.skillsAutoMessage(invoked) : ""),
+      );
+      const steerImages = images;
+      const steerFiles = attachments.map((f) => ({ fileName: f.name, dataUrl: f.dataUrl }));
+      setBusy(true);
+      let res: "queued" | "not_running" | "failed" = "failed";
+      try {
+        res = await onSteer!(steerText, steerImages, steerFiles);
+        if (res === "queued") {
+          // Show the "queued" hint until the steering message shows up in the stream
+          // (steeringDeliveredCount increases) — see the effect below.
+          steerBaseline.current = steeringDeliveredCount ?? 0;
+          setSteerPending(true);
+          const remaining = selectedSkills.filter((name) => !invoked.includes(name));
+          setSelectedSkills(remaining);
+          setSteeringSkills([]);
+          if (selectedSkills.length > 0) onSkillsChange?.(remaining, []);
+          setText("");
+          setImages([]);
+          setAttachments([]);
+          setReferences([]);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      // Completion race: the SSE snapshot can still say running after /steer reports that the
+      // core run has ended. Deliver the untouched whole draft — skills and all — through the
+      // queue-if-busy path. That endpoint is safe on both sides of the server's own completion
+      // seam: it starts immediately when idle, or queues behind the last sliver of the old run.
+      // A plain Task POST could race the manager's idle flip and return 409, stranding the draft
+      // on a reloaded page (#89).
+      if (res === "not_running") await sendNormal(onQueueFollowUp ?? onSend);
+      return;
+    }
+    if (!canSend) return;
+    const mode = commands.find((item) => item.modeName && item.cmd === text.trim());
+    if (mode) {
+      mode.run();
+      return;
+    }
+    await sendNormal();
+  };
+
+  /**
+   * Applies a history step: the recalled text goes through the normal draft path
+   * (onTextChange keeps the draft cache in step) with the caret parked at the end — set
+   * after React commits the new value (setSelectionRange now would act on the old text).
+   */
+  const applyHistory = (step: HistoryStep) => {
+    historyNavRef.current = step.nav;
+    setText(step.text);
+    onTextChange?.(step.text);
+    setCaret(step.text.length);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.setSelectionRange(el.value.length, el.value.length);
+      el.scrollTop = el.scrollHeight;
+    });
+  };
+
+  const dictation = useDictation({
+    disabled: busy,
+    insert: (spoken) => {
+      const el = textareaRef.current;
+      const current = el?.value ?? text;
+      const at = el?.selectionStart ?? current.length;
+      const end = el?.selectionEnd ?? at;
+      const separator =
+        at > 0 &&
+        /[\p{Script=Latin}\d]/u.test(current[at - 1]!) &&
+        /^[\p{Script=Latin}\d]/u.test(spoken)
+          ? " "
+          : "";
+      const after =
+        end < current.length &&
+        /[\p{Script=Latin}\d]$/u.test(spoken) &&
+        /^[\p{Script=Latin}\d]/u.test(current.slice(end))
+          ? " "
+          : "";
+      const next = current.slice(0, at) + separator + spoken + after + current.slice(end);
+      const pos = at + separator.length + spoken.length + after.length;
+      setText(next);
+      onTextChange?.(next);
+      setCaret(pos);
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+  });
+
+  const resizeFromKeyboard = useDraftHeight(textareaRef, text, resizableDraft);
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (resizeFromKeyboard(e)) return;
+    if (dictation.active && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      return;
+    }
+    if (slashOpen) {
+      if (e.nativeEvent.isComposing) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % slashMatches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        activeSlash?.run();
+        return;
+      }
+      if (e.key === "Escape") {
+        // Only closes the popup, doesn't clear the input: with positional matching the `/token`
+        // is part of the text body like any other word, and wiping a controlled textarea is not
+        // undoable with Ctrl+Z. Reopens if the user keeps typing on another token.
+        e.preventDefault();
+        e.stopPropagation();
+        setSlashDismissed(slashTok?.start ?? null);
+        return;
+      }
+    }
+    // Shell-style history recall on the arrows (the slash-menu navigation above wins while
+    // that menu is open; IME composition keeps the arrows for candidate-list navigation).
+    // ↑ steps back only from the first line — from an empty draft, or within an unedited
+    // recalled entry once the caret has walked up to line 1 — and ↓ mirrors that on the
+    // last line, so caret movement inside a multi-line text is never hijacked.
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.nativeEvent.isComposing) {
+      const caretStart = e.currentTarget.selectionStart ?? 0;
+      const caretEnd = e.currentTarget.selectionEnd ?? caretStart;
+      const step =
+        e.key === "ArrowUp"
+          ? caretOnFirstLine(text, caretStart)
+            ? historyStepBack(history, historyNavRef.current, text)
+            : null
+          : caretOnLastLine(text, caretEnd)
+            ? historyStepForward(history, historyNavRef.current, text)
+            : null;
+      if (step) {
+        e.preventDefault();
+        applyHistory(step);
+        return;
+      }
+    }
+    // Backspace at the start of the text: removes the staged switch chip (consistent with common chip-input interaction).
+    if (
+      e.key === "Backspace" &&
+      (target !== null || pendingModel !== null) &&
+      e.currentTarget.selectionStart === 0 &&
+      e.currentTarget.selectionEnd === 0
+    ) {
+      e.preventDefault();
+      clearSwitchTarget();
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  const addFiles = (files: Iterable<File>) => {
+    // Images had no size check at all: an oversize paste was read into a data URL, JSON'd and
+    // uploaded, freezing the tab on the way to a generic body-cap 413. They are capped well
+    // below file attachments on purpose — an inline image rides the conversation and the Trace,
+    // where its size is paid again on every history page and every resume.
+    const imageFiles: File[] = [];
+    for (const file of files) if (file.type.startsWith("image/")) imageFiles.push(file);
+    const { accepted, rejected } = splitBySize(imageFiles, uploadLimits.imageMaxMb);
+    for (const file of rejected) {
+      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.imageMaxMb));
+    }
+    for (const file of accepted) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setImages((prev) => [...prev, reader.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    // The subagent variant takes text only: a pasted file/image falls through to the
+    // browser's default handling (which drops the binary and keeps any text).
+    if (variant !== "session") return;
+    const files: File[] = [];
+    for (const item of e.clipboardData.items) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      addFiles(files);
+      return;
+    }
+    // A paste too long for the text box (a whole log) is attached as a text file instead:
+    // inserted, it makes every later keystroke re-render the whole text and the tab hangs.
+    // Goal mode takes no file attachments, so there the text goes in as it always did.
+    const text = e.clipboardData.getData("text/plain");
+    if (!goalOn && isLongPaste(text)) {
+      e.preventDefault();
+      const name = longPasteFileName(new Date());
+      addAttachments([new File([text], name, { type: "text/plain" })]);
+      toastInfo(S.chat.longPasteAttached(name));
+    }
+  };
+
+  const onPickFiles = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addFiles(e.target.files);
+    e.target.value = "";
+  };
+
+  /**
+   * File attachments (any type, no `accept` filter): read as base64 data URLs, the same
+   * transport images use — a draft has no Session to upload to yet. The name and size come
+   * from the File itself and only feed the chip; the server decides the on-disk name.
+   *
+   * Oversize files are rejected from `File.size` before anything is read, the same way trace
+   * import does it (traces-page.tsx): base64-encoding a rejected file in the tab first would
+   * cost the user a freeze and a 33%-larger upload to earn the same 413.
+   *
+   * The whole batch is read before any of it is staged, so the chips — and therefore the
+   * `[attached file: …]` lines the message ends up with — follow the order the files were
+   * picked in, not the order the reads happened to finish in.
+   */
+  const addAttachments = (files: Iterable<File>) => {
+    if (goalOn) return; // a goal takes no file attachments: the server refuses them
+    const { accepted: picked, rejected } = splitBySize(files, uploadLimits.attachmentMaxMb);
+    for (const file of rejected) {
+      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.attachmentMaxMb));
+    }
+    if (picked.length === 0) return;
+    void Promise.all(picked.map(readDataUrl)).then((urls) => {
+      const staged = picked.flatMap((file, i) =>
+        urls[i] ? [{ name: file.name, size: file.size, dataUrl: urls[i]! }] : [],
+      );
+      if (staged.length > 0) setAttachments((prev) => [...prev, ...staged]);
+    });
+  };
+
+  const onPickAttachments = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addAttachments(e.target.files);
+    e.target.value = "";
+  };
+
+  /**
+   * Files dropped onto the chat area (see FileDropZone): one batch, routed into the SAME two
+   * intakes the "+" menu and paste use — images join the pasted-image pipeline, everything
+   * else joins the file-attachment pipeline (each with its own cap and the same rejection toast,
+   * see uploadLimits). Goal mode takes
+   * images but not files (nothing folds a file into the re-injected objective — the "+" menu
+   * grays its file entry out for the same reason); a drop has no disabled affordance to gray,
+   * so the refusal is said out loud instead of silently swallowing the files.
+   */
+  const addDroppedFiles = (dropped: File[]) => {
+    if (variant !== "session") return; // Text-only surface: drops have nowhere to go.
+    const batch = splitDroppedFiles(dropped);
+    if (batch.images.length > 0) addFiles(batch.images);
+    if (batch.files.length > 0) {
+      if (goalOn) toastInfo(S.chat.dropFilesGoalHint);
+      else addAttachments(batch.files);
+    }
+  };
+  /**
+   * The image picker moved into the "+" menu, so the file input can no longer be a `<label>`
+   * wrapper: the menu unmounts its items on select. It lives outside the menu instead and the
+   * entry clicks it — still inside the click's user-activation window, so the dialog opens.
+   * The file-attachment picker below works the same way.
+   */
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * The staged chips the chip row lists: the /agent handoff target (the Agent avatar — the
+   * identity tile used everywhere Agents are picked — and its id, so the chip reads as "this
+   * goes to that Agent" without spelling the sentence out), the /model switch (provider logo and
+   * model name, matching the composer's own model display; sending forks the conversation onto
+   * it), and the selected skills.
+   */
+  const switchChips: TagInputChip[] = [
+    ...(target !== null
+      ? [
+          {
+            key: "target",
+            label: target.agentId,
+            mono: true,
+            glyph: (
+              <AgentAvatar
+                id={target.agentId}
+                size={13}
+                className="shrink-0 rounded-sm"
+                src={avatarSrc(target.agentId, agentsMachineId)}
+              />
+            ),
+            tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
+            tooltipExtra: true,
+            removeLabel: S.chat.handoffRemove,
+          },
+        ]
+      : []),
+    ...(pendingModel !== null
+      ? [
+          {
+            key: "model",
+            label: modelLabel(pendingModel),
+            glyph: (
+              <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
+            ),
+            tooltip: S.chat.modelSwitchTargetTitle(modelLabel(pendingModel)),
+            tooltipExtra: true,
+            removeLabel: S.chat.modelSwitchRemove,
+          },
+        ]
+      : []),
+    ...selectedSkills.map((name) => {
+      const meta = skills.find((sk) => sk.name === name);
+      return {
+        key: `skill:${name}`,
+        label: name,
+        mono: true,
+        glyph: <SkillIcon icon={meta?.icon} size={13} className="shrink-0 text-fg-muted" />,
+        ...(meta ? { tooltip: localizedShortText(locale, meta), tooltipExtra: true } : {}),
+        removeLabel: `${S.chat.skillRemove} ${name}`,
+      };
+    }),
+  ];
+  /** A staged chip's ×: the switch chips hand the caret back to the text, a skill just drops. */
+  const removeChip = (key: string) => {
+    if (key === "target") {
+      setTarget(null);
+      onHandoffTargetChange?.(null);
+      textareaRef.current?.focus();
+    } else if (key === "model") {
+      stageModel(null);
+      textareaRef.current?.focus();
+    } else if (key.startsWith("skill:")) {
+      toggleSkill(key.slice("skill:".length));
+    }
+  };
+
+  /** The goal chip's budget: a value button whose editor opens as a fixed upward popover. */
+  const goalBudgetPicker = (
+    <Dropdown
+      open={goalBudgetOpen}
+      setOpen={setGoalBudgetEditorOpen}
+      onEscape={cancelGoalBudget}
+      className="min-w-0"
+      portal={{ direction: "up", align: "left" }}
+      menuClass="w-64 origin-bottom"
+      button={
+        <button
+          type="button"
+          aria-label={goalBudgetSummary}
+          aria-expanded={goalBudgetOpen}
+          onClick={() => setGoalBudgetEditorOpen(!goalBudgetOpen)}
+          className="flex h-5 min-w-0 items-center gap-1 rounded px-1.5 text-xs text-gray-600 transition-colors duration-150 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+        >
+          <span className="truncate">{goalBudgetSummary}</span>
+          <ChevronDown size={ICON_SIZE.caretDense} />
+        </button>
+      }
+    >
+      <div className="px-3 py-2">
+        <label
+          htmlFor="goal-budget-input"
+          className="block text-xs font-medium text-gray-700 dark:text-gray-200"
+        >
+          {S.chat.goalBudgetLabel}
+        </label>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <input
+            id="goal-budget-input"
+            autoFocus
+            value={goalBudgetDraft}
+            onChange={(e) => setGoalBudgetDraft(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => {
+              // Escape is handled at the window level (Dropdown onEscape →
+              // cancelGoalBudget), so it cancels no matter where focus sits.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                saveGoalBudget();
+              }
+            }}
+            placeholder={S.chat.goalBudgetPlaceholder}
+            aria-invalid={goalBudgetDraftInvalid}
+            aria-describedby="goal-budget-hint"
+            {...noAutofill}
+            className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
+              goalBudgetDraftInvalid
+                ? "border-red-400 text-red-600 focus:border-red-500 focus:ring-red-400/20 dark:border-red-500 dark:text-red-400"
+                : "border-gray-300 text-gray-800 focus:border-gray-500 focus:ring-gray-400/20 dark:border-gray-700 dark:text-gray-100 dark:focus:border-gray-500"
+            }`}
+          />
+          <button
+            type="button"
+            aria-label={S.chat.goalBudgetSave}
+            data-tooltip={S.chat.goalBudgetSave}
+            disabled={goalBudgetDraftInvalid}
+            onClick={saveGoalBudget}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+          >
+            <CheckIcon size={14} />
+          </button>
+        </div>
+        <p
+          id="goal-budget-hint"
+          className={`mt-1.5 text-xs leading-4 ${
+            goalBudgetDraftInvalid
+              ? "text-red-500 dark:text-red-400"
+              : "text-gray-400 dark:text-gray-500"
+          }`}
+        >
+          {goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint}
+        </p>
+      </div>
+    </Dropdown>
+  );
+
+  return (
+    <div className="relative">
+      {/* Drag-and-drop upload: mounted with the composer (chat page and draft page alike, and
+          kept while a Task runs), so dropping works exactly when there is a composer to attach
+          to — but bounded to the enclosing ChatDropRegion, so only the chat area reacts.
+          Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
+      {variant === "session" && <FileDropZone onFiles={addDroppedFiles} />}
+      {(slashOpen || agentSwitchOpen) && (
+        <Dropdown
+          button={null}
+          open
+          anchorElement={textareaRef}
+          returnFocus={() => textareaRef.current}
+          portal={{ direction: "up", align: "left" }}
+          focusOnOpen={agentSwitchOpen}
+          menuClass="w-80 overscroll-contain"
+          setOpen={() => {
+            if (agentSwitchOpen) {
+              setAgentSwitchOpen(false);
+              textareaRef.current?.focus();
+            } else {
+              setSlashDismissed(slashTok?.start ?? null);
+            }
+          }}
+        >
+          {agentSwitchOpen ? (
+            <>
+              <MenuTitle>{S.chat.switchAgentTitle}</MenuTitle>
+              <AgentMenuList
+                agents={agents}
+                {...(currentAgentId !== undefined ? { currentAgentId } : {})}
+                onPick={pickHandoffTarget}
+                avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
+              />
+            </>
+          ) : (
+            <SlashMenuRows
+              items={slashMatches.map((c) => ({ command: c.cmd, description: c.desc }))}
+              active={Math.min(slashIndex, slashMatches.length - 1)}
+              onActiveChange={setSlashIndex}
+              onRun={(i) => slashMatches[i]?.run()}
+            />
+          )}
+        </Dropdown>
+      )}
+
+      {/* /model handoff picker (session state): the same model-picker dialog the draft's model
+          selector opens, on the session's model; picking it is a no-op. The /model token was
+          already consumed when the command ran, so cancelling (Escape / overlay click) keeps
+          the remaining draft and cannot re-open the slash menu, and the dialog hands focus back
+          to the textarea it was opened from. A pick only stages the chip below — the new
+          conversation opens on send. */}
+      {models && (
+        <ModelPickerModal
+          open={modelSwitchOpen}
+          onClose={() => setModelSwitchOpen(false)}
+          title={S.chat.switchModelTitle}
+          models={models}
+          value={modelRef}
+          {...(defaultModel !== undefined ? { defaultModel } : {})}
+          onPick={pickSwitchModel}
+        />
+      )}
+
+      {/* A setting needs changing (`composerNotice` says which). Amber rather than muted
+          body text like the notices below it: the other two describe what the composer is about
+          to do, this one asks for a settings change, and `attention` is the tone for a thing
+          waiting on the user. Dismissible, because keeping the threshold high on purpose is a
+          legitimate answer and a notice with no way down stops being read. */}
+      {attention !== null && (
+        // The shared notice: its buttons keep their labels whole, so where the sentence would
+        // be left a few characters a line beside them (a phone at a large text size), they
+        // drop to a row of their own instead.
+        <Notice
+          tone="attention"
+          className="anim-fade mb-1"
+          dismiss={{
+            label: S.chat.contextWindowUnderThresholdDismiss,
+            onClick: () => {
+              dismissedNotices.add(attention.key);
+              setDismissals((n) => n + 1);
+            },
+          }}
+          {...(onOpenAgentSettings
+            ? {
+                action: {
+                  label: S.chat.contextWindowUnderThresholdAction,
+                  onClick: onOpenAgentSettings,
+                },
+              }
+            : {})}
+        >
+          {attention.kind === "refused" ? (
+            <RefusedHandoffNotice message={attention.message} onDetails={onShowRefusal} />
+          ) : (
+            S.chat.contextWindowUnderThreshold(
+              humanizeTokens(attention.window),
+              humanizeTokens(attention.threshold),
+            )
+          )}
+        </Notice>
+      )}
+
+      {/* Goal mode on an Agent without the goal plugin: the goal could not start, so Send is held
+          and the plugin is offered right here — installed on the Agent this composer sends to.
+          `attention`, like the threshold notice above: it waits on the user. */}
+      {goalOn && (goalGate.status === "missing" || goalGate.status === "installing") && (
+        <Notice
+          tone="attention"
+          glyph={GOAL_ICON}
+          role="status"
+          className="anim-fade mb-1"
+          action={{
+            label: S.chat.goalPluginInstall,
+            onClick: () => void goalGate.install(),
+            busy: goalGate.status === "installing",
+          }}
+        >
+          {S.chat.goalPluginMissing}
+        </Notice>
+      )}
+
+      {/* When the model doesn't support viewing images directly: images still upload as usual,
+          and on send the server writes them to the session's scratchpad and appends the file
+          path into the message text (the model views them via read_file). A small note is
+          shown while images are attached. */}
+      {!vision && images.length > 0 && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.imagesAsPathHint}
+        </p>
+      )}
+
+      {/* A staged /model fork that has to wait for this Session to go idle (a run started from
+          outside the composer, or a compaction): the Send button is disabled either way, and
+          this is the line that says why — the chip stays staged and goes out on the next Enter
+          once the Session settles. */}
+      {stagedRoute === "blocked" && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.modelSwitchBusyHint}
+        </p>
+      )}
+
+      {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
+          queued message with its content — task_state-fed, so it survives reloads (#136,
+          #140) — plus a recall button that takes the message back into this input for
+          editing and resending (#287), and an Interrupt link that sends it now. The local
+          steerPending flag only bridges the gap between the 202 and the first task_state
+          that carries the mirror. */}
+      {pendingSteering.length > 0 ? (
+        <div className="anim-fade mb-1">
+          {pendingSteering.map((p, i) => (
+            <QueuedMessageLine
+              key={p.id ?? i}
+              label={S.chat.steerQueuedItem(steeringSummary(p))}
+              disabled={recallingId !== null || busy}
+              {...(onRecallSteering && p.id
+                ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
+                : {})}
+              {...(onInterruptSteering && p.id
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptSteering) }
+                : {})}
+            />
+          ))}
+        </div>
+      ) : (
+        steerPending && (
+          <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.steerQueuedIndicator}
+          </p>
+        )
+      )}
+
+      {/* Queued follow-ups (server-side, auto-sent once this run finishes): one line per
+          queued message with its content, an Interrupt link and a recall button (#287) —
+          task_state-fed, so it survives reloads; the bare count stays as the fallback for a
+          server that predates the per-entry list. An interrupt waiting for the run it stopped
+          to settle says so and has no link: it is already going out first. */}
+      {pendingFollowUps.length > 0 ? (
+        <div className="anim-fade mb-1">
+          {pendingFollowUps.map((p) => (
+            <QueuedMessageLine
+              key={p.id}
+              label={
+                p.interrupt
+                  ? S.chat.interruptQueuedItem(steeringSummary(p))
+                  : S.chat.followUpQueuedItem(steeringSummary(p))
+              }
+              disabled={recallingId !== null || busy}
+              {...(onRecallFollowUp
+                ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
+                : {})}
+              {...(onInterruptFollowUp && !p.interrupt
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptFollowUp) }
+                : {})}
+            />
+          ))}
+        </div>
+      ) : (
+        queuedFollowUps > 0 && (
+          <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.followUpQueuedChip(queuedFollowUps)}
+          </p>
+        )
+      )}
+
+      {/* The hidden inputs behind the "+" menu's upload entries: kept mounted here (outside the
+          menu, which unmounts its items on select) and clicked by those entries. The file picker
+          has no `accept` — an attachment can be any type, the model reads it from disk. */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={onPickFiles}
+      />
+      <input
+        ref={attachmentInputRef}
+        type="file"
+        multiple
+        disabled={goalOn}
+        className="hidden"
+        onChange={onPickAttachments}
+      />
+
+      {/* Unified input card: the multi-line text body occupies the top area, with all controls
+          collected onto a single bottom row that never shares a line with the text. The card
+          collapses its toolbar by its own width (help text and button text hide under its
+          container breakpoints) — the card's width changes with the viewport and with the Files
+          panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
+      <ComposerCard
+        cover={
+          cover?.(
+            text.trim() !== "" ||
+              images.length > 0 ||
+              attachments.length > 0 ||
+              references.length > 0 ||
+              selectedSkills.length > 0 ||
+              target !== null ||
+              pendingModel !== null,
+          ) ?? null
+        }
+        banner={banner}
+        attachments={
+          // The staged images, then the staged files, as one row of tiles at the top of the
+          // card: the same tiles the message shows once sent. A file's name is the picked
+          // file's — the server sanitizes it when writing to the scratchpad, and the sent
+          // message then shows the on-disk name.
+          images.length > 0 || attachments.length > 0 ? (
+            <AttachmentList>
+              {images.map((url, i) => (
+                <AttachmentImage
+                  key={`image-${i}`}
+                  src={url}
+                  alt={S.chat.imageAlt}
+                  removeLabel={S.chat.removeImage}
+                  onRemove={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                />
+              ))}
+              {attachments.map((file, i) => (
+                <AttachmentFile
+                  key={`file-${i}`}
+                  name={file.name}
+                  size={formatBytes(file.size)}
+                  removeLabel={`${S.chat.removeFile} ${file.name}`}
+                  onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                />
+              ))}
+            </AttachmentList>
+          ) : undefined
+        }
+        chips={
+          // Chip row above the text body: the goal chip, the staged switch target (an /agent
+          // handoff or a /model fork — never both), the selected skills, and whatever the Files
+          // panel has contributed, all sharing the same chip look.
+          target !== null ||
+          pendingModel !== null ||
+          selectedSkills.length > 0 ||
+          references.length > 0 ||
+          goalOn ||
+          switchesOn.length > 0 ? (
+            <ChipRow
+              leading={
+                // Goal-mode chip: the budget stays compact as a value button; its editor is a
+                // fixed upward popover so it never covers the objective textarea below.
+                goalOn ? (
+                  <Chip
+                    label={S.chat.goalMode}
+                    glyph={<GlyphIcon d={GOAL_ICON} size={13} className="text-fg-muted" />}
+                    tooltip={S.chat.goalModeDesc}
+                    tooltipExtra
+                    removeLabel={S.chat.goalRemove}
+                    onRemove={() => toggleGoal(false)}
+                    control={goalBudgetPicker}
+                  />
+                ) : (
+                  // A switch's chip stays after a send: it holds until it is removed.
+                  switchesOn.map((mode) => (
+                    <Chip
+                      key={mode.name}
+                      label={mode.title}
+                      glyph={
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={13}
+                          className="text-fg-muted"
+                        />
+                      }
+                      tooltip={mode.description}
+                      tooltipExtra
+                      removeLabel={S.chat.switchOff(mode.title)}
+                      onRemove={() => flipSwitch(mode.name)}
+                    />
+                  ))
+                )
+              }
+              chips={switchChips}
+              onRemove={removeChip}
+              trailing={
+                // Staged from the Files panel (a file, a directory, a quoted range) or from the
+                // conversation's selection menu (an excerpt). The text itself never enters the
+                // draft — the chip names what it points at, and the message carries it on send.
+                references.map((reference, i) => (
+                  <ReferenceChip
+                    key={i}
+                    reference={reference}
+                    onRemove={() => {
+                      setReferences((prev) => prev.filter((_, j) => j !== i));
+                      textareaRef.current?.focus();
+                    }}
+                  />
+                ))
+              }
+            />
+          ) : undefined
+        }
+        textarea={{
+          ...(resizableDraft
+            ? {
+                style: { maxHeight: "none" },
+                "aria-keyshortcuts": "Alt+Shift+ArrowUp Alt+Shift+ArrowDown",
+                "aria-description": S.chat.resizeDraft,
+              }
+            : {}),
+          ref: textareaRef,
+          value: text,
+          autoFocus,
+          onChange: (e) => {
+            let value = e.target.value;
+            let caretNow = e.target.selectionStart ?? value.length;
+            // Typing the separator or pasting a complete command selects the mode and leaves
+            // its body editable. Other slash commands and running-task steering keep their input.
+            const prefix = /^(\/[a-z][a-z0-9-]*)(\s+)/.exec(value);
+            const mode = prefix && commands.find((item) => item.cmd === prefix[1])?.modeName;
+            if (mode && switches && prefix) {
+              if (!switches.on.includes(mode)) switches.onChange([...switches.on, mode]);
+              value = value.slice(prefix[0].length);
+              caretNow = Math.max(0, caretNow - prefix[0].length);
+            }
+            setText(value);
+            onTextChange?.(value);
+            setCaret(caretNow);
+            setSlashIndex(0);
+            // Closing via Escape only persists for "the same token": continuing to type within
+            // that slash command won't reopen the menu; it re-opens once the cursor is no longer
+            // on that token (deleted, moved away, or replaced by a new one).
+            setSlashDismissed((d) => {
+              if (d === null) return null;
+              const m = matchSlash(value, caretNow);
+              return m && m.start === d ? d : null;
+            });
+          },
+          // Cursor movement (arrow keys/click) syncs to caret: the slash menu matches the token at the cursor.
+          onSelect: (e) => setCaret(e.currentTarget.selectionStart ?? 0),
+          onKeyDown,
+          onPaste,
+          placeholder:
+            running && interruptMode
+              ? narrow
+                ? S.chat.interruptPlaceholderShort
+                : S.chat.interruptPlaceholder
+              : running && followUpMode
+                ? narrow
+                  ? S.chat.followUpPlaceholderShort
+                  : S.chat.followUpPlaceholder
+                : running && onSteer
+                  ? narrow
+                    ? S.chat.steerPlaceholderShort
+                    : S.chat.steerPlaceholder
+                  : narrow
+                    ? S.chat.inputPlaceholderShort
+                    : S.chat.inputPlaceholder,
+        }}
+        tools={
+          // The three icon buttons — +, permission, skills — sit as one tight cluster: the row's
+          // wider gap would read them as unrelated controls.
+          <>
+            {/* "+" extension menu, leading the row: input add-ons (image upload, file
+                attachment, goal mode) plus the input settings footer (mid-run send mode —
+                usable while running, which is exactly when it matters, so the button itself
+                never disables). The uploads live in here rather than as their own toolbar
+                buttons: one 8x8 slot instead of three, which is the difference between the
+                phone row scrolling and not. */}
+            {variant === "session" && (
+              <PlusMenu
+                items={[
+                  {
+                    key: "image",
+                    icon: ICONS.image,
+                    label: S.chat.uploadImage,
+                    // Without vision the images still send — as scratchpad file paths — so the
+                    // entry stays usable and the hint says what will happen instead. Goal mode
+                    // changes nothing here: a goal's images ride its first message as ordinary
+                    // image input, so the model's vision decides how they arrive, exactly as
+                    // for any other send.
+                    desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                    active: images.length > 0,
+                    onSelect: () => imageInputRef.current?.click(),
+                  },
+                  {
+                    key: "file",
+                    icon: ICONS.paperclip,
+                    label: S.chat.uploadFile,
+                    // The description doubles as the explanation of where the file ends up:
+                    // it is filed into the session scratchpad and reached by path, never
+                    // inlined into the conversation.
+                    desc: S.chat.uploadFileDesc,
+                    active: attachments.length > 0,
+                    // Unlike images, a file cannot ride a goal: the server refuses file
+                    // attachments on a goal request.
+                    disabled: goalOn,
+                    onSelect: () => attachmentInputRef.current?.click(),
+                  },
+                  {
+                    key: "goal",
+                    icon: GOAL_ICON,
+                    label: S.chat.goalMode,
+                    desc: S.chat.goalModeDesc,
+                    active: goalOn,
+                    disabled: running || compacting || busy,
+                    onSelect: () => toggleGoal(!goalOn),
+                  },
+                  // A switch holds for the messages that follow, so it stays reachable mid-run.
+                  ...(switches?.modes ?? []).map((mode) => ({
+                    key: `switch:${mode.name}`,
+                    // Drawn like the entries above, whose path glyphs the menu sets in the
+                    // muted subtle ink at the inline size: a plugin's mark takes the same.
+                    icon: (
+                      <SkillIcon
+                        icon={mode.icon}
+                        fallback={ICONS.fishHook}
+                        size={ICON_SIZE.inlineGlyph}
+                        className="text-fg-subtle"
+                      />
+                    ),
+                    label: mode.title,
+                    desc: mode.description,
+                    active: switches?.on.includes(mode.name) === true,
+                    disabled: goalOn,
+                    onSelect: () => flipSwitch(mode.name),
+                  })),
+                  // The composer modes the Agent lacks, greyed, each picked to install it.
+                  ...(switches?.install !== undefined ? (switches.offers ?? []) : []).map(
+                    (mode) => ({
+                      key: `offer:${mode.name}`,
+                      icon: (
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={ICON_SIZE.inlineGlyph}
+                          className="text-fg-subtle"
+                        />
+                      ),
+                      label: mode.title,
+                      desc: mode.description,
+                      active: false,
+                      offer: true,
+                      trailing: mode.installing ? (
+                        S.chat.switchInstalling
+                      ) : (
+                        <span className="text-link">{S.chat.switchInstall}</span>
+                      ),
+                      disabled: goalOn || mode.installing,
+                      onSelect: () => installSwitch(mode.name),
+                    }),
+                  ),
+                ]}
+                footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+                direction={models && onChangeModel ? "down" : "up"}
+              />
+            )}
+            <PermissionSelect
+              approvalMode={approvalMode}
+              approvalModes={approvalModes}
+              sandbox={sandbox}
+              onChange={onChangePermission}
+              disabled={modeSaving}
+              direction={models && onChangeModel ? "down" : "up"}
+              machineId={machineId}
+            />
+            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+            <SkillSelect
+              skills={skills}
+              selected={selectedSkills}
+              onToggle={toggleSkill}
+              disabled={running || compacting || busy}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+          </>
+        }
+        // Help text: shown only when the card is wide enough; it never competes for space on
+        // phones, where the group scrolls instead.
+        hint={S.chat.slashHint}
+        // While a dictation runs, its strip (cancel, time, level) stands in for the tools and the
+        // hint; the right group keeps every control, so Send stays where it was.
+        strip={dictation.strip}
+        actions={
+          <>
+            {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
+            {!onChangeModel && (
+              <ContextGauge
+                now={contextNow}
+                unknown={contextStale}
+                {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+                {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+                {...(sessionId !== undefined ? { sessionId } : {})}
+                agentName={currentAgentName}
+                {...(onChangeCompactionLimit ? { onChangeCompactionLimit } : {})}
+              />
+            )}
+            {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+            {models && onChangeModel && onChangeThinkingLevel && (
+              <ThinkingLevelSelect
+                value={thinkingLevel ?? null}
+                onChange={onChangeThinkingLevel}
+                disabled={busy}
+              />
+            )}
+            {/* Session state: the Session's pinned thinking level (editable) — displays the
+              user's pick, else the Agent config's level (auto-follow; the parent resolves
+              it). A pick is pinned on the Session (PATCH) and applies from the next LLM
+              request (soft-limited): a pick mid-chat goes through the parent's confirm
+              dialog, which says the change costs the model's cached context and offers to
+              compact first — never writing through to the Agent config. */}
+            {!onChangeModel && onChangeTurnThinkingLevel && (
+              <ThinkingLevelSelect
+                value={turnThinkingLevel ?? ""}
+                onChange={onChangeTurnThinkingLevel}
+                disabled={busy}
+                direction="up"
+              />
+            )}
+            {/* Left of the send button: the model selector. In draft state it picks the model the
+                Session will be created on; in session state it switches this conversation's
+                model (the parent confirms, then compacts on the current model first), so it is
+                disabled whenever a compaction could not start. */}
+            {models && onChangeModel ? (
+              <ModelCatalogSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onChangeModel}
+                disabled={busy}
+                // A draft in a Project with no default model starts with none chosen.
+                emptyLabel={S.chat.chooseModel}
+              />
+            ) : models && onPickSessionModel && variant === "session" ? (
+              <ModelCatalogSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onPickSessionModel}
+                disabled={busy || sessionModelPickerDisabled(status)}
+              />
+            ) : (
+              /* Display-only badge: the subagent composer (a child runs whatever model it was
+                 spawned with and has no switch surface), and a session composer until its
+                 model list has loaded. Both the logo and the name come from the DTO's paired
+                 fields (no prefix parsing). */
+              <span
+                data-tooltip={modelRef?.modelId ?? ""}
+                data-tooltip-extra={lockedModelLabel !== modelRef?.modelId}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
+              >
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
+              </span>
+            )}
+            {/* One action button, never two: while running an empty composer means "Stop"
+              (abort), and typing turns the very same button into "Send" — which, mid-run,
+              steers or queues per the remembered send mode (the "+" menu's settings row).
+              While COMPACTING it is always Stop: a compaction is abortable, and neither send
+              channel is open then, so the alternative was a permanently disabled Send sitting
+              where the only available action belonged. Idle keeps the ordinary send button.
+              Merging the pair keeps the running-state row within a 320px viewport. */}
+            {/* The record button keeps this slot for the whole dictation, and Send holds still
+                  beside it, disabled until the text is in the draft. */}
+            {dictation.trigger}
+            <SendButton
+              action={stopAction ? "stop" : "send"}
+              label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              disabled={(!stopAction && dictation.active) || (running ? !canMidRunSend : !canSend)}
+              onClick={() => (stopAction ? void onStop() : void send())}
+            />
+          </>
+        }
+      />
+      <ConfirmModal
+        open={pendingFill !== null}
+        title={clearingFill ? S.chat.clearTypedTitle : S.chat.replaceTypedTitle}
+        tone="primary"
+        onClose={() => setPendingFill(null)}
+        onConfirm={() => {
+          if (pendingFill !== null) applyFill(pendingFill.prompt, pendingFill.pinnedSkills);
+          setPendingFill(null);
+        }}
+        confirmLabel={clearingFill ? S.chat.clearTyped : S.chat.replaceTyped}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {clearingFill ? S.chat.clearTypedBody : S.chat.replaceTypedBody}
+        </p>
+      </ConfirmModal>
+    </div>
+  );
+}

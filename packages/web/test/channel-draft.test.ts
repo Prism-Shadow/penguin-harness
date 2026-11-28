@@ -8,7 +8,7 @@ import {
   loadChannelDraft,
   storeChannelDraft,
 } from "../src/features/company/channel-draft";
-import type { DraftStorage } from "../src/features/chat/draft-cache";
+import type { DraftStorage } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage). */
 function memStorage(): DraftStorage & { map: Map<string, string> } {

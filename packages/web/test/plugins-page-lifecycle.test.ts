@@ -51,7 +51,9 @@ vi.mock("../src/features/plugins/plugin-repair", () => ({
 }));
 vi.mock("../src/features/settings/settings-dialog", () => ({ SettingsDialog: () => null }));
 vi.mock("../src/features/plugins/plugin-import-modal", () => ({ ImportPluginModal: () => null }));
-vi.mock("../src/features/chat/chat-page", () => ({ DRAFT_SESSION_ID: "draft" }));
+vi.mock("@prismshadow/penguin-library-session/web/chat/chat-page", () => ({
+  DRAFT_SESSION_ID: "draft",
+}));
 vi.mock("../src/features/machines/machine-picker", () => ({
   MachinePicker: (props: { choices: { value: string }[]; onChange: (id: string) => void }) =>
     h(
@@ -103,6 +105,9 @@ vi.mock("../src/api/endpoints", () => ({
   getPluginIndex: vi.fn(),
   // A server without the market's curation: generated covers, no carousel.
   getPluginMarket: vi.fn(() => Promise.reject(new Error("not found"))),
+  // models-page's auth table reads its two endpoint bundles as the module loads.
+  platformAuthEndpoints: vi.fn(),
+  modelScopeAuthEndpoints: vi.fn(),
 }));
 import * as api from "../src/api/endpoints";
 import { INDEX_RECHECK_MS, PluginsPage } from "../src/features/plugins/plugins-page";

@@ -24,7 +24,7 @@ import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
-import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { draftKey, loadDraft } from "@prismshadow/penguin-library-session/web/chat/draft-cache";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { ADMIN_ME } from "./helpers/admin-settings";

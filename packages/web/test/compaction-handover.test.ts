@@ -43,9 +43,9 @@ import {
   MARKER_TAGS,
 } from "@prismshadow/amsp/markers";
 import { defaultSystemConfig } from "@prismshadow/penguin-core";
-import { CompactionHandoverBody } from "../src/features/chat/compaction-handover";
-import { MessageItem } from "../src/features/chat/message-item";
-import type { StreamRenderContext } from "../src/features/chat/message-stream";
+import { CompactionHandoverBody } from "@prismshadow/penguin-library-session/web/chat/compaction-handover";
+import { MessageItem } from "@prismshadow/penguin-library-session/web/chat/message-item";
+import type { StreamRenderContext } from "@prismshadow/penguin-library-session/web/chat/message-stream";
 import { compactionResultVisible } from "../src/lib/amsp/compaction-summary";
 import {
   createStreamModel,

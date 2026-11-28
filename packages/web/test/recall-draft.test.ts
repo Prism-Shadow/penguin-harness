@@ -9,7 +9,7 @@
  * behind a Send that can never enable.
  */
 import { describe, expect, it } from "vitest";
-import { mergeRecalledDraft } from "../src/features/chat/recall-draft";
+import { mergeRecalledDraft } from "@prismshadow/penguin-library-session/web/chat/recall-draft";
 
 const merge = (over: Partial<Parameters<typeof mergeRecalledDraft>[0]> = {}) =>
   mergeRecalledDraft({

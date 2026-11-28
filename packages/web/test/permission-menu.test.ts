@@ -11,7 +11,10 @@ import {
   permissionMenu,
   presetPick,
 } from "../src/lib/permission-level";
-import { APPROVAL_MODES, approvalModeChoices } from "../src/features/chat/approval-mode";
+import {
+  APPROVAL_MODES,
+  approvalModeChoices,
+} from "@prismshadow/penguin-library-session/web/chat/approval-mode";
 
 const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };
 const ids = (sandbox: SessionSandbox, modes: readonly ApprovalMode[] = APPROVAL_MODES) =>

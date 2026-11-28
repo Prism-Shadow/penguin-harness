@@ -49,6 +49,34 @@ const socketStandInPlugin: Plugin = {
 
 export default defineConfig({
   plugins: [socketStandInPlugin],
+  // The session domain's web half (library/session/src/web) sits outside the tsconfig whose
+  // `jsx` setting covers the app's own sources, and vite/esbuild would lower its JSX with the
+  // classic runtime there. Every suite transform gets the automatic runtime instead, whatever
+  // root the file sits under.
+  esbuild: { jsx: "automatic" },
+  // The session domain's web half resolves through the same two face specifiers the app's
+  // build aliases (vite.config.ts): the suite imports the moved sources by the face's deep
+  // paths, and the moved sources consume the app through src/internal.ts.
+  resolve: {
+    alias: [
+      {
+        find: /^@prismshadow\/penguin-library-session\/web$/,
+        replacement: `${resolve(here, "../../library/session/src/web")}/index.ts`,
+      },
+      {
+        find: /^@prismshadow\/penguin-library-session\/web\/(.*)$/,
+        replacement: `${resolve(here, "../../library/session/src/web")}/$1`,
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal$/,
+        replacement: resolve(here, "src/internal.ts"),
+      },
+      {
+        find: /^@prismshadow\/penguin-web\/internal-hub$/,
+        replacement: resolve(here, "src/internal-hub.ts"),
+      },
+    ],
+  },
   test: {
     environment: "node",
     // The scroll-driven component tests simulate a run of animation frames over a tall trace;
@@ -58,7 +86,14 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "src/features/*/test/**/*.test.ts"],
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,
-    // `vitest run --coverage`: branch and line coverage of the app's own source.
-    coverage: { provider: "v8", include: ["src/**"] },
+    // `vitest run --coverage`: branch and line coverage of the app's own source, and of the
+    // session domain's web half the app compiles in. The half sits outside this package's
+    // root, and the coverage provider drops out-of-root files before include patterns apply,
+    // so the patterns alone would never match it; admit it here.
+    coverage: {
+      provider: "v8",
+      include: ["src/**", "../../library/session/src/web/**"],
+      allowExternal: true,
+    },
   },
 });

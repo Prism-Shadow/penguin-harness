@@ -45,18 +45,9 @@ export const WEB_MODULES: readonly WebModule[] = [
       "lib/terminal-http",
       // The glyph a docked terminal's tab shows.
       "lib/nav-icons",
-      // The dock's visibility store: the view pool keeps a shell mounted while its dock tab is
-      // hidden. Declared by file until the dock is a module with an entry of its own.
-      "features/dock/dock-state",
-      // The panel body the dock mounts (terminal-panel.tsx) runs inside the dock's panel
-      // runtime: it reads the live-terminal store, renders through the panel context and is
-      // typed by the dock's panel registry. Declared by file for the same reason.
-      "features/dock/dock-terminal",
-      "features/dock/panel-context",
-      "features/dock/panel-registry",
-      // The dock panel definition the module contributes (main-dock-panel.tsx) reaches
-      // the dock the way every cross-feature import must: through the dock's index.
-      "features/dock/index",
+      // The dock — the store, the panel runtime and the terminal it hosts — is the session
+      // library's web half now, which the terminal module reaches through that library's
+      // `./web` face like any other package.
     ],
   },
 ];

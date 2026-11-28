@@ -13,7 +13,7 @@ import {
   applyUsageFetch,
   createCostStatHold,
   type CostStatObservation,
-} from "../src/features/chat/header-stats";
+} from "@prismshadow/penguin-library-session/web/chat/header-stats";
 
 const obs = (over: Partial<CostStatObservation> = {}): CostStatObservation => ({
   sessionId: "s1",

@@ -25,8 +25,8 @@ import {
   clearDraftChatDefaults,
   clearDraftModelRef,
   dispatchChatDefaultsChanged,
-  type ChatDefaultsChangedDetail,
-} from "../../chat";
+} from "@prismshadow/penguin-library-session/web";
+import type { ChatDefaultsChangedDetail } from "@prismshadow/penguin-library-session/web";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
 import { WorkspaceSelect } from "../../workspace";

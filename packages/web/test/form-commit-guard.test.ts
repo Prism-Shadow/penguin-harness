@@ -62,14 +62,15 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
   ],
 ];
 
-/** Modules outside the model, each with the reason. */
+/** Modules outside the model, each with the reason. The paths are what {@link inReach}'s scan
+ * reports: under `packages/web/src` for the app's own, under the root for a compiled web half. */
 const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [
   [
-    "features/chat/context-gauge.tsx",
+    "chat/context-gauge.tsx",
     "the compaction threshold is a confirmation whose confirm is the Save; nothing is left behind",
   ],
   [
-    "features/chat/workspace-browser.tsx",
+    "chat/workspace-browser.tsx",
     "the Workspace file editor keeps its own guard and its file-naming discard prompt",
   ],
 ];
@@ -77,9 +78,13 @@ const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [
 const TYPED = new Set(["Input", "Textarea", "PasswordInput", "TagInput"]);
 const COMMITS = /^(?:save|persist|write|submit|put|post|send|commit|onSave|onSubmit|onCommit)/;
 
-/** The files check 1 and 2 read: everything under features/, and the project dialogs. */
+/** The files check 1 and 2 read: everything under features/, the project dialogs, and the
+ * session library's web half the app compiles in. */
 const inReach = (file: SourceFile) =>
-  file.root === "web" && file.rel.endsWith(".tsx") && file.rel.startsWith("features/");
+  file.rel.endsWith(".tsx") &&
+  (file.root === "web"
+    ? file.rel.startsWith("features/")
+    : file.id.startsWith("library/session/src/web/"));
 
 /** Each file is parsed once, however many checks read it. */
 const parsed = new WeakMap<SourceFile, ts.SourceFile>();
@@ -191,17 +196,16 @@ const callsAny = (sf: ts.SourceFile, names: ReadonlySet<string>): boolean => {
 const REGISTERS = new Set(["useFormDraft", "useUnsavedChanges"]);
 const TAKES_PART = new Set(["useFormDraft", "useUnsavedChanges", "useGuardedClose"]);
 
-/** The web modules taking part in the model, relative to packages/web/src; check 3 runs on each. */
-const FORM_MODULES: readonly string[] = SCAN.files
-  .filter(
-    (f) =>
-      f.root === "web" &&
-      f.rel.endsWith(".tsx") &&
-      !EXCUSED_FILES.some(([rel]) => rel === f.rel) &&
-      [...TAKES_PART].some((hook) => f.text.includes(`${hook}(`)) &&
-      callsAny(parse(f), TAKES_PART),
-  )
-  .map((f) => f.rel);
+/** The web modules taking part in the model — the app's own and the session library's web
+ * half's; check 3 runs on each. */
+const FORM_MODULES: readonly SourceFile[] = SCAN.files.filter(
+  (f) =>
+    (f.root === "web" || f.root === "library:session") &&
+    f.rel.endsWith(".tsx") &&
+    !EXCUSED_FILES.some(([rel]) => rel === f.rel) &&
+    [...TAKES_PART].some((hook) => f.text.includes(`${hook}(`)) &&
+    callsAny(parse(f), TAKES_PART),
+);
 
 /** The scopes of the dialogs whose pages save on their own: Settings, and Project settings. */
 const SHELL_SCOPES = new Set(["SETTINGS_SCOPE", "PROJECT_SETTINGS_SCOPE"]);
@@ -300,7 +304,6 @@ function shellScopeSaves(file: SourceFile): Array<{ where: string; held: boolean
   return found;
 }
 
-const webFile = (rel: string) => SCAN.files.find((f) => f.root === "web" && f.rel === rel);
 const listed = (list: ReadonlyArray<readonly [string, ...unknown[]]>, rel: string) =>
   list.some(([f]) => f === rel);
 
@@ -333,10 +336,7 @@ describe("the settings commit model in the source", () => {
   it("closes every dialog of a form module through the guard", () => {
     // The form modules are found: a renamed hook must not turn this check into a no-op.
     expect(FORM_MODULES.length).toBeGreaterThan(0);
-    const found = FORM_MODULES.flatMap((rel) => {
-      const file = webFile(rel);
-      return file === undefined ? [] : unguardedDialogs(file);
-    });
+    const found = FORM_MODULES.flatMap(unguardedDialogs);
     expect(found).toEqual([]);
   });
 

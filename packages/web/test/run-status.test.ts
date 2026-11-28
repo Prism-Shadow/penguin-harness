@@ -9,7 +9,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RunStatus } from "../src/features/chat/run-status";
+import { RunStatus } from "@prismshadow/penguin-library-session/web/chat/run-status";
 import { sessionActivityLabel } from "../src/lib/session-activity";
 import { elementsOf, readMarkup } from "./helpers/markup";
 

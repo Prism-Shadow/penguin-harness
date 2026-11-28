@@ -1,7 +1,7 @@
 ---
 name: penguin-support
 description: Answer PenguinHarness product questions and troubleshoot setup, models, agents, plugins and workbenches using the official documentation and source code. Use for every question handled by the PenguinHarness Support agent.
-version: 2026.10.14.2
+version: 2026.11.28.1
 ---
 
 # PenguinHarness support
@@ -29,7 +29,7 @@ not inside the per-session scratchpad. Check whether it exists before cloning. O
 
 ```sh
 git clone --depth 1 --filter=blob:none --sparse https://github.com/Prism-Shadow/penguin-harness <reference>
-git -C <reference> sparse-checkout set packages/docs/content packages/core/src packages/server/src packages/web/src packages/cli/src plugins/agent-development/skills
+git -C <reference> sparse-checkout set packages/docs/content packages/core/src packages/server/src packages/web/src packages/cli/src library/session/src/web plugins/agent-development/skills
 git -C <reference> rev-parse HEAD
 ```
 
@@ -45,7 +45,7 @@ Plugin Skill's introduction and the chat page's tab placement in one command:
 ```sh
 git -C <reference> rev-parse HEAD
 nl -ba <reference>/plugins/agent-development/skills/penguin-plugin/SKILL.md | sed -n '1,35p'
-rg -n -C 5 'Workbench tabs:|Workflow tabs:|<WorkbenchTabStrip|<WorkflowTabStrip' <reference>/packages/web/src/features/chat/chat-page.tsx
+rg -n -C 5 'Workbench tabs:|Workflow tabs:|<WorkbenchTabStrip|<WorkflowTabStrip' <reference>/library/session/src/web/chat/chat-page.tsx
 ```
 
 These establish both ownership (each Agent holds its own workbenches) and the user-facing
@@ -64,7 +64,7 @@ and corrupts the evidence shown. If a term has no useful match, broaden it once 
 the relevant source files. For Workbench questions, search both `workbench` and `workflow`:
 older revisions use Workflow for the same Agent-owned tab. Read
 `plugins/agent-development/skills/penguin-plugin/SKILL.md` and
-`packages/web/src/features/chat/chat-page.tsx` or its matching tab component to verify the entry
+`library/session/src/web/chat/chat-page.tsx` or its matching tab component to verify the entry
 point. The floating shortcuts launcher opens built-in panels; it is a different UI control.
 
 Once a primary source establishes the answer and entry path, stop searching and answer. Read

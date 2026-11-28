@@ -34,7 +34,10 @@ import type {
   MachineInfo,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
-import { HistoryLoading, HistoryTransferLine } from "../src/features/chat/history-loading";
+import {
+  HistoryLoading,
+  HistoryTransferLine,
+} from "@prismshadow/penguin-library-session/web/chat/history-loading";
 import { S } from "../src/lib/strings";
 import type { MachinesAccount } from "../src/state/machines";
 import { button, click, mount, run, unmountAll } from "./helpers/dom";

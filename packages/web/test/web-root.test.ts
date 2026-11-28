@@ -1,12 +1,15 @@
-import { mainPanelDefinition as mainAgents } from "../src/features/chat/main-agents-panel";
-import { mainPanelDefinition as mainMemory } from "../src/features/chat/main-memory-panel";
+import { mainPanelDefinition as mainAgents } from "@prismshadow/penguin-library-session/web/chat/main-agents-panel";
+import { mainPanelDefinition as mainMemory } from "@prismshadow/penguin-library-session/web/chat/main-memory-panel";
 import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/main-dock-panel";
 import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
 import { TerminalModule } from "../src/features/terminal/module";
-import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
+import {
+  dockPanelDefinition,
+  type DockPanelDefinition,
+} from "@prismshadow/penguin-library-session/web/dock/panel-registry";
 
 const mainTerminal = new TerminalModule().panel.mainDefinitions[0]!;
 
@@ -73,8 +76,11 @@ import { orgPagesOf } from "../src/features/company/use-org-pages";
 import { navKeysFor } from "../src/lib/nav-pages";
 import { SidebarModule } from "../src/web-app/sidebar/module";
 import { badgesOf, marksFor, modesOf, sectionsIn, sectionsOf } from "../src/web-app/sidebar/modes";
-import { SessionListModule } from "../src/features/session-list/module";
-import { rowExtensionsOf, type RowExtensions } from "../src/features/session-list/row-actions";
+import { SessionListModule } from "@prismshadow/penguin-library-session/web/session-list/module";
+import {
+  rowExtensionsOf,
+  type RowExtensions,
+} from "@prismshadow/penguin-library-session/web/session-list/row-actions";
 
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -84,14 +90,14 @@ import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
-import { ChatPage } from "../src/features/chat/chat-page";
+import { ChatPage } from "@prismshadow/penguin-library-session/web/chat/chat-page";
 import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
 import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/src/web/browser-events";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
-import { DockScope } from "../src/features/dock/dock-scope";
+import { DockScope } from "@prismshadow/penguin-library-session/web/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
@@ -105,13 +111,13 @@ import {
 } from "../src/features/company/sidebar-mode";
 import { messagingRowAction } from "../src/features/messaging/session-row-action";
 import { scheduledRowMark } from "../src/features/schedules/session-row-mark";
-import { browseFilesAction } from "../src/features/dock/browse-files";
+import { browseFilesAction } from "@prismshadow/penguin-library-session/web/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
-import { DockModule } from "../src/features/dock/module";
-import { ChatModule } from "../src/features/chat/module";
-import { fileRenderersOf } from "../src/features/chat/deps";
+import { DockModule } from "@prismshadow/penguin-library-session/web/dock/module";
+import { ChatModule } from "@prismshadow/penguin-library-session/web/chat/module";
+import { fileRenderersOf } from "@prismshadow/penguin-library-session/web/chat/deps";
 import { AudioFile } from "../src/features/audio/audio-file";
-import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
+import { MainSidebarApps } from "@prismshadow/penguin-library-session/web/session-list/main-sidebar-apps";
 
 let pages: readonly WebAppPage[] = [];
 let pageRenderers: readonly Contributed[] = [];

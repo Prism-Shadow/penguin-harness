@@ -9,7 +9,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import { fileRendererRulesOf } from "../src/web-app/contributions";
-import { extensionOf, replyFilesOf, type ReplyFilesInput } from "../src/features/chat/reply-files";
+import {
+  extensionOf,
+  replyFilesOf,
+  type ReplyFilesInput,
+} from "@prismshadow/penguin-library-session/web/chat/reply-files";
 
 import { AudioFile } from "../src/features/audio/audio-file";
 import { AudioCard, AudioFailed, type AudioPlayback } from "../src/features/audio/audio-card";

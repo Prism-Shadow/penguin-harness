@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../src/lib/amsp/stream-model";
-import { buildSkillsMessage } from "../src/features/chat/skill-use";
-import { handoffMessage } from "../src/features/chat/agent-handoff";
+import { buildSkillsMessage } from "@prismshadow/penguin-library-session/web/chat/skill-use";
+import { handoffMessage } from "@prismshadow/penguin-library-session/web/chat/agent-handoff";
 import { buildBackgroundTaskDoneMessage, buildScheduledMessage } from "@prismshadow/amsp/markers";
 import {
   buildInputHistory,
@@ -15,7 +15,7 @@ import {
   historyStepBack,
   historyStepForward,
   type HistoryNav,
-} from "../src/features/chat/input-history";
+} from "@prismshadow/penguin-library-session/web/chat/input-history";
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });

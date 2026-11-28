@@ -15,7 +15,7 @@ import { glyphOf } from "../../lib/nav-icons";
 import { pageTitle } from "../index";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import type { MainSidebarState } from "../../features/session-list";
+import type { MainSidebarState } from "@prismshadow/penguin-library-session/web";
 
 /** One page entry as the nav draws it, in either mode. */
 interface NavEntryView {

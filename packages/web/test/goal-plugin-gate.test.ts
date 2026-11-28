@@ -15,8 +15,11 @@
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { toastStore } from "@prismshadow/penguin-ui";
-import { goalPluginGate, useGoalPluginGate } from "../src/features/chat/goal-plugin-gate";
-import type { GoalPluginGate } from "../src/features/chat/goal-plugin-gate";
+import {
+  goalPluginGate,
+  useGoalPluginGate,
+} from "@prismshadow/penguin-library-session/web/chat/goal-plugin-gate";
+import type { GoalPluginGate } from "@prismshadow/penguin-library-session/web/chat/goal-plugin-gate";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FakeFetch, FetchRequest } from "./helpers/fetch";
 import { mount, run, settle, unmountAll } from "./helpers/dom";

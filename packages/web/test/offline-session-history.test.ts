@@ -2,7 +2,7 @@
 import { createElement } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
-import { useOfflineSessionHistory } from "../src/features/chat/offline-session-history";
+import { useOfflineSessionHistory } from "@prismshadow/penguin-library-session/web/chat/offline-session-history";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
 import { mount, unmountAll } from "./helpers/dom";
 

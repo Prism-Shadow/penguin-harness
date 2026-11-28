@@ -318,10 +318,12 @@ const TREE_DEPTH = /^[0-8]$/;
 const NOT_UI = ["testing/", "hooks.ts"];
 
 const GALLERY_DIR = join(REPO_ROOT, "packages", "ui-gallery", "src");
+const LIBRARY_WEB_DIR = join(REPO_ROOT, "library", "session", "src", "web");
 const ROOTS = {
   ui: SRC_DIR,
   web: join(WEB_DIR, "src"),
   ...(existsSync(GALLERY_DIR) ? { gallery: GALLERY_DIR } : {}),
+  ...(existsSync(LIBRARY_WEB_DIR) ? { "library-web": LIBRARY_WEB_DIR } : {}),
 };
 const SCAN = scanSourceRoots(ROOTS, { repoRoot: REPO_ROOT });
 const filesOf = (root: string) =>
@@ -386,7 +388,9 @@ describe("style hooks", () => {
 
   // Hooks are applied in markup; a .ts module that names one (a catalog entry) is data, not a host.
   // The web app is where the hosts live now, so its markup is checked alongside the package's.
-  const markup = [...filesOf("ui"), ...filesOf("web")].filter((f) => f.name.endsWith(".tsx"));
+  const markup = [...filesOf("ui"), ...filesOf("web"), ...filesOf("library-web")].filter((f) =>
+    f.name.endsWith(".tsx"),
+  );
 
   it("find markup to check", () => {
     expect(markup.length).toBeGreaterThan(0);

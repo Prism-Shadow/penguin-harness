@@ -19,7 +19,7 @@
  *   nothing.
  */
 import { describe, expect, it } from "vitest";
-import { RouteProbe } from "../src/features/chat/route-probe";
+import { RouteProbe } from "@prismshadow/penguin-library-session/web/chat/route-probe";
 
 interface Lookup {
   key: string;
