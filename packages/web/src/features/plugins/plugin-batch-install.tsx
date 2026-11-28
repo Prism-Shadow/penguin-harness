@@ -1,13 +1,13 @@
 /**
- * Unified multi-plugin download dock (bottom-right corner, expandable / foldable, non-blocking):
- * 1. Explicit consent before any network download starts — displays how many plugins need to be
- *    downloaded and why each plugin is needed.
- * 2. Docked at the bottom-right without a blocking scrim, with expand/fold toggle so the user can
- *    keep working undisturbed while monitoring one unified overall progress bar across all N
- *    plugins (driven by live SSE stage & byte progress from `installPluginStream`).
- * 3. On failure, stays visible with clear error detail and recommends configuring plugin download
- *    sources either manually (Plugin Sources settings) or with an Agent ("Configure with AI"),
- *    plus one-click retry of failed items only.
+ * Minimalist, theme-adaptive bottom-right plugin download dock:
+ * - Non-blocking (`aria-modal="false"`, no backdrop scrim) so the user keeps working undisturbed.
+ * - Folded: a single sleek status-bar strip (`sm:w-72`) with live percent/bytes and a flush
+ *   bottom progress edge.
+ * - Expanded: compact (`sm:w-[340px]`), high-density monospace telemetry showing count, why each
+ *   plugin is needed (before consent — zero silent downloads), one unified progress bar across
+ *   all N plugins, and manual + Agent-assisted source config recommendations on failure.
+ * - Uses semantic overlay/theme tokens (`bg-overlay`, `border-line`, `text-fg`, `text-fg-muted`,
+ *   `toneInk`) so it adapts cleanly across Modern, Geek, GitHub, Pixel, light and dark themes.
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -18,7 +18,6 @@ import {
   GlyphIcon,
   ICON_SIZE,
   ICONS,
-  Notice,
   ProgressBar,
 } from "@prismshadow/penguin-ui";
 import type { InstallStage } from "../../api/endpoints";
@@ -90,7 +89,7 @@ function formatTransferAmount(progress: DownloadProgress | null): string | null 
   const { received, total } = progress;
   if (total !== null && total > 0) {
     const pct = Math.floor((received / total) * 100);
-    return `${formatBytes(received)} / ${formatBytes(total)} (${pct}%)`;
+    return `${formatBytes(received)}/${formatBytes(total)} (${pct}%)`;
   }
   return received > 0 ? formatBytes(received) : null;
 }
@@ -201,7 +200,6 @@ export function PluginBatchInstallModal({
     runningRef.current = true;
     setPhase("running");
 
-    // Snapshot which items already succeeded so retry skips them.
     const nextStates: Record<string, BatchItemState> = {};
     for (const item of items) {
       const prev = states[item.specifier];
@@ -295,7 +293,7 @@ export function PluginBatchInstallModal({
   const activeState = activeItem ? states[activeItem.specifier] : undefined;
   const activeSentence =
     activeItem && activeState
-      ? installStepWords(activeState.progress, activeState.stage, false, false)
+      ? installStepWords(activeState.progress, activeState.stage, true, false)
       : words.starting;
   const activeTransfer = activeState ? formatTransferAmount(activeState.progress) : null;
 
@@ -305,22 +303,22 @@ export function PluginBatchInstallModal({
   };
 
   const heading = title ?? B.title(items.length);
-  const foldedSubtitle =
-    phase === "review"
-      ? B.foldedReview(items.length)
-      : phase === "running" && activeItem
-        ? B.foldedRunning(activeIndex + 1, items.length, activeItem.title)
-        : phase === "done"
-          ? B.foldedDone(doneCount)
-          : B.foldedFailed(failedItems.length);
-
   const tone = phase === "done" ? "success" : phase === "failed" ? "attention" : "accent";
   const iconToneClass =
     phase === "done" ? toneInk.success : phase === "failed" ? toneInk.attention : "text-accent";
 
+  const foldedLine =
+    phase === "review"
+      ? B.countBadge(items.length)
+      : phase === "running" && activeItem
+        ? `${activeIndex + 1}/${items.length} ${activeItem.title}`
+        : phase === "done"
+          ? `${doneCount}/${items.length} ${B.statusDone}`
+          : `${failedItems.length} ${B.statusFailed}`;
+
   const dock = (
     <div
-      className="pointer-events-none fixed inset-x-4 bottom-4 z-toast flex justify-end sm:left-auto"
+      className="pointer-events-none fixed inset-x-3 bottom-3 z-toast flex justify-end sm:left-auto"
       data-testid="batch-plugin-install-dock"
     >
       <section
@@ -329,46 +327,50 @@ export function PluginBatchInstallModal({
         aria-label={heading}
         data-testid="batch-plugin-install-modal"
         data-expanded={expanded ? "true" : "false"}
-        className="pointer-events-auto w-full overflow-hidden rounded-xl border border-line bg-surface shadow-lg sm:w-[420px]"
+        className={`pointer-events-auto w-full overflow-hidden rounded-lg border border-line bg-overlay shadow-lg ${
+          expanded ? "sm:w-[340px]" : "sm:w-72"
+        }`}
       >
-        {/* Dock header: always visible, click title or chevron to fold/expand */}
-        <div className="flex items-center gap-2.5 border-b border-line/70 px-3.5 py-2.5">
+        {/* Slim 1-row header — click to toggle fold/expand */}
+        <div className="flex items-center gap-2 px-2.5 py-2">
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
             onClick={() => setExpanded((was) => !was)}
           >
-            <span
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-subtle ${iconToneClass}`}
-            >
-              <GlyphIcon
-                d={
-                  phase === "done"
-                    ? ICONS.checkCircle
-                    : phase === "failed"
-                      ? ICONS.triangleAlert
-                      : ICONS.download
-                }
-                size={16}
-              />
+            <GlyphIcon
+              d={
+                phase === "done"
+                  ? ICONS.checkCircle
+                  : phase === "failed"
+                    ? ICONS.triangleAlert
+                    : ICONS.download
+              }
+              size={14}
+              className={`shrink-0 ${iconToneClass}`}
+            />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
+              {expanded ? heading : foldedLine}
             </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <h2 className="truncate text-sm font-semibold text-fg">{heading}</h2>
-                {!expanded && phase !== "review" && (
-                  <span className="shrink-0 text-xs tabular-nums text-fg-muted">
-                    {displayPercent}%
-                  </span>
-                )}
-              </div>
-              <p className="truncate text-[11px] text-fg-muted">
-                {expanded
-                  ? `${B.countBadge(items.length)} · ${machineLabel ?? words.thisServer}`
-                  : foldedSubtitle}
-              </p>
-            </div>
+            {!expanded && phase === "running" && (
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+                {activeTransfer !== null ? `${displayPercent}% · ${activeTransfer.split(" ")[0]}` : `${displayPercent}%`}
+              </span>
+            )}
+            {!expanded && (phase === "done" || phase === "failed") && (
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+                {displayPercent}%
+              </span>
+            )}
+            {expanded && (
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+                {phase === "review"
+                  ? `${items.length}`
+                  : `${doneCount}/${items.length} · ${displayPercent}%`}
+              </span>
+            )}
           </button>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
               aria-expanded={expanded}
@@ -376,17 +378,17 @@ export function PluginBatchInstallModal({
               title={expanded ? B.fold : B.expand}
               data-testid="batch-install-toggle-fold"
               onClick={() => setExpanded((was) => !was)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
+              className="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-subtle hover:text-fg"
             >
-              <GlyphIcon d={expanded ? ICONS.chevronDown : ICONS.chevronUp} size={14} />
+              <GlyphIcon d={expanded ? ICONS.chevronDown : ICONS.chevronUp} size={12} />
             </button>
-            {phase !== "running" && <CloseButton onClose={handleClose} />}
+            {phase !== "running" && <CloseButton onClose={handleClose} className="-mr-1" />}
           </div>
         </div>
 
-        {/* Folded compact progress strip so progress stays live even when collapsed */}
-        {!expanded && phase !== "review" && (
-          <div className="px-3.5 pb-2.5 pt-2" role="status" data-testid="batch-install-progress">
+        {/* Flush unified progress bar — always visible once started, both folded and expanded */}
+        {phase !== "review" && (
+          <div role="status" data-testid="batch-install-progress" className={expanded ? "px-2.5 pb-2" : "px-2.5 pb-2"}>
             <ProgressBar
               value={displayPercent}
               max={100}
@@ -394,61 +396,45 @@ export function PluginBatchInstallModal({
               tone={tone}
               label={B.progressLabel(items.length)}
             />
-            {phase === "running" && activeTransfer !== null && (
-              <p className="mt-1 text-right text-[11px] tabular-nums text-fg-muted">
-                {activeTransfer}
-              </p>
+            {expanded && (
+              <div className="mt-1 flex items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-fg-muted">
+                <span className="min-w-0 truncate text-fg">
+                  {phase === "running" && activeItem
+                    ? `${activeIndex + 1}/${items.length} ${activeItem.title} · ${activeSentence}`
+                    : phase === "done"
+                      ? B.allDoneSummary(doneCount)
+                      : B.partialSummary(doneCount, failedItems.length, items.length)}
+                </span>
+                {phase === "running" && activeTransfer !== null && (
+                  <span className="shrink-0">{activeTransfer}</span>
+                )}
+              </div>
             )}
           </div>
         )}
 
-        {/* Expanded body */}
+        {/* Expanded compact body */}
         {expanded && (
           <div
-            className="max-h-[70vh] space-y-3 overflow-y-auto px-3.5 py-3"
+            className="max-h-[60vh] space-y-2 overflow-y-auto border-t border-line/60 px-2.5 py-2"
             data-testid="batch-install-body"
           >
-            {/* Why these plugins need to be downloaded — visible during review */}
+            {/* Review meta + why */}
             {phase === "review" && (
-              <div
-                className="rounded-lg border border-line bg-surface-subtle/60 px-3 py-2 text-xs"
-                data-testid="batch-install-reason"
-              >
-                <p className="font-medium text-fg">{B.whyHeading}</p>
-                <p className="mt-1 break-words text-fg-muted">{summaryReason}</p>
-              </div>
-            )}
-
-            {/* Unified overall progress bar once download starts */}
-            {phase !== "review" && (
-              <div className="space-y-1.5" role="status" data-testid="batch-install-progress">
-                <ProgressBar
-                  value={displayPercent}
-                  max={100}
-                  size="md"
-                  tone={tone}
-                  label={B.progressLabel(items.length)}
-                />
-                <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
-                  <span className="min-w-0 break-words text-fg">
-                    {phase === "running" && activeItem
-                      ? B.runningItem(activeIndex + 1, items.length, activeItem.title, activeSentence)
-                      : phase === "done"
-                        ? B.allDoneSummary(doneCount)
-                        : B.partialSummary(doneCount, failedItems.length, items.length)}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-fg-muted">
-                    {phase === "running" && activeTransfer !== null
-                      ? `${displayPercent}% · ${activeTransfer}`
-                      : `${displayPercent}%`}
+              <div className="space-y-0.5 text-[11px]" data-testid="batch-install-reason">
+                <div className="flex items-center justify-between gap-2 text-fg">
+                  <span className="font-medium">{B.whyHeading}</span>
+                  <span className="font-mono text-fg-muted">
+                    {B.countBadge(items.length)} · {machineLabel ?? words.thisServer}
                   </span>
                 </div>
+                <p className="break-words text-fg-muted">{summaryReason}</p>
               </div>
             )}
 
-            {/* List of all plugins in this dock, with per-plugin why & live status */}
+            {/* High-density per-plugin list */}
             <ul
-              className="max-h-44 divide-y divide-line overflow-y-auto rounded-lg border border-line"
+              className="max-h-36 divide-y divide-line/60 overflow-y-auto rounded-md border border-line/70 bg-surface-subtle/40"
               data-testid="batch-install-list"
             >
               {items.map((item) => {
@@ -463,25 +449,19 @@ export function PluginBatchInstallModal({
                 return (
                   <li
                     key={item.specifier}
-                    className="space-y-0.5 px-3 py-2 text-xs"
+                    className="space-y-0.5 px-2.5 py-1.5 text-[11px]"
                     data-testid={`batch-item-${item.specifier}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-x-1.5">
-                          <span className="font-medium text-fg">{item.title}</span>
-                          {item.version !== undefined && (
-                            <span className="font-mono text-[11px] text-fg-muted">
-                              v{item.version}
-                            </span>
-                          )}
-                        </div>
-                        <p className="truncate font-mono text-[11px] text-fg-muted">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate">
+                        <span className="font-medium text-fg">{item.title}</span>
+                        <span className="ml-1.5 font-mono text-[10px] text-fg-muted">
                           {item.specifier}
-                        </p>
-                      </div>
+                          {item.version !== undefined ? `@${item.version}` : ""}
+                        </span>
+                      </span>
                       <span
-                        className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${
+                        className={`inline-flex shrink-0 items-center gap-1 font-mono text-[10px] tabular-nums ${
                           st.status === "done"
                             ? toneInk.success
                             : st.status === "failed"
@@ -510,9 +490,15 @@ export function PluginBatchInstallModal({
                         </span>
                       </span>
                     </div>
-                    <p className="break-words text-fg-muted">{item.reason}</p>
+                    {(phase === "review" || st.status === "failed") && (
+                      <p className="truncate text-fg-muted" title={item.reason}>
+                        {item.reason}
+                      </p>
+                    )}
                     {st.status === "failed" && st.error && (
-                      <p className={`break-words ${toneInk.attention}`}>{st.error}</p>
+                      <p className={`break-words font-mono text-[10px] ${toneInk.attention}`}>
+                        {st.error}
+                      </p>
                     )}
                   </li>
                 );
@@ -527,87 +513,86 @@ export function PluginBatchInstallModal({
               <Checkbox checked={dontAsk} label={dontAskLabel} onChange={setDontAsk} />
             )}
 
-            {phase === "running" && (
-              <p className="text-[11px] text-fg-muted">{B.runningNote}</p>
-            )}
-
-            {/* Failure recovery: recommend configuring plugin download manually OR with an Agent */}
+            {/* Compact failure recovery block (theme-adaptive, no oversized Notice padding) */}
             {phase === "failed" && (
-              <Notice tone="attention">
-                <div className="space-y-2 text-xs" data-testid="batch-install-failure-recovery">
-                  <p className="font-semibold text-fg">{B.failedRecommendTitle}</p>
-                  <p className="break-words text-fg-muted">{B.failedRecommendBody}</p>
-                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                    {onOpenSources !== undefined && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={onOpenSources}
-                        data-testid="batch-failure-manual-config"
-                      >
-                        <GlyphIcon d={ICONS.gear} />
-                        {words.sourcesSettings}
-                      </Button>
-                    )}
-                    {onConfigureWithAi !== undefined && (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => onConfigureWithAi(failedItems)}
-                        data-testid="batch-failure-agent-config"
-                      >
-                        <GlyphIcon d={ICONS.wand} />
-                        {words.configureWithAi}
-                      </Button>
-                    )}
-                    {onImportFile !== undefined && (
-                      <Button size="sm" variant="link" onClick={onImportFile}>
-                        {words.importFromFile}
-                      </Button>
-                    )}
-                  </div>
+              <div
+                className="space-y-1.5 rounded-md border border-line bg-surface-subtle/70 px-2.5 py-2 text-[11px]"
+                data-testid="batch-install-failure-recovery"
+              >
+                <p className={`font-medium ${toneInk.attention}`}>{B.failedRecommendTitle}</p>
+                <p className="break-words text-fg-muted">{B.failedRecommendBody}</p>
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {onOpenSources !== undefined && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={onOpenSources}
+                      data-testid="batch-failure-manual-config"
+                    >
+                      <GlyphIcon d={ICONS.gear} />
+                      {words.sourcesSettings}
+                    </Button>
+                  )}
+                  {onConfigureWithAi !== undefined && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => onConfigureWithAi(failedItems)}
+                      data-testid="batch-failure-agent-config"
+                    >
+                      <GlyphIcon d={ICONS.wand} />
+                      {words.configureWithAi}
+                    </Button>
+                  )}
+                  {onImportFile !== undefined && (
+                    <Button size="sm" variant="link" onClick={onImportFile}>
+                      {words.importFromFile}
+                    </Button>
+                  )}
                 </div>
-              </Notice>
+              </div>
             )}
 
-            {/* Footer actions */}
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-0.5">
-              {phase === "review" && (
-                <>
-                  <Button size="sm" variant="ghost" onClick={handleClose}>
-                    {S.common.cancel}
+            {/* Compact footer actions (only rendered when there are buttons) */}
+            {phase !== "running" && (
+              <div className="flex items-center justify-end gap-1.5">
+                {phase === "review" && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={handleClose}>
+                      {S.common.cancel}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => void execute(false)}
+                      data-testid="batch-install-confirm"
+                    >
+                      {B.startDownload(items.length)}
+                    </Button>
+                  </>
+                )}
+                {phase === "failed" && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={handleClose}>
+                      {S.common.close}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void execute(true)}
+                      data-testid="batch-install-retry"
+                    >
+                      {B.retryFailed(failedItems.length)}
+                    </Button>
+                  </>
+                )}
+                {phase === "done" && (
+                  <Button size="sm" variant="primary" onClick={handleClose}>
+                    {words.finish}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => void execute(false)}
-                    data-testid="batch-install-confirm"
-                  >
-                    {B.startDownload(items.length)}
-                  </Button>
-                </>
-              )}
-              {phase === "failed" && (
-                <>
-                  <Button size="sm" variant="ghost" onClick={handleClose}>
-                    {S.common.close}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void execute(true)}
-                    data-testid="batch-install-retry"
-                  >
-                    {B.retryFailed(failedItems.length)}
-                  </Button>
-                </>
-              )}
-              {phase === "done" && (
-                <Button size="sm" variant="primary" onClick={handleClose}>
-                  {words.finish}
-                </Button>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>
