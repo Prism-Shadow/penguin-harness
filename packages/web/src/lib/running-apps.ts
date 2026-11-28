@@ -3,7 +3,7 @@
  * since, whether its window is in front or minimized. A module-level store rather than component
  * state, because its readers live apart and outlast one another: the App Center page launches
  * apps and marks their tiles, the layer over the page area hosts their windows
- * (features/app-center/app-center-windows.tsx) and stays mounted when the viewer leaves the page,
+ * (library/workbench/src/web/app-center/app-center-windows.tsx) and stays mounted when the viewer leaves the page,
  * and any other surface — the sidebar's app list — lists them, opens one and brings one back.
  *
  * Two faces:

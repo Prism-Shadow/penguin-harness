@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The company mode's form dialogs under the settings commit model: the organization's settings
- * (features/company/org-dialogs.tsx), an employee's budget (features/company/employee-dialogs.tsx)
- * and a channel's rename (features/company/channel-dialogs.tsx).
+ * (library/organization/src/web/company/org-dialogs.tsx), an employee's budget (library/organization/src/web/company/employee-dialogs.tsx)
+ * and a channel's rename (library/organization/src/web/company/channel-dialogs.tsx).
  *
  * - Save waits until a field differs from what is stored, and while a required field is empty
  *   or a value is malformed (said under the field as it is typed).
@@ -11,11 +11,11 @@
  * - Pausing the organization writes at once, alone, and the typed fields beside it keep their
  *   edits.
  * - An employee's budget is written by its Save, with no second question; so is a calendar
- *   event (features/company/calendar-page.tsx).
+ *   event (library/organization/src/web/company/calendar-page.tsx).
  * - A desk renewal is valid untouched — a plain renewal, writing no workspace — and asks before
  *   Esc drops a changed workspace. Once it has renewed, nothing is left unsaved by the time the
  *   page is told, so the page's move to the new desk session is not held by the leave guard.
- * - A new ticket (features/company/tickets-page.tsx) waits for a title and a slug that keeps
+ * - A new ticket (library/organization/src/web/company/tickets-page.tsx) waits for a title and a slug that keeps
  *   its rule, said under the field as it is typed.
  * - A hire writes at once, the employee's name with it; a new Agent whose picked plugin runs a
  *   stdio MCP server asks first, showing the command it runs on this server, and the question's
@@ -34,19 +34,19 @@ import type { OrgEmployeeItem, OrganizationSettings } from "@prismshadow/penguin
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { OrganizationSettingsDialog } from "../src/features/company/org-dialogs";
+import { OrganizationSettingsDialog } from "@prismshadow/penguin-library-organization/web/company/org-dialogs";
 import {
   DeskRenewDialog,
   EmployeeEditDialog,
   EmployeeProfileDialog,
   HireDialog,
-} from "../src/features/company/employee-dialogs";
-import { ChannelTextDialog } from "../src/features/company/channel-dialogs";
-import { CalendarEventDialog } from "../src/features/company/calendar-page";
-import { CreateTicketDialog } from "../src/features/company/tickets-page";
+} from "@prismshadow/penguin-library-organization/web/company/employee-dialogs";
+import { ChannelTextDialog } from "@prismshadow/penguin-library-organization/web/company/channel-dialogs";
+import { CalendarEventDialog } from "@prismshadow/penguin-library-organization/web/company/calendar-page";
+import { CreateTicketDialog } from "@prismshadow/penguin-library-organization/web/company/tickets-page";
 import { ThemeProvider } from "../src/state/theme";
 import { AuthProvider } from "../src/state/auth";
-import { CompanyProvider } from "../src/features/company/company-state";
+import { CompanyProvider } from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";
 import { SessionsProvider } from "../src/state/sessions";

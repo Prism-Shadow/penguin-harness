@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   ChannelMessageBody,
   ChannelReaderProvider,
-} from "../src/features/company/channel-markdown";
+} from "@prismshadow/penguin-library-organization/web/company/channel-markdown";
 import { zh } from "../src/lib/strings";
 
 const reader = {

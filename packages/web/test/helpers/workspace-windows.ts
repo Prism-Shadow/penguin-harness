@@ -2,7 +2,7 @@ import { createElement as h, type ReactNode } from "react";
 import * as dock from "../../src/features/dock";
 import { PageWorkspace } from "../../src/lib/page-workspace";
 import { MainSidebarApps } from "../../src/features/session-list/main-sidebar-apps";
-import { AppCenterWindows } from "../../src/features/app-center/app-center-windows";
+import { AppCenterWindows } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-windows";
 import { click } from "./dom";
 
 export function WorkspaceWindows({ children }: { children?: ReactNode }): ReactNode {

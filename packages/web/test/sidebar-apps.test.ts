@@ -4,7 +4,7 @@ import { createElement as h, useEffect } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../src/api/endpoints";
-import { AppCenterPage } from "../src/features/app-center/app-center-page";
+import { AppCenterPage } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { detachDockPage, isTabShown } from "../src/features/dock";
 import { useAppDockDrop } from "../src/features/page-workspace/app-dock-drop";
@@ -21,7 +21,7 @@ import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
 import { useProject } from "../src/state/project";
 import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 import { ThemeProvider } from "../src/state/theme";
-import { CompanyProvider } from "../src/features/company/company-state";
+import { CompanyProvider } from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { sidebarDeps } from "../src/web-app/sidebar/deps";
 import { Sidebar } from "../src/web-app/sidebar/sidebar";
 import {

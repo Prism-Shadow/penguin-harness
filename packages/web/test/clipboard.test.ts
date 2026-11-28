@@ -330,6 +330,13 @@ describe("writeClipboard: the library's behaviour contract", () => {
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
 const ENTRY = join(SRC, "lib", "clipboard.ts");
 
+/** The scanned roots: the app's src and the library web halves the app compiles in. */
+const ROOTS = [
+  SRC,
+  resolve(dirname(fileURLToPath(import.meta.url)), "../../../library/workbench/src/web"),
+  resolve(dirname(fileURLToPath(import.meta.url)), "../../../library/organization/src/web"),
+];
+
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = join(dir, entry.name);
@@ -343,7 +350,7 @@ const CLIPBOARD_WRITE = /navigator\s*\.\s*clipboard[\s\S]{0,40}?\.\s*write(?:Tex
 const LIBRARY_IMPORT = /from\s+["']copy-to-clipboard["']|import\(\s*["']copy-to-clipboard["']\s*\)/;
 
 function offenders(pattern: RegExp): string[] {
-  return sourceFiles(SRC)
+  return ROOTS.flatMap(sourceFiles)
     .filter((file) => file !== ENTRY)
     .filter((file) => pattern.test(readFileSync(file, "utf8")))
     .map((file) => relative(SRC, file));

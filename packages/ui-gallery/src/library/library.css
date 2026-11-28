@@ -7,6 +7,8 @@
  */
 @import "../../../web/src/styles.css";
 @source "../../../web/src";
+@source "../../../library/workbench/src/web";
+@source "../../../library/organization/src/web";
 @import "../foundations/foundations.css";
 /* The public sites' components and prose, for the 公开站点 board: scoped to their own classes. */
 @import "@prismshadow/penguin-ui/site.css";

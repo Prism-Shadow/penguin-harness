@@ -16,7 +16,7 @@ import {
   mentionQueryAt,
   mentionRuns,
   rankMentionCandidates,
-} from "../src/features/company/channel-mentions";
+} from "@prismshadow/penguin-library-organization/web/company/channel-mentions";
 
 const candidates = mentionCandidates(
   [

@@ -26,7 +26,7 @@ import {
   toLocalInput,
   viewRange,
   weekDays,
-} from "../src/features/company/calendar-geom";
+} from "@prismshadow/penguin-library-organization/web/company/calendar-geom";
 
 const local = (y: number, m0: number, d: number, h = 0, min = 0) =>
   new Date(y, m0, d, h, min).getTime();

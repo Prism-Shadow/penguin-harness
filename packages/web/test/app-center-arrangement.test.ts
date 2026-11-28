@@ -1,5 +1,5 @@
 /**
- * The App Center's arrangement (features/app-center/arrangement.ts): the viewer's stored layout
+ * The App Center's arrangement (library/workbench/src/web/app-center/arrangement.ts): the viewer's stored layout
  * over the shortcuts the server lists, and the moves the grid makes.
  *
  * - The default order puts standard system apps first, then keeps the incoming order.
@@ -49,8 +49,8 @@ import {
   stepItem,
   takeOutOfFolder,
   type GridItem,
-} from "../src/features/app-center/arrangement";
-import { dropOnTile } from "../src/features/app-center/tile-drag";
+} from "@prismshadow/penguin-library-workbench/web/app-center/arrangement";
+import { dropOnTile } from "@prismshadow/penguin-library-workbench/web/app-center/tile-drag";
 
 const shortcut = (id: string, agentId = "a1"): AppCenterShortcut => ({
   agentId,

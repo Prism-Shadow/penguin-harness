@@ -1,5 +1,5 @@
 /**
- * A ticket's history and folded sections in the ticket drawer (features/company/
+ * A ticket's history and folded sections in the ticket drawer (library/organization/src/web/company/
  * ticket-history.ts).
  *
  * - History rows list newest first, each with a key of its own.
@@ -10,7 +10,10 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketDetail, OrgTicketHistoryEntry } from "@prismshadow/penguin-server/api";
-import { ticketHistoryRows, ticketSummaryCounts } from "../src/features/company/ticket-history";
+import {
+  ticketHistoryRows,
+  ticketSummaryCounts,
+} from "@prismshadow/penguin-library-organization/web/company/ticket-history";
 
 const entry = (over: Partial<OrgTicketHistoryEntry> = {}): OrgTicketHistoryEntry => ({
   at: "2026-09-08T10:00:00.000Z",

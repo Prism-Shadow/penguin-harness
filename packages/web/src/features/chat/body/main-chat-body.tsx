@@ -26,7 +26,7 @@ import {
 } from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
-import { PathCapsulesProvider } from "../../company";
+import { PathCapsulesProvider } from "@prismshadow/penguin-library-organization/web";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 

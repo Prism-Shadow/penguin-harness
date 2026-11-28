@@ -4,7 +4,7 @@
  * when the required field was emptied.
  */
 import { describe, expect, it } from "vitest";
-import { deskRenewPlan } from "../src/features/company/desk-renew";
+import { deskRenewPlan } from "@prismshadow/penguin-library-organization/web/company/desk-renew";
 
 describe("deskRenewPlan", () => {
   it("sends no workspace write when the prefilled spec is left alone", () => {

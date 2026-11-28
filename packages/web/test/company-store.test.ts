@@ -1,5 +1,5 @@
 /**
- * features/company/company-state.tsx unit tests: the company store's routing of the scheduler's events (the
+ * library/organization/src/web/company/company-state.tsx unit tests: the company store's routing of the scheduler's events (the
  * per-channel counters of the open organization and the totals the sidebar badges read, the
  * version bump each family causes, and what a local read mark clears), the open ticket every
  * company surface shares (the back stack a parent or a child pushes, and what closes it), what
@@ -24,7 +24,7 @@ import {
   isCompanyEvent,
   subscribeCompanyEvents,
   subscribeCompanyResync,
-} from "../src/features/company/company-state";
+} from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 
 const message = (over: Partial<OrgChannelMessage> = {}): OrgChannelMessage => ({

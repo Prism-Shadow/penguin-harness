@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 /**
- * The system apps in the App Center (lib/system-apps.ts, features/app-center/system-tiles.ts):
+ * The system apps in the App Center (lib/system-apps.ts, library/workbench/src/web/app-center/system-tiles.ts):
  * the pages the system Agent owns, read from the page table, as tiles beside the workbenches.
  *
  * - Given no arrangement of the viewer's, the system apps come first, in their order, then the
@@ -25,7 +25,7 @@ import type {
   ContributionsResponse,
   WorkbenchInfo,
 } from "@prismshadow/penguin-server/api";
-import { AppCenterPage } from "../src/features/app-center/app-center-page";
+import { AppCenterPage } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { ThemeProvider } from "../src/state/theme";

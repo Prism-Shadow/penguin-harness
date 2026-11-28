@@ -8,7 +8,7 @@
  * - No web module marks the current choice with a typed ✓.
  */
 import { describe, expect, it } from "vitest";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
+import { expectEveryRootScanned, isAppFile, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
 
@@ -19,7 +19,7 @@ describe("menus and pickers", () => {
 
   it("draw their rows with the Menu family, never a hand-built menu row", () => {
     const handBuilt = SCAN.files
-      .filter((file) => file.root === "web")
+      .filter(isAppFile)
       .filter((file) => /\bmenuRow(?:Class|Tone)\b/.test(file.text))
       .map((file) => file.id);
     expect(handBuilt).toEqual([]);
@@ -27,7 +27,7 @@ describe("menus and pickers", () => {
 
   it("mark the current choice with Select's check, never a typed ✓", () => {
     const typed = SCAN.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
+      .filter((file) => isAppFile(file) && file.name.endsWith(".tsx"))
       .filter((file) => /["'`]✓["'`]/.test(file.text))
       .map((file) => file.id);
     expect(typed).toEqual([]);

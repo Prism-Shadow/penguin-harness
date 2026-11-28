@@ -33,7 +33,7 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
+import { appKeyOf, expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
 
 const SCAN = scanSources([".tsx", ".ts"]);
 
@@ -50,7 +50,7 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "its dialogs build a chat prompt (edit, add) or pick an import mode; none of them writes config",
   ],
   [
-    "features/company/org-dialogs.tsx",
+    "library/organization/src/web/company/org-dialogs.tsx",
     "CreateOrganizationDialog",
     "its draft is kept in the browser on every keystroke and restored on reopen (spec 06), so a close loses nothing",
   ],
@@ -77,9 +77,11 @@ const EXCUSED_FILES: ReadonlyArray<readonly [string, string]> = [
 const TYPED = new Set(["Input", "Textarea", "PasswordInput", "TagInput"]);
 const COMMITS = /^(?:save|persist|write|submit|put|post|send|commit|onSave|onSubmit|onCommit)/;
 
-/** The files check 1 and 2 read: everything under features/, and the project dialogs. */
+/** The files check 1 and 2 read: everything under features/, the project dialogs, and the
+    library web halves' pages (their whole source takes part in the model, like a feature's). */
 const inReach = (file: SourceFile) =>
-  file.root === "web" && file.rel.endsWith(".tsx") && file.rel.startsWith("features/");
+  file.name.endsWith(".tsx") &&
+  (file.root === "web" ? file.rel.startsWith("features/") : file.root.startsWith("library:"));
 
 /** Each file is parsed once, however many checks read it. */
 const parsed = new WeakMap<SourceFile, ts.SourceFile>();
@@ -191,17 +193,17 @@ const callsAny = (sf: ts.SourceFile, names: ReadonlySet<string>): boolean => {
 const REGISTERS = new Set(["useFormDraft", "useUnsavedChanges"]);
 const TAKES_PART = new Set(["useFormDraft", "useUnsavedChanges", "useGuardedClose"]);
 
-/** The web modules taking part in the model, relative to packages/web/src; check 3 runs on each. */
+/** The modules taking part in the model, keyed as the guard's lists name them (appKeyOf); check 3
+    runs on each. */
 const FORM_MODULES: readonly string[] = SCAN.files
   .filter(
     (f) =>
-      f.root === "web" &&
-      f.rel.endsWith(".tsx") &&
-      !EXCUSED_FILES.some(([rel]) => rel === f.rel) &&
+      f.name.endsWith(".tsx") &&
+      !EXCUSED_FILES.some(([rel]) => rel === appKeyOf(f.id)) &&
       [...TAKES_PART].some((hook) => f.text.includes(`${hook}(`)) &&
       callsAny(parse(f), TAKES_PART),
   )
-  .map((f) => f.rel);
+  .map((f) => appKeyOf(f.id));
 
 /** The scopes of the dialogs whose pages save on their own: Settings, and Project settings. */
 const SHELL_SCOPES = new Set(["SETTINGS_SCOPE", "PROJECT_SETTINGS_SCOPE"]);
@@ -244,7 +246,7 @@ function unguardedDialogs(file: SourceFile): string[] {
     const tag = jsxTag(node);
     if (tag !== "Modal" && tag !== "PagedDialog") return;
     const component = componentOf(node);
-    if (EXCUSED_DIALOGS.some(([f, c]) => f === file.rel && c === component)) return;
+    if (EXCUSED_DIALOGS.some(([f, c]) => f === appKeyOf(file.id) && c === component)) return;
     const onClose = attributeValue(attribute(node, "onClose"));
     if (onClose !== undefined && ts.isIdentifier(onClose) && guarded.has(onClose.text)) return;
     found.push(`${file.rel}:${lineOf(sf, node)} <${tag}> in ${component}`);
@@ -300,7 +302,7 @@ function shellScopeSaves(file: SourceFile): Array<{ where: string; held: boolean
   return found;
 }
 
-const webFile = (rel: string) => SCAN.files.find((f) => f.root === "web" && f.rel === rel);
+const webFile = (rel: string) => SCAN.files.find((f) => appKeyOf(f.id) === rel);
 const listed = (list: ReadonlyArray<readonly [string, ...unknown[]]>, rel: string) =>
   list.some(([f]) => f === rel);
 

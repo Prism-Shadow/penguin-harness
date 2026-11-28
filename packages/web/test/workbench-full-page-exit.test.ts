@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 /**
- * The full page's exit (features/workbenches/workbench-app-page.tsx), with the shell's windows
+ * The full page's exit (library/workbench/src/web/workbenches/workbench-app-page.tsx), with the shell's windows
  * beside it: one fake server, the real page, windows and palette registry.
  *
  * - Given the full page opened from an app's window, the exit lands on that window, at the page
@@ -14,8 +14,8 @@
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
-import { WorkbenchAppPage } from "../src/features/workbenches/workbench-app-page";
+import { AppCenterWindows } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-windows";
+import { WorkbenchAppPage } from "@prismshadow/penguin-library-workbench/web/workbenches/workbench-app-page";
 import { addedPaletteActions } from "../src/lib/palette-actions";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

@@ -95,7 +95,13 @@ export function ManagedBrowserPages({
       <ul aria-label={S.builtinBrowser.panelTitle} className="flex flex-col gap-1">
         {tabs?.map((tab) => (
           <li key={tab.id} className="flex min-w-0 items-center justify-between gap-2">
-            <span className="min-w-0 break-all" title={tab.url}>
+            <span
+              className="min-w-0 break-all"
+              data-tooltip={tab.url}
+              // The hint carries the URL, which the title on screen does not show; when the
+              // title is the URL there is nothing the hint adds, so it stays suppressed.
+              {...(tab.url !== tab.title ? { "data-tooltip-extra": true } : {})}
+            >
               {tab.title || tab.url}
             </span>
             <Button

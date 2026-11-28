@@ -3,7 +3,7 @@ import { createElement as h } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "../src/app";
-import { WorkbenchAppPage } from "../src/features/workbenches/workbench-app-page";
+import { WorkbenchAppPage } from "@prismshadow/penguin-library-workbench/web/workbenches/workbench-app-page";
 import { addedPaletteActions } from "../src/lib/palette-actions";
 import { json, stubFetch } from "./helpers/fetch";
 import { mount, unmountAll } from "./helpers/dom";

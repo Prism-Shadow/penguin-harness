@@ -1,5 +1,5 @@
 /**
- * The create-organization dialog's draft (features/company/org-draft.ts), kept in
+ * The create-organization dialog's draft (library/organization/src/web/company/org-draft.ts), kept in
  * localStorage per user and Project.
  *
  * - Two users, two Projects and a signed-out browser each get their own draft.
@@ -20,7 +20,7 @@ import {
   parseOrgDraft,
   saveOrgDraft,
   serializeOrgDraft,
-} from "../src/features/company/org-draft";
+} from "@prismshadow/penguin-library-organization/web/company/org-draft";
 
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 

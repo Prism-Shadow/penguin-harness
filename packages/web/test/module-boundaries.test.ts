@@ -1,14 +1,16 @@
 /**
  * The static-import boundaries between the Web App's libraries and its feature modules, as a
  * ratchet. The module tree checks the dependencies it can see (slots, `@Use`); a plain `import`
- * is invisible to it, so these rules are held here, over every file under `src/`:
+ * is invisible to it, so these rules are held here, over every file under `src/` and under the
+ * migrated web halves the app compiles in (`library/<domain>/src/web/`):
  *
  * 1. A library — anything outside `features/` and `web-app/` (`lib/`, `api/`, `state/`, `rescue/`,
  *    `components/`, the root files) — imports nothing under `features/`. The one exception is the
  *    composition root, `web-root.ts`, which imports each feature's `module.ts` to list it in the
  *    tree.
- * 2. A file of one module directory — `features/<a>/`, or `web-app/`, the frame's module — reaches
- *    another only through its `index.ts` (or `index.tsx`), never one of its inner files.
+ * 2. A file of one module directory — `features/<a>/`, `web-app/` (the frame), or a library half
+ *    (`library/<domain>/src/web/`) — reaches another only through its index file (`index.ts`,
+ *    `index.tsx`, the host seam's `internal.ts`), never one of its inner files.
  * 3. No import cycle between module directories. An edge `features/a -> features/b` is reported
  *    when it lies on a cycle, i.e. both ends sit in the same strongly connected component.
  * 4. A `module.ts` or `<name>.module.ts` (a module class) is imported by the composition root
@@ -19,6 +21,10 @@
  * `module-boundaries.baseline.txt`. A violation missing from the baseline fails; so does a
  * baseline line that no longer occurs. The list can only shrink: whoever removes a violation
  * deletes its line in the same change.
+ *
+ * A file is named by its path relative to `packages/web/src/` when it is the app's own, and by
+ * its repo-relative path when it belongs to a library half — the same ids the guard reports and
+ * the baseline records.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
@@ -28,6 +34,29 @@ import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const BASELINE = fileURLToPath(new URL("./module-boundaries.baseline.txt", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+/** The migrated web halves the app compiles in, as [domain, directory]. */
+const LIBRARY_HALVES: ReadonlyArray<readonly [string, string]> = [
+  ["workbench", fileURLToPath(new URL("../../../library/workbench/src/web", import.meta.url))],
+  [
+    "organization",
+    fileURLToPath(new URL("../../../library/organization/src/web", import.meta.url)),
+  ],
+];
+
+/** The absolute path a scanned id names: a library half's is repo-relative, the app's src-relative. */
+const idPath = (id: string): string =>
+  id.startsWith("library/") ? join(REPO_ROOT, id) : join(SRC, id);
+
+/** Whether a scanned id names a file. */
+const isFileId = (id: string): boolean => {
+  try {
+    return statSync(idPath(id)).isFile();
+  } catch {
+    return false;
+  }
+};
 
 /** Every `.ts`/`.tsx` under `dir`, as POSIX paths relative to it. */
 function sourceFiles(dir: string, rel = ""): string[] {
@@ -46,20 +75,46 @@ function specifiers(text: string): string[] {
 }
 
 /**
- * The src-relative file a relative specifier lands on, `null` for a bare package or anything
- * outside src (the UI package, the server's types), and `undefined` when nothing matches — which
- * fails the test rather than silently narrowing it.
+ * The file a specifier lands on, as a scanned id, `null` for a bare package the guard does not
+ * resolve (the UI package, the server's types), and `undefined` when an alias or relative path
+ * names nothing — which fails the test rather than silently narrowing it.
+ *
+ * A relative specifier resolves inside the tree the importing file lives in (the app's `src/`,
+ * or the library half's `web/`); a bare one resolves through the faces the app resolves by
+ * alias (vite.config.ts `webHalfAliases`): the host seam, the features that stayed behind, and
+ * the library halves' own faces.
  */
 function resolveImport(
   from: string,
   spec: string,
   isFile: (rel: string) => boolean,
 ): string | null | undefined {
-  if (!spec.startsWith(".")) return null;
-  const base = posix.normalize(posix.join(posix.dirname(from), spec));
-  if (base.startsWith("../")) return null;
-  const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
-  return candidates.find(isFile);
+  const candidatesOf = (base: string): string[] => [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}/index.ts`,
+    `${base}/index.tsx`,
+  ];
+  if (spec.startsWith(".")) {
+    const half = /^library\/[^/]+\/src\/web\//.exec(from)?.[0] ?? "";
+    const base = posix.normalize(posix.join(posix.dirname(from), spec));
+    if (!base.startsWith(half) || base.startsWith("../")) return null;
+    return candidatesOf(base).find(isFile);
+  }
+  if (spec === "@prismshadow/penguin-web/internal") {
+    return isFile("internal.ts") ? "internal.ts" : undefined;
+  }
+  const feature = /^@prismshadow\/penguin-web\/features\/([a-z-]+)$/.exec(spec);
+  if (feature !== null) {
+    return candidatesOf(`features/${feature[1]}/index`).find(isFile);
+  }
+  const face = /^@prismshadow\/penguin-library-([a-z-]+)\/web(?:\/(.*))?$/.exec(spec);
+  if (face !== null) {
+    const base = `library/${face[1]}/src/web${face[2] === undefined ? "/index" : `/${face[2]}`}`;
+    return candidatesOf(base).find(isFile);
+  }
+  return null;
 }
 
 /** The composition root: the one file that lists module classes. */
@@ -69,15 +124,28 @@ const COMPOSITION_ROOT = "web-root.ts";
 const isModuleFile = (file: string): boolean => /(^|\/|\.)module\.ts$/.test(file);
 
 /**
- * The module directory a file belongs to: `features/<name>`, or `web-app` for the frame, whose
- * modules (the web-app and its sidebar) reach features through their index files like any feature;
- * null for a library.
+ * The module directory a file belongs to: `features/<name>`, `web-app` for the frame, whose
+ * modules (the web-app and its sidebar) reach features through their index files like any
+ * feature, or `library/<domain>` for a migrated web half; null for a library.
  */
 function moduleDirOf(file: string): string | null {
   if (file.startsWith("web-app/")) return "web-app";
-  const match = /^features\/([^/]+)\//.exec(file);
-  return match === null ? null : `features/${match[1]}`;
+  const feature = /^features\/([^/]+)\//.exec(file);
+  if (feature !== null) return `features/${feature[1]}`;
+  const library = /^library\/([^/]+)\/src\/web\//.exec(file);
+  if (library !== null) return `library/${library[1]}`;
+  return null;
 }
+
+/** The index files a module directory may be reached through. */
+const INDEX_FILE =
+  /^(?:features\/[^/]+|web-app)\/index\.tsx?$|^internal\.ts$|^library\/[^/]+\/src\/web\/index\.tsx?$/;
+
+/** A library half's face index: the half's own composition root, which lists its module classes. */
+const HALF_INDEX_FILE = /^library\/[^/]+\/src\/web\/index\.tsx?$/;
+
+/** The library half a scanned id belongs to, as its id prefix (`library/<domain>/src/web/`). */
+const halfOf = (id: string): string | null => /^library\/[^/]+\/src\/web\//.exec(id)?.[0] ?? null;
 
 /** Inter-feature edges that lie on a cycle: both ends in one strongly connected component. */
 function cycleEdges(edges: ReadonlyMap<string, ReadonlySet<string>>): string[] {
@@ -140,7 +208,12 @@ function scan(
       const target = resolveImport(file, spec, isFile);
       if (target === undefined) unresolved.push(`${file}: ${spec}`);
       if (target == null || !/\.tsx?$/.test(target)) continue;
-      if (isModuleFile(target) && file !== COMPOSITION_ROOT) {
+      // A module class is listed by the composition root, or by the half's own face index when
+      // both live in the same half — the face index is that half's composition root.
+      const ownHalf = halfOf(file);
+      const inOwnHalf =
+        ownHalf !== null && target.startsWith(ownHalf) && HALF_INDEX_FILE.test(file);
+      if (isModuleFile(target) && file !== COMPOSITION_ROOT && !inOwnHalf) {
         violations.add(`${file} -> ${target}`);
         continue;
       }
@@ -148,11 +221,13 @@ function scan(
       if (other === null || other === own) continue;
       if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
       if (own === null) {
-        // A library may use WebApp's public surface (the router's types); never a feature.
-        if (other !== "web-app") violations.add(`${file} -> ${target}`);
+        // A library may use WebApp's public surface (the router's types); never a feature. The
+        // composition root may also take a half's face index, which lists the half's modules.
+        const compositionFace = file === COMPOSITION_ROOT && HALF_INDEX_FILE.test(target);
+        if (other !== "web-app" && !compositionFace) violations.add(`${file} -> ${target}`);
         continue;
       }
-      if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target)) {
+      if (!INDEX_FILE.test(target)) {
         violations.add(`${file} -> ${target}`);
       }
       const set = featureEdges.get(own) ?? new Set<string>();
@@ -165,14 +240,13 @@ function scan(
 }
 
 function scanSrc(): Scan {
-  const isFile = (rel: string): boolean => {
-    try {
-      return statSync(join(SRC, rel)).isFile();
-    } catch {
-      return false;
-    }
-  };
-  return scan(sourceFiles(SRC), (rel) => readFileSync(join(SRC, rel), "utf8"), isFile);
+  const ids = [
+    ...sourceFiles(SRC),
+    ...LIBRARY_HALVES.flatMap(([domain, dir]) =>
+      sourceFiles(dir).map((rel) => `library/${domain}/src/web/${rel}`),
+    ),
+  ];
+  return scan(ids, (id) => readFileSync(idPath(id), "utf8"), isFileId);
 }
 
 function baseline(): string[] {

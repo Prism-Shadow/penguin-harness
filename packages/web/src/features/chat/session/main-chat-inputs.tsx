@@ -7,7 +7,7 @@ import type {
   ModelsResponse,
   SessionProcessInfo,
 } from "@prismshadow/penguin-server/api";
-import { useCompany } from "../../company";
+import { useCompany } from "@prismshadow/penguin-library-organization/web";
 import { useAuth } from "../../../state/auth";
 import { useTheme } from "../../../state/theme";
 import { useProject } from "../../../state/project";

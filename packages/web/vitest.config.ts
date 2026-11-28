@@ -8,6 +8,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
+import { webHalfAliases } from "./vite.config";
 
 /**
  * A path in vite's spelling: forward slashes on every OS. vite hands `resolveId` its importers
@@ -49,6 +50,8 @@ const socketStandInPlugin: Plugin = {
 
 export default defineConfig({
   plugins: [socketStandInPlugin],
+  // The domain packages' web halves and the host seams they consume (see vite.config.ts).
+  resolve: { alias: webHalfAliases() },
   test: {
     environment: "node",
     // The scroll-driven component tests simulate a run of animation frames over a tall trace;
@@ -58,7 +61,13 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "src/features/*/test/**/*.test.ts"],
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,
-    // `vitest run --coverage`: branch and line coverage of the app's own source.
-    coverage: { provider: "v8", include: ["src/**"] },
+    // `vitest run --coverage`: branch and line coverage of the app's own source, the library
+    // web halves included (they sit outside this project's root, so `allowExternal` is needed
+    // for the report to count them at all).
+    coverage: {
+      provider: "v8",
+      include: ["src/**", "../../library/*/src/web/**"],
+      allowExternal: true,
+    },
   },
 });

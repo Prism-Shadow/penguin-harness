@@ -1,5 +1,5 @@
 /**
- * The ticket board (features/company/ticket-board.ts).
+ * The ticket board (library/organization/src/web/company/ticket-board.ts).
  *
  * - Only the five lifecycle statuses are ticket statuses.
  * - Cards sort by priority, then the earlier due date, then id.
@@ -27,7 +27,7 @@ import {
   moveNeedsReason,
   sortTickets,
   ticketCreatedDate,
-} from "../src/features/company/ticket-board";
+} from "@prismshadow/penguin-library-organization/web/company/ticket-board";
 
 function ticket(over: Partial<OrgTicketItem> & { ticketId: string }): OrgTicketItem {
   return {

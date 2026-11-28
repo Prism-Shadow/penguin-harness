@@ -1,5 +1,5 @@
 /**
- * The hint on a company title that its row cuts off (features/company/shared.tsx `titledHint`):
+ * The hint on a company title that its row cuts off (library/organization/src/web/company/shared.tsx `titledHint`):
  * the line whole, never the verb of the click.
  *
  * - Given a real title, the hint is the title with the id after it.
@@ -8,7 +8,7 @@
  *   before it.
  */
 import { describe, expect, it } from "vitest";
-import { titledHint } from "../src/features/company/shared";
+import { titledHint } from "@prismshadow/penguin-library-organization/web/company/shared";
 
 describe("titledHint", () => {
   it("a real title hints the title with the id after it", () => {

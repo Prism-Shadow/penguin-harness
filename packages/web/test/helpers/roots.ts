@@ -16,6 +16,8 @@
  * Files are named by repo-relative id (`packages/web/src/components/ui/icons.tsx`), which stays
  * unambiguous across roots and reads the same on Windows.
  */
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
@@ -43,11 +45,31 @@ export const SOURCE_ROOTS: Readonly<Record<string, string>> = {
   web: fileURLToPath(new URL("../../src", import.meta.url)),
   ui: fileURLToPath(new URL("../../../ui/src", import.meta.url)),
   ...pluginWebRoots(fileURLToPath(new URL("../../../../", import.meta.url))),
+  ...libraryWebRoots(fileURLToPath(new URL("../../../../", import.meta.url))),
 };
 
-/** Whether the file is the app's: the web tree's own, or a plugin web half compiled into it. */
+/**
+ * The web half of every domain library package that has one (`library/<domain>/src/web/`), keyed
+ * `library:<domain>`: TypeScript the Web App compiles in (its source, through the package's
+ * `./web` face), so every guard over the app's source scans it too. Like {@link pluginWebRoots},
+ * only the directories that exist are named.
+ */
+function libraryWebRoots(repoRoot: string): Record<string, string> {
+  const libraries = join(repoRoot, "library");
+  if (!existsSync(libraries)) return {};
+  const roots: Record<string, string> = {};
+  for (const entry of readdirSync(libraries, { withFileTypes: true })) {
+    const web = join(libraries, entry.name, "src", "web");
+    if (entry.isDirectory() && existsSync(web) && statSync(web).isDirectory()) {
+      roots[`library:${entry.name}`] = web;
+    }
+  }
+  return roots;
+}
+
+/** Whether the file is the app's: the web tree's own, a plugin web half or a library web half compiled into it. */
 export function isAppFile(file: SourceFile): boolean {
-  return file.root === "web" || file.root.startsWith("plugin:");
+  return file.root === "web" || file.root.startsWith("plugin:") || file.root.startsWith("library:");
 }
 
 /**
@@ -61,7 +83,7 @@ export function appKeyOf(id: string): string {
 
 /** The repo-relative id of the app file a guard's list names (the inverse of {@link appKeyOf}). */
 export function appIdOf(key: string): string {
-  return key.startsWith("plugins/") ? key : `packages/web/src/${key}`;
+  return key.startsWith("plugins/") || key.startsWith("library/") ? key : `packages/web/src/${key}`;
 }
 
 /** `.ts`, `.tsx` and `.css` under every root. */

@@ -1,7 +1,8 @@
 /**
  * canvas-view.ts unit tests: the zoom range, a wheel tick's factor, the anchored zoom that
  * keeps the point under the cursor fixed, panning, the clamp that keeps the drawing reachable,
- * and the fit a chart opens at.
+ * and the fit a chart opens at. The implementation is the host's lib/canvas-view.ts, consumed
+ * through the internal seam the organization web half reads it through.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -17,7 +18,7 @@ import {
   wheelZoomFactor,
   zoomAt,
   type CanvasView,
-} from "../src/features/company/canvas-view";
+} from "@prismshadow/penguin-web/internal";
 
 /** Where a point of the drawing lands in the frame under a view — the inverse of what zoomAt has to preserve. */
 const project = (view: CanvasView, x: number, y: number) => ({

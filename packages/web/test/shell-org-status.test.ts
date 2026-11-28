@@ -1,5 +1,5 @@
 /**
- * WebApp's organization status marks (features/company/shell-org-status.ts).
+ * WebApp's organization status marks (library/organization/src/web/company/shell-org-status.ts).
  *
  * - An organization headlines invalid configuration above paused, and paused above active.
  * - A session-list group shows its skeleton only until a fetch completes, then the error line
@@ -7,7 +7,10 @@
  *   never leaves a skeleton behind.
  */
 import { describe, expect, it } from "vitest";
-import { groupRender, orgStatusKind } from "../src/features/company/shell-org-status";
+import {
+  groupRender,
+  orgStatusKind,
+} from "@prismshadow/penguin-library-organization/web/company/shell-org-status";
 
 describe("orgStatusKind", () => {
   it("ranks invalid configuration above paused, and paused above active", () => {

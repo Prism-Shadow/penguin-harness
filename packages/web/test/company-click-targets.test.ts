@@ -31,14 +31,14 @@ import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots
 const SCAN = scanSources();
 
 /**
- * The company modules the rule holds over, relative to `src`: every `.tsx` under
- * `features/company/`, read from the scan, so a new page is held to the rule from its first
- * commit and a renamed one never drops out.
+ * The company modules the rule holds over, repo-relative: every `.tsx` under
+ * `library/organization/src/web/company/`, read from the scan, so a new page is held to the rule
+ * from its first commit and a renamed one never drops out.
  */
-const COMPANY_DIR = "packages/web/src/features/company/";
+const COMPANY_DIR = "library/organization/src/web/company/";
 const MODULES = SCAN.files
   .filter((file) => file.id.startsWith(COMPANY_DIR) && file.id.endsWith(".tsx"))
-  .map((file) => file.id.slice("packages/web/src/".length));
+  .map((file) => file.id);
 
 /** Host elements that are controls already: a click on one of these is what the element is for. */
 const CONTROLS = new Set([
@@ -98,7 +98,7 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
 function findWholeAreaTargets(): string[] {
   const found: string[] = [];
   for (const rel of MODULES) {
-    const file = sourceFile(SCAN, `packages/web/src/${rel}`);
+    const file = sourceFile(SCAN, rel);
     const source = ts.createSourceFile(
       file.path,
       file.text,

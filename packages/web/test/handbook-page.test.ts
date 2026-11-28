@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The organization handbook (features/company/handbook-page.tsx) is the Files panel over the
+ * The organization handbook (library/organization/src/web/company/handbook-page.tsx) is the Files panel over the
  * handbook's directory, against a fake of the server: the handbook listing that names the
  * directory, and the Files panel's directory-addressed routes.
  *
@@ -14,8 +14,8 @@ import { act, createElement as h } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { HandbookPage } from "../src/features/company/handbook-page";
-import { OrgContext } from "../src/features/company/org-layout";
+import { HandbookPage } from "@prismshadow/penguin-library-organization/web/company/handbook-page";
+import { OrgContext } from "@prismshadow/penguin-library-organization/web/company/org-layout";
 import { AuthProvider } from "../src/state/auth";
 import { LocaleProvider } from "../src/state/locale";
 import { ADMIN_ME } from "./helpers/admin-settings";

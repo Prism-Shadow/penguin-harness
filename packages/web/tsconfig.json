@@ -6,7 +6,25 @@
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
     "paths": {
-      "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"]
+      "@prismshadow/penguin-server/api": ["../server/src/api/types.ts"],
+      "@prismshadow/penguin-web/internal": ["./src/internal.ts"],
+      "@prismshadow/penguin-web/features/ai-create": ["./src/features/ai-create/index.ts"],
+      "@prismshadow/penguin-web/features/chat": ["./src/features/chat/index.ts"],
+      "@prismshadow/penguin-web/features/model-picker": ["./src/features/model-picker/index.ts"],
+      "@prismshadow/penguin-web/features/messaging": ["./src/features/messaging/index.ts"],
+      "@prismshadow/penguin-web/features/models": ["./src/features/models/index.ts"],
+      "@prismshadow/penguin-web/features/plugins": ["./src/features/plugins/index.ts"],
+      "@prismshadow/penguin-web/features/semantic-id": ["./src/features/semantic-id/index.ts"],
+      "@prismshadow/penguin-web/features/skills": ["./src/features/skills/index.ts"],
+      "@prismshadow/penguin-web/features/traces": ["./src/features/traces/index.ts"],
+      "@prismshadow/penguin-web/features/usage": ["./src/features/usage/index.ts"],
+      "@prismshadow/penguin-web/features/workspace": ["./src/features/workspace/index.ts"],
+      "@prismshadow/penguin-library-workbench/web": ["../../library/workbench/src/web/index.ts"],
+      "@prismshadow/penguin-library-workbench/web/*": ["../../library/workbench/src/web/*"],
+      "@prismshadow/penguin-library-organization/web": [
+        "../../library/organization/src/web/index.ts"
+      ],
+      "@prismshadow/penguin-library-organization/web/*": ["../../library/organization/src/web/*"]
     }
   },
   "include": ["src", "test", "scripts", "vite.config.ts", "vitest.config.ts"]

@@ -23,9 +23,44 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import { fileURLToPath } from "node:url";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
 import { WEB_APP_CSP } from "../../library/http/src/page-csp";
 import { penguinManifest } from "./scripts/penguin-manifest";
+
+/**
+ * The faces the app resolves for the domain packages' web halves (each `library/<domain>/src/web`,
+ * this app's program compiles; the half's package carries none of it) and for the host seams
+ * those halves consume: the app's internals (`./internal`) and the features that still live in
+ * the app (`./features/<feature>`). The app's package does not list the halves as dependencies —
+ * gen-web-table reads `dependencies` for shipped plugins' web halves, which these are not, and
+ * a packed install of a library package carries no source — so the faces resolve here, not
+ * through node_modules. The vitest config imports this table too.
+ */
+export function webHalfAliases(): { find: string | RegExp; replacement: string }[] {
+  const src = fileURLToPath(new URL("./src", import.meta.url));
+  const libraryWeb = (domain: string) =>
+    fileURLToPath(new URL(`../../library/${domain}/src/web`, import.meta.url));
+  const libraryFace = (domain: string, pkg: string) => [
+    {
+      find: new RegExp(`^@prismshadow/penguin-library-${pkg}/web$`),
+      replacement: `${libraryWeb(domain)}/index.ts`,
+    },
+    {
+      find: new RegExp(`^@prismshadow/penguin-library-${pkg}/web/(.*)$`),
+      replacement: `${libraryWeb(domain)}/$1`,
+    },
+  ];
+  return [
+    { find: "@prismshadow/penguin-web/internal", replacement: `${src}/internal.ts` },
+    {
+      find: /^@prismshadow\/penguin-web\/features\/(ai-create|chat|model-picker|messaging|models|plugins|semantic-id|skills|traces|usage|workspace)$/,
+      replacement: `${src}/features/$1/index.ts`,
+    },
+    ...libraryFace("workbench", "workbench"),
+    ...libraryFace("organization", "organization"),
+  ];
+}
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -109,6 +144,7 @@ export default defineConfig({
   // directory it resolves its imports from, the app and every plugin share one React, one UI
   // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
   resolve: {
+    alias: webHalfAliases(),
     dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
   },
   build: {

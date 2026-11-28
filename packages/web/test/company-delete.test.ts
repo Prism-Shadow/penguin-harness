@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Deleting an organization from its settings (features/company/org-dialogs.tsx), creating one,
- * hiring into one (features/company/employee-dialogs.tsx) and leaving one (the org chart's
+ * Deleting an organization from its settings (library/organization/src/web/company/org-dialogs.tsx), creating one,
+ * hiring into one (library/organization/src/web/company/employee-dialogs.tsx) and leaving one (the org chart's
  * menu), beside the Agents page, whose delete buttons read every Agent's employments off the
  * Project's Agent list (state/project.tsx).
  *
@@ -38,11 +38,11 @@ import { AgentsPage } from "../src/features/agents/agents-page";
 import {
   CreateOrganizationDialog,
   OrganizationSettingsDialog,
-} from "../src/features/company/org-dialogs";
-import { HireDialog } from "../src/features/company/employee-dialogs";
-import { OrgChartPage } from "../src/features/company/org-chart-page";
-import { OrgContext } from "../src/features/company/org-layout";
-import { CompanyProvider } from "../src/features/company/company-state";
+} from "@prismshadow/penguin-library-organization/web/company/org-dialogs";
+import { HireDialog } from "@prismshadow/penguin-library-organization/web/company/employee-dialogs";
+import { OrgChartPage } from "@prismshadow/penguin-library-organization/web/company/org-chart-page";
+import { OrgContext } from "@prismshadow/penguin-library-organization/web/company/org-layout";
+import { CompanyProvider } from "@prismshadow/penguin-library-organization/web/company/company-state";
 import { ThemeProvider } from "../src/state/theme";
 import {
   PROJECT_ID,

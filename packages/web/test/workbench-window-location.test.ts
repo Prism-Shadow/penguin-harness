@@ -21,8 +21,8 @@
 import { act, createElement as h } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
-import { AppCenterPage } from "../src/features/app-center/app-center-page";
-import { WorkbenchAppPage } from "../src/features/workbenches/workbench-app-page";
+import { AppCenterPage } from "@prismshadow/penguin-library-workbench/web/app-center/app-center-page";
+import { WorkbenchAppPage } from "@prismshadow/penguin-library-workbench/web/workbenches/workbench-app-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { useLocale } from "../src/state/locale";

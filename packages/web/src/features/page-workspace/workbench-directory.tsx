@@ -13,7 +13,7 @@ import { runningWorkbenches, WORKBENCH_UPDATED_EVENT } from "../../lib/workbench
 import { failureNode } from "../../lib/failure";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { TileIcon } from "../app-center";
+import { TileIcon } from "@prismshadow/penguin-library-workbench/web";
 import { useSafeMode } from "../../rescue/safe-mode";
 
 export function WorkbenchDirectory({ path }: { path: string }) {

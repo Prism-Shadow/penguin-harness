@@ -25,11 +25,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount, unmountAll } from "./helpers/dom";
 import { contributedPagesOf, createContributionsStore } from "../src/web-app/contributions";
 import { PagesContext, type WebAppPagesValue } from "../src/lib/web-app-pages";
-import { OrgRoutes } from "../src/features/company/org-routes";
+import { OrgRoutes } from "@prismshadow/penguin-library-organization/web/company/org-routes";
 import { ShellRoutes } from "../src/web-app/router";
 import type { WebAppPage } from "../src/web-app";
 import { ThemeProvider } from "../src/state/theme";
-import { orgPagesOf } from "../src/features/company/use-org-pages";
+import { orgPagesOf } from "@prismshadow/penguin-library-organization/web/company/use-org-pages";
 
 const Blank: ComponentType = () => null;
 

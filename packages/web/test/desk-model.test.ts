@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { OrgDeskResponse } from "@prismshadow/penguin-server/api";
-import { switchDeskModel, type DeskModelApi } from "../src/features/company/desk-model";
+import {
+  switchDeskModel,
+  type DeskModelApi,
+} from "@prismshadow/penguin-library-organization/web/company/desk-model";
 
 const desk = (sessionId: string): OrgDeskResponse => ({
   agentId: "acme_ceo",

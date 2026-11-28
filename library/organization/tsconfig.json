@@ -1,6 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // Vite reads the nearest tsconfig for the JSX transform (vitest runs without the React
+    // plugin), so the web half's JSX compiles with the automatic runtime.
+    "jsx": "react-jsx",
     "paths": {
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
       "@prismshadow/penguin-library-db/database": ["../db/src/database.ts"],
@@ -9,5 +12,8 @@
       "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"]
     }
   },
-  "include": ["src"]
+  // The web half (src/web) is the web app's to compile; this package's program and its
+  // tsup build carry only the server-facing contract.
+  "include": ["src"],
+  "exclude": ["src/web"]
 }

@@ -20,7 +20,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, GlyphIcon, ICONS, toastError } from "@prismshadow/penguin-ui";
-import type { FailedWorkbench } from "../workbenches";
+import type { FailedWorkbench } from "../../lib/workbench-load-failure";
 import { useAiBridge, type AiChatRequest } from "./ai-bridge";
 
 import { apiErrorText } from "../../lib/api-error";

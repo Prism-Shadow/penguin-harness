@@ -7,7 +7,7 @@ import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useSessions } from "../../state/sessions";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useCompany } from "../../lib/company-context";
-import { parseOrgKey } from "../company";
+import { parseOrgKey } from "@prismshadow/penguin-library-organization/web";
 import type {
   MainSidebarProps,
   SidebarBindingReader,
