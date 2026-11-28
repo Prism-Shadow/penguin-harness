@@ -24,12 +24,15 @@ export interface BrowserExtensionRecord {
 /**
  * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
  * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
+ * Hub (the server that added this machine, over its channel): `{ version: 1, backend, hub: true }`,
+ * `backend` the one its admin's agents drive there now.
  */
 export interface BrowserHello {
   version: 1;
   backend?: BrowserBackend;
   partition?: string;
   extension?: { version: string; chrome: string; name: string };
+  hub?: true;
 }
 
 export type BuiltinBrowserAction =
@@ -136,17 +139,30 @@ export type DesktopBrowserCommand =
    */
   | { op: "throttle"; tabIds: number[] }
   /**
-   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
-   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
-   * `activate` asks for it to be the selected tab of its window.
+   * Chrome and hub (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab
+   * at `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
+   * `activate` asks for it to be the selected tab of its window. To a hub, `sessionId` names the
+   * machine's Session the tab belongs to and `projectId` its Project (the tab's partition); the
+   * extension ignores both.
    */
-  | { op: "open-tab"; url: string; activate: boolean }
+  | { op: "open-tab"; url: string; activate: boolean; sessionId?: string; projectId?: string }
   /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
   | { op: "close-tab"; tabId: number }
   /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
   | { op: "activate-tab"; tabId: number }
-  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
+  /** Chrome and hub. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
   | { op: "ping" }
+  /**
+   * Hub only. Reply: `{}`. An agent on the machine started (`busy`) or finished an action in the
+   * tab: the hub shows the agent at work in its window and keeps the page at full speed meanwhile.
+   */
+  | {
+      op: "activity";
+      tabId: number;
+      busy: boolean;
+      action: BuiltinBrowserAction;
+      sessionId?: string;
+    }
   /**
    * Chrome only, for the built-in browser's import. Reply: `{ cookies: ChromeExtensionCookie[] }`,
    * the cookies of the Chrome profile the extension runs in, read only after the user allows it

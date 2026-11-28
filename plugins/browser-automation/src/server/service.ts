@@ -23,7 +23,10 @@
  *
  * A machine (a server another one started as its machine, `machine`) has no browser of its own
  * and offers no Chrome pairing: a Session there uses the person's own browser on the server that
- * added it. Until that server reaches this one, an admin's call answers `hub_disconnected`.
+ * added it (the hub), which that server relays over the channel it opens to this one
+ * (hub-link.ts, hub-ws.ts). An admin's calls go to that relay; while no hub is connected they
+ * answer `hub_disconnected`. A server without a shell that was not started as a machine becomes
+ * one when a hub connects, for its admins: its members keep their own Chrome.
  */
 import { createHash } from "node:crypto";
 import type {
@@ -50,6 +53,7 @@ import { HttpError } from "@prismshadow/penguin-server/plugin";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";
 import { ExtensionHub } from "./extension-hub.js";
+import { HubLink } from "./hub-link.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionLinkTiming, ExtensionSocket } from "./extension-link.js";
 import { HistoryStore, historyFile, isWebUrl } from "./history.js";
@@ -217,6 +221,8 @@ export interface BuiltinBrowserDeps {
    * counts only without a shell: a desktop app is never anyone's machine.
    */
   machine?: boolean;
+  /** The hub link's timing (tests). */
+  hubLinkTiming?: Partial<ExtensionLinkTiming>;
 }
 
 export class BuiltinBrowser {
@@ -228,8 +234,16 @@ export class BuiltinBrowser {
   private readonly builtin: BrowserBackendRuntime | null;
   /** What `tabs` answers on a server without the built-in browser. */
   private readonly noTabs: TabRegistry;
-  /** This server is another one's machine: its Sessions' browser is the person's, over there. */
+  /** This server was started as another one's machine. */
   private readonly machine: boolean;
+  /**
+   * Without a shell: the person's browser as a hub relays it here (null on a desktop server).
+   * Its link outlives the hub's sockets, and its registry the time between them.
+   */
+  private readonly hub: BrowserBackendRuntime | null;
+  private readonly hubLink: HubLink | null;
+  /** A hub has connected since this server started: it is a machine even without the flag. */
+  private hubSeen = false;
   private readonly importer: Importer;
   private disposed = false;
 
@@ -261,6 +275,18 @@ export class BuiltinBrowser {
             ...(deps.systemMemory ? { systemMemory: deps.systemMemory } : {}),
             ...(deps.platform !== undefined ? { platform: deps.platform } : {}),
           });
+    this.hubLink = deps.port === null ? new HubLink(deps.hubLinkTiming, deps.log) : null;
+    this.hub =
+      this.hubLink === null
+        ? null
+        : new BrowserBackendRuntime({
+            ...shared,
+            link: this.hubLink,
+            // The hub's own windows show these pages and the agents at work; this server's show none.
+            publish: () => undefined,
+            ...(deps.maxOpen ? { maxOpen: deps.maxOpen } : {}),
+            ...(deps.projectOf ? { projectOf: deps.projectOf } : {}),
+          });
     const chrome = deps.chrome;
     this.extensions =
       chrome === undefined
@@ -281,13 +307,45 @@ export class BuiltinBrowser {
     return this.builtin?.tabs ?? this.noTabs;
   }
 
+  // --- the hub (on a machine) ----------------------------------------------------
+
+  /** Whether this server is another one's machine: started as one, or reached by a hub since. */
+  private get isMachine(): boolean {
+    return this.machine || this.hubSeen;
+  }
+
+  /** An admin's calls on a machine go to the person's browser the hub relays. */
+  private viaHub(actor: Actor): BrowserBackendRuntime | null {
+    return this.hub !== null && this.isMachine && actor.isAdmin ? this.hub : null;
+  }
+
+  /** A member on a machine that offers no Chrome of its own: the browser here is the admins'. */
+  private refusedOnMachine(actor: Actor): boolean {
+    return this.isMachine && !actor.isAdmin && this.extensions === null;
+  }
+
+  /** Whether a hub may connect: any server outside the desktop app. */
+  acceptsHub(): boolean {
+    return this.hubLink !== null && !this.disposed;
+  }
+
+  /** The hub's socket, admitted by hub-ws.ts: it takes over the link (a socket before it is replaced). */
+  connectHub(socket: ExtensionSocket): void {
+    if (this.hubLink === null || this.disposed) {
+      socket.close(1012, "server_restart");
+      return;
+    }
+    this.hubSeen = true;
+    this.hubLink.attach(socket);
+  }
+
   // --- backends ------------------------------------------------------------------
 
   /** The backends the actor may choose: built-in for an admin on the desktop, chrome where offered. */
   choices(actor: Actor): BrowserBackend[] {
     const choices: BrowserBackend[] = [];
     // The person chooses on the server that added this machine; there is nothing to pick here.
-    if (this.machine) return choices;
+    if (this.viaHub(actor) !== null) return choices;
     if (this.builtin !== null && actor.isAdmin) choices.push("builtin");
     if (this.extensions !== null) choices.push("chrome");
     return choices;
@@ -295,7 +353,8 @@ export class BuiltinBrowser {
 
   /** The backend the actor's calls go to; see the module doc. */
   backendOf(actor: Actor): BrowserBackend {
-    if (this.machine) return "builtin";
+    const relayed = this.viaHub(actor);
+    if (relayed !== null) return relayed.backend;
     if (this.builtin === null) return this.extensions !== null ? "chrome" : "builtin";
     if (this.extensions === null) return "builtin";
     const chosen = this.deps.prefs?.get(actor.userId) ?? null;
@@ -340,7 +399,9 @@ export class BuiltinBrowser {
 
   /** GET /status: never 503 — an unavailable backend says why. Retries a failed shell handshake. */
   async status(actor: Actor, sessionId?: string): Promise<BuiltinBrowserStatus> {
-    if (this.machine) return this.machineStatus(actor);
+    const relayed = this.viaHub(actor);
+    if (relayed !== null) return this.hubStatus(relayed, sessionId);
+    if (this.refusedOnMachine(actor)) throw adminRequired();
     const backend = this.backendOf(actor);
     if (backend === "builtin" && this.builtin !== null && !actor.isAdmin) throw adminRequired();
     const backends: BrowserBackendInfo[] = [];
@@ -370,17 +431,22 @@ export class BuiltinBrowser {
     };
   }
 
-  /** GET /status on a machine: the one backend there is, the person's, out of reach for now. */
-  private machineStatus(actor: Actor): BuiltinBrowserStatus {
-    if (!actor.isAdmin) throw adminRequired();
-    const backend = this.backendOf(actor);
+  /**
+   * GET /status on a machine: the one backend there is, the person's browser the hub relays — the
+   * one its admin drives now — with the Session's tabs, or why it is out of reach.
+   */
+  private async hubStatus(
+    hub: BrowserBackendRuntime,
+    sessionId?: string,
+  ): Promise<BuiltinBrowserStatus> {
+    const reason = await hub.unavailability(false);
+    const backend = hub.backend;
+    const info = { backend, available: reason === null, ...(reason !== null ? { reason } : {}) };
     return {
-      available: false,
-      reason: "hub_disconnected",
-      backend,
-      backends: [{ backend, available: false, reason: "hub_disconnected" }],
-      tabs: [],
-      activeTabId: null,
+      ...info,
+      backends: [info],
+      tabs: hub.tabs.list(sessionId),
+      activeTabId: hub.tabs.activeFor(sessionId),
     };
   }
 
@@ -393,6 +459,9 @@ export class BuiltinBrowser {
 
   /** A standalone server has no built-in guests to include in the Project resource directory. */
   managedTabInventory(actor: Actor): BuiltinBrowserTab[] {
+    // On a machine, the Sessions' pages are those the hub opened for them in the person's browser.
+    const relayed = this.viaHub(actor);
+    if (relayed !== null) return relayed.tabs.list();
     return this.builtin === null ? [] : this.managedTabs(actor);
   }
 
@@ -736,6 +805,7 @@ export class BuiltinBrowser {
     if (this.disposed) return;
     this.disposed = true;
     this.builtin?.dispose();
+    this.hub?.dispose();
     this.extensions?.dispose();
     this.noTabs.dispose();
     void this.history.dispose();
@@ -758,7 +828,9 @@ export class BuiltinBrowser {
 
   /** The actor's backend's runtime, or why it cannot be driven (503 with the reason, 403). */
   private runtime(actor: Actor): BrowserBackendRuntime {
-    if (this.machine) return this.machineRuntime(actor);
+    const relayed = this.viaHub(actor);
+    if (relayed !== null) return relayed;
+    if (this.refusedOnMachine(actor)) throw adminRequired();
     const backend = this.backendOf(actor);
     if (backend === "builtin") return this.builtinRuntime(actor);
     const hub = this.extensions;
@@ -772,15 +844,11 @@ export class BuiltinBrowser {
     return runtime;
   }
 
-  /** On a machine: the person's browser, for an admin, which is out of reach until it is relayed. */
-  private machineRuntime(actor: Actor): BrowserBackendRuntime {
-    if (!actor.isAdmin) throw adminRequired();
-    throw new BrowserUnavailableError("hub_disconnected");
-  }
-
-  /** The built-in browser, for an admin. */
+  /** The built-in browser, for an admin; on a machine, the person's the hub relays. */
   private builtinRuntime(actor: Actor): BrowserBackendRuntime {
-    if (this.machine) return this.machineRuntime(actor);
+    const relayed = this.viaHub(actor);
+    if (relayed !== null) return relayed;
+    if (this.refusedOnMachine(actor)) throw adminRequired();
     if (this.builtin === null) throw new BrowserUnavailableError("not_desktop");
     if (!actor.isAdmin) throw adminRequired();
     return this.builtin;
@@ -794,7 +862,7 @@ export class BuiltinBrowser {
 
   /** What only the built-in browser has: refused on chrome (405), and to a non-admin (403). */
   private builtinOnly(actor: Actor, what: string): void {
-    if (this.machine) {
+    if (this.viaHub(actor) !== null || this.refusedOnMachine(actor)) {
       throw new HttpError(
         405,
         "not_supported",

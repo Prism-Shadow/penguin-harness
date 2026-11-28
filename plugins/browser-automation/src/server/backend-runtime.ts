@@ -15,6 +15,9 @@
  *   a restricted page) is `tab-released`: it leaves the registry, and an action on it answers
  *   409 `tab_released`. The registry outlives a disconnect and is replaced by the extension's
  *   tab list when it reconnects.
+ * - Hub (a machine's link to the server that added it, hub-link.ts): the extension's kind, but each
+ *   tab belongs to the Session that opened it (`open-tab` names it and its Project), and every
+ *   action is told to the hub (`activity`), whose window shows the agent at work.
  *
  * Every agent action names a tab (`active` included), makes it the active one, and is
  * bracketed by `builtin_browser_activity` events so the window can show the agent at work.
@@ -134,6 +137,8 @@ export interface BackendRuntimeDeps {
   log(line: string): void;
   /** The homepage a new tab with no address opens; null for none (blank). */
   homepage(): Promise<string | null>;
+  /** The Project a Session belongs to: what a hub opens a Session's tab in. */
+  projectOf?(sessionId: string): string | null;
   partition?(sessionId?: string, projectId?: string): string;
   /** The address check the routes' URLs go through (service.ts's browserUrl). */
   url: UrlCheck;
@@ -150,7 +155,6 @@ export interface BackendRuntimeDeps {
 
 export class BrowserBackendRuntime {
   readonly tabs: TabRegistry;
-  readonly backend: BrowserBackend;
   readonly link: BrowserLink;
   private readonly driver: BrowserDriver;
   private readonly actions: BrowserActions;
@@ -184,7 +188,6 @@ export class BrowserBackendRuntime {
     const now = deps.now ?? Date.now;
     this.now = now;
     this.link = deps.link;
-    this.backend = deps.link.backend;
     this.timing = { ...DEFAULT_RUNTIME_TIMING, ...deps.timing };
     this.loadWaitMs = deps.timing?.loadWaitMs ?? DEFAULT_ACTION_TIMING.loadWaitMs;
     this.tabs = new TabRegistry(now);
@@ -203,6 +206,11 @@ export class BrowserBackendRuntime {
     this.link.onConnect(() => this.refreshTabs());
   }
 
+  /** The browser this runtime drives: its link's (a hub's follows the hub's latest hello). */
+  get backend(): BrowserBackend {
+    return this.link.backend;
+  }
+
   /** The latest load measurement (built-in), for the status. */
   get metrics(): BuiltinBrowserMetrics | null {
     return this.measured;
@@ -216,7 +224,7 @@ export class BrowserBackendRuntime {
   /** Why this backend cannot be driven now, or null. `force` retries a failed handshake. */
   async unavailability(force: boolean): Promise<BuiltinBrowserUnavailableReason | null> {
     if (await this.link.handshake(force)) return null;
-    return this.backend === "builtin" ? "shell_unsupported" : "extension_disconnected";
+    return this.link.downReason;
   }
 
   // --- tabs ----------------------------------------------------------------------
@@ -252,7 +260,7 @@ export class BrowserBackendRuntime {
     }
     const activate = opts.activate !== false;
     const tabId = this.link.capabilities.createsTabs
-      ? await this.createTab(url, activate)
+      ? await this.createTab(url, activate, opts.sessionId, opts.projectId)
       : await this.requestTab(url, activate, opts.sessionId, opts.projectId);
     // The agent's (or the panel's) new tab: its grace runs from now, as after an action.
     this.actedAt.set(tabId, this.now());
@@ -450,15 +458,16 @@ export class BrowserBackendRuntime {
    * its cookies and stores and request interception: those are the user's real ones.
    */
   private checkRawCdp(method: string, params: Record<string, unknown> | undefined): void {
-    if (this.backend === "chrome") {
-      if (
-        CHROME_REFUSED_METHODS.has(method) ||
-        CHROME_REFUSED_DOMAINS.some((domain) => method.startsWith(domain))
-      ) {
+    // A browser whose cookie store this server may not touch (the user's Chrome, or the person's
+    // browser a hub relays) is held to the stricter list.
+    if (!this.link.capabilities.cookieStore) {
+      if (refusedOutsideOwnStore(method)) {
         throw new HttpError(
           403,
           "cdp_refused",
-          `${method} is not available on your own Chrome: its cookies, stores and other tabs stay in Chrome. Open, switch and close tabs with penguin browser open, switch and close.`,
+          this.link.capabilities.hearsActivity
+            ? `${method} is not available to a session on a machine: the browser's cookies, stores and other tabs stay on the computer it runs on. Open, switch and close tabs with penguin browser open, switch and close.`
+            : `${method} is not available on your own Chrome: its cookies, stores and other tabs stay in Chrome. Open, switch and close tabs with penguin browser open, switch and close.`,
         );
       }
     } else if (["Target.", "Browser.", "Storage."].some((domain) => method.startsWith(domain))) {
@@ -484,18 +493,33 @@ export class BrowserBackendRuntime {
     }
   }
 
-  /** Chrome: the extension creates the tab in its group and answers with it. */
-  private async createTab(url: string, activate: boolean): Promise<number> {
+  /**
+   * Chrome: the extension creates the tab in its group and answers with it. Hub: the hub opens it
+   * for the Session, in the Session's Project, and answers it with the Session on it.
+   */
+  private async createTab(
+    url: string,
+    activate: boolean,
+    sessionId: string | undefined,
+    projectId: string | undefined,
+  ): Promise<number> {
+    const project =
+      sessionId === undefined ? projectId : (this.deps.projectOf?.(sessionId) ?? projectId);
+    const owner =
+      this.link.capabilities.sessionScoped && sessionId !== undefined
+        ? { sessionId, ...(project !== undefined ? { projectId: project } : {}) }
+        : {};
     const answer = (await this.command(
-      { op: "open-tab", url, activate },
+      { op: "open-tab", url, activate, ...owner },
       -1,
       this.timing.openClaimMs,
     )) as { tab?: unknown } | null;
-    const tab = parseTab(answer?.tab);
-    if (tab === null) {
-      throw new HttpError(502, "bad_reply", "The extension answered open-tab without a tab.");
+    const parsed = parseTab(answer?.tab);
+    if (parsed === null) {
+      throw new HttpError(502, "bad_reply", "The far side answered open-tab without a tab.");
     }
     // Its `tab` event may come after the reply: the registry learns it from the answer.
+    const tab = this.fromFarSide(parsed);
     const previous = this.tabs.upsert(tab);
     this.released.delete(tab.id);
     if (previous === undefined) this.schedulePublish();
@@ -534,9 +558,9 @@ export class BrowserBackendRuntime {
     return tabId;
   }
 
-  /** Chrome keeps its own shared tab group; desktop automation is scoped to its Session. */
+  /** Chrome keeps its own shared tab group; the desktop's and a hub's tabs belong to Sessions. */
   private scope(sessionId?: string): string | undefined {
-    return this.backend === "builtin" ? sessionId : undefined;
+    return this.link.capabilities.sessionScoped ? sessionId : undefined;
   }
 
   adoptSession(fromSessionId: string, sessionId: string): void {
@@ -641,6 +665,19 @@ export class BrowserBackendRuntime {
       action,
       ...(sessionId !== undefined ? { sessionId } : {}),
     });
+    // A hub shows the agent at work in its own window, and keeps the page at full speed meanwhile.
+    // Sent before the action's first command: the socket keeps order.
+    if (this.link.capabilities.hearsActivity && (delta > 0 || entry.count === 0)) {
+      this.link
+        .request({
+          op: "activity",
+          tabId,
+          busy: entry.count > 0,
+          action,
+          ...(sessionId !== undefined ? { sessionId } : {}),
+        })
+        .catch(() => undefined);
+    }
   }
 
   private requestOpen(opts: {
@@ -703,6 +740,18 @@ export class BrowserBackendRuntime {
     });
   }
 
+  /**
+   * A tab as the far side reported it. Only a hub names the Session a tab belongs to, and the
+   * registry takes that as its owner; from the shell or an extension the field is not theirs to set.
+   */
+  private fromFarSide(tab: BuiltinBrowserTab): BuiltinBrowserTab {
+    const hub = this.link.capabilities.createsTabs && this.link.capabilities.sessionScoped;
+    const { sessionId, ...rest } = tab;
+    if (!hub || sessionId === undefined) return rest;
+    this.tabs.own(tab.id, sessionId);
+    return tab;
+  }
+
   /** The tabs open, and those on their way (asked of a window, not yet claimed). */
   private tabsHeld(): number {
     return this.tabs.list().length + this.tabs.pendingOpens();
@@ -720,9 +769,10 @@ export class BrowserBackendRuntime {
     try {
       this.applyLinkEvent(event);
     } catch (err) {
-      const side =
-        this.backend === "builtin"
-          ? "builtin browser: the shell's"
+      const side = !this.link.capabilities.createsTabs
+        ? "builtin browser: the shell's"
+        : this.link.capabilities.hearsActivity
+          ? "hub browser: the hub's"
           : "chrome browser: the extension's";
       this.deps.log(`${side} '${event.kind}' event failed: ${messageOf(err)}`);
     }
@@ -731,7 +781,7 @@ export class BrowserBackendRuntime {
   private applyLinkEvent(event: DesktopBrowserEvent): void {
     switch (event.kind) {
       case "tab": {
-        const previous = this.tabs.upsert(event.tab);
+        const previous = this.tabs.upsert(this.fromFarSide(event.tab));
         this.released.delete(event.tab.id);
         if (previous === undefined) {
           // A new tab loads at full speed for the grace period, whoever opened it.
@@ -778,7 +828,7 @@ export class BrowserBackendRuntime {
     }
     // An event proves the shell speaks the protocol. A link that has not shaken hands yet (a
     // server that started under a running window) does it now, and learns the other tabs.
-    if (this.backend === "builtin" && !this.link.connected) void this.link.handshake(true);
+    if (!this.link.capabilities.createsTabs && !this.link.connected) void this.link.handshake(true);
   }
 
   private async refreshTabs(): Promise<void> {
@@ -786,7 +836,10 @@ export class BrowserBackendRuntime {
       tabs?: unknown;
     } | null;
     const tabs = Array.isArray(answer?.tabs)
-      ? answer.tabs.map(parseTab).filter((tab): tab is BuiltinBrowserTab => tab !== null)
+      ? answer.tabs
+          .map(parseTab)
+          .filter((tab): tab is BuiltinBrowserTab => tab !== null)
+          .map((tab) => this.fromFarSide(tab))
       : [];
     if (this.tabs.replaceAll(tabs)) this.schedulePublish();
     // A shell met again (a new generation, a restarted server) is told afresh which tabs to throttle.
@@ -894,6 +947,14 @@ export class BrowserBackendRuntime {
       }
     }, this.timing.publishDelayMs);
   }
+}
+
+/** Whether a raw CDP method is refused on a browser whose cookie store is not this server's. */
+export function refusedOutsideOwnStore(method: string): boolean {
+  return (
+    CHROME_REFUSED_METHODS.has(method) ||
+    CHROME_REFUSED_DOMAINS.some((domain) => method.startsWith(domain))
+  );
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));

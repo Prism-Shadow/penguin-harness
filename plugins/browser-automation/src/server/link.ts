@@ -1,8 +1,10 @@
 /**
  * The seam under the driver: one link per backend, the same request/reply-and-events contract
- * whether the far side is the desktop shell (ShellLink, over Electron's utilityProcess port) or
- * the PenguinHarness Browser extension in the user's Chrome (ExtensionLink, over a WebSocket the
- * extension opens). The driver, the page scripts and the actions speak only this.
+ * whether the far side is the desktop shell (ShellLink, over Electron's utilityProcess port), the
+ * PenguinHarness Browser extension in the user's Chrome (ExtensionLink, over a WebSocket the
+ * extension opens), or — on a machine — the server that added it, relaying the person's own
+ * browser (HubLink, over a WebSocket that server opens through its ssh connection). The driver,
+ * the page scripts and the actions speak only this.
  *
  * What differs between the two is declared, not discovered: `capabilities` says which commands
  * the far side answers (the shell throttles and holds a cookie store; the extension creates,
@@ -18,8 +20,11 @@ import type {
 import { HttpError } from "@prismshadow/penguin-server/plugin";
 
 export interface BrowserLink {
+  /** The browser the far side drives. A hub's is the one its hello names, and may change on a reconnect. */
   readonly backend: BrowserBackend;
   readonly capabilities: BrowserLinkCapabilities;
+  /** Why this backend cannot be driven while the far side does not answer. */
+  readonly downReason: BuiltinBrowserUnavailableReason;
   /** Whether the far side has answered `hello` and is there now. */
   readonly connected: boolean;
   /** Sends one command and resolves with the far side's result. */
@@ -42,12 +47,29 @@ export const BUILTIN_CAPABILITIES: BrowserLinkCapabilities = {
   createsTabs: false,
   throttles: true,
   cookieStore: true,
+  sessionScoped: true,
+  hearsActivity: false,
 };
 
 export const CHROME_CAPABILITIES: BrowserLinkCapabilities = {
   createsTabs: true,
   throttles: false,
   cookieStore: false,
+  sessionScoped: false,
+  hearsActivity: false,
+};
+
+/**
+ * A machine's link to the server that added it. That server creates, closes and focuses the tabs
+ * in the person's browser, throttles and measures them itself, and lets no cookie command through;
+ * each tab belongs to the machine's Session that opened it, and the agents' activity is told to it.
+ */
+export const HUB_CAPABILITIES: BrowserLinkCapabilities = {
+  createsTabs: true,
+  throttles: false,
+  cookieStore: false,
+  sessionScoped: true,
+  hearsActivity: true,
 };
 
 /**

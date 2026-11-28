@@ -74,6 +74,13 @@ export class TabRegistry {
     return this.list(sessionId).at(-1)?.id ?? null;
   }
 
+  /** A tab whose far side names its Session (a hub's): that Session owns it from now on. */
+  own(id: number, sessionId: string): void {
+    this.owners.set(id, sessionId);
+    const tab = this.tabs.get(id);
+    if (tab !== undefined) this.tabs.set(id, { ...tab, sessionId });
+  }
+
   /** Transfer existing pages and pending popups without recreating their guests. */
   adoptSession(fromSessionId: string, sessionId: string): void {
     if (fromSessionId === sessionId) return;

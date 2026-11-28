@@ -5546,15 +5546,20 @@ export interface InstalledPluginsResponse {
 /**
  * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
  * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
- * has no cookie store the server may touch.
+ * has no cookie store the server may touch. A machine's hub link (the server that added it) is
+ * the extension's kind, but its tabs belong to Sessions and it hears the agents' activity.
  */
 export interface BrowserLinkCapabilities {
-  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome). */
+  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome, hub). */
   createsTabs: boolean;
   /** `throttle` and the `metrics` events (builtin). */
   throttles: boolean;
   /** `set-cookies` and `clear-data` (builtin). */
   cookieStore: boolean;
+  /** Each tab belongs to a Session, and an action sees only its own Session's (builtin, hub). */
+  sessionScoped: boolean;
+  /** `activity` is answered: the far side shows the agents at work itself (hub). */
+  hearsActivity: boolean;
 }
 
 /**
