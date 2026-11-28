@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { computeSamplesSourceHash } from "./doc-samples.js";
-import { extractAll } from "./extract.js";
+import { extractAll } from "./extract/index.js";
 import { CodeHighlighter } from "./highlight.js";
 import { slugOf, truncateGraphemes } from "./jsdoc.js";
 import { kernelBadgeMeta, RenderContext } from "./render/context.js";
@@ -316,11 +316,19 @@ function buildClientBundle(searchIndex: readonly SearchHit[]): string {
   return `window.penguinSearchIndex=${safeIndex};\n${transpiled.outputText}`;
 }
 
+const STYLE_PARTS = [
+  "styles/tokens.css",
+  "styles/layout.css",
+  "styles/sidebar.css",
+  "styles/components.css",
+  "styles/catalog.css",
+] as const;
+
 function buildStyleBundle(): string {
-  const baseCss = fs.readFileSync(path.join(HERE, "styles/theme.css"), "utf8");
+  const parts = STYLE_PARTS.map((rel) => fs.readFileSync(path.join(HERE, rel), "utf8"));
   const twoslashCss = loadTwoslashCss();
-  const refsCss = fs.readFileSync(path.join(HERE, "styles/references.css"), "utf8");
-  return [baseCss, twoslashCss, refsCss].filter(Boolean).join("\n");
+  const codeCss = fs.readFileSync(path.join(HERE, "styles/code.css"), "utf8");
+  return [...parts, twoslashCss, codeCss].filter(Boolean).join("\n");
 }
 
 export async function buildSite(

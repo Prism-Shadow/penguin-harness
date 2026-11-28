@@ -18,7 +18,7 @@
   const WIDTH_KEY = "refs-sidebar-width";
   const SIDEBAR_MIN_WIDTH = 180;
   const SIDEBAR_MAX_WIDTH = 520;
-  const BRANDS = new Set(["frost", "console", "adev"]);
+  const BRANDS = new Set(["frost", "console"]);
   const BADGE_KINDS = new Set([
     "decorator",
     "function",
@@ -80,8 +80,7 @@
 
   function applyBrand(raw: string): void {
     const b = BRANDS.has(raw) ? raw : "frost";
-    if (b === "adev") delete html.dataset.brand;
-    else html.dataset.brand = b;
+    html.dataset.brand = b;
     for (const btn of segBtns) {
       btn.classList.toggle("active", btn.getAttribute("data-set-brand") === b);
     }

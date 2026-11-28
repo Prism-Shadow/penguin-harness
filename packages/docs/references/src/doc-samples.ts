@@ -13,7 +13,7 @@ import { createHighlighter } from "shiki";
 import { parse as parseTokens } from "space-separated-tokens";
 import ts from "typescript";
 import { visit } from "unist-util-visit";
-import { extractAll } from "./extract.js";
+import { extractAll } from "./extract/index.js";
 import { extractJsDoc, markdownFirstBlockToHast, slugOf } from "./jsdoc.js";
 import type { VerifiedSample, VerifiedSamplesFile } from "./types.js";
 

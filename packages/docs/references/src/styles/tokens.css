@@ -1,0 +1,172 @@
+/* Design tokens for PenguinHarness References: Frost (default) & Console, light & dark. */
+:root {
+  --fallback-font-stack:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Noto Sans SC", sans-serif;
+  --inter-font: "Inter", "MiSans", "PingFang SC", var(--fallback-font-stack);
+  --inter-tight-font: "Inter", "MiSans", "PingFang SC", var(--fallback-font-stack);
+  --code-font: "JetBrains Mono", "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --page-width: 82ch;
+  --layout-padding: 3.12rem;
+  --secondary-nav-width: 17.25rem;
+  --card-radius: 0.625rem;
+
+  --twoslash-border-color: var(--senary-contrast);
+  --twoslash-popup-bg: #ffffff;
+  --twoslash-popup-color: var(--primary-contrast);
+  --twoslash-popup-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  --twoslash-docs-color: var(--tertiary-contrast);
+  --twoslash-docs-font: var(--inter-font);
+  --twoslash-code-font: var(--code-font);
+  --twoslash-code-font-size: 0.78rem;
+}
+
+@media (max-width: 1200px) {
+  :root {
+    --layout-padding: 2rem;
+  }
+}
+@media (max-width: 700px) {
+  :root {
+    --layout-padding: 1.25rem;
+  }
+}
+
+/* ---------- Frost Light (default) ---------- */
+html.docs-light-mode {
+  background-color: #fafafa;
+  color-scheme: light;
+
+  --full-contrast: #000;
+  --primary-contrast: #18191b;
+  --secondary-contrast: #313336;
+  --tertiary-contrast: #424549;
+  --quaternary-contrast: #686c71;
+  --quinary-contrast: #d0d3d6;
+  --senary-contrast: #e6e8ea;
+  --septenary-contrast: #f3f4f5;
+  --octonary-contrast: #ffffff;
+  --page-background: #fafafa;
+  --sec-nav-bg: #f3f4f5;
+
+  --bright-blue: #2f66c4;
+  --electric-violet: #0b57d0;
+  --vivid-pink: #015dfc;
+  --subtle-purple: #eaf0fa;
+
+  --symbolic-purple: oklch(42.86% 0.29 266.4);
+  --symbolic-blue: oklch(42.45% 0.223 263.38);
+  --symbolic-pink: oklch(63.67% 0.254 13.47);
+  --symbolic-green: oklch(48% 0.16 145);
+  --symbolic-cyan: oklch(67.05% 0.121 181.34);
+  --symbolic-teal: oklch(57.59% 0.083 230.58);
+  --symbolic-brown: oklch(49.06% 0.128 46.41);
+  --symbolic-lime: oklch(70.33% 0.208 135.67);
+
+  --pink-to-purple-vertical-gradient: linear-gradient(180deg, #015dfc 0%, #0b57d0 100%);
+  --red-to-pink-to-purple-horizontal-gradient: linear-gradient(90deg, #0b57d0 0%, #015dfc 100%);
+
+  --get-fg: #0a7d33;
+  --get-bg: #e6f6ea;
+  --post-fg: #0a5aa8;
+  --post-bg: #e3eefd;
+  --put-fg: #8a4b00;
+  --put-bg: #fdf0dd;
+  --del-fg: #b42318;
+  --del-bg: #fdebe9;
+}
+
+/* ---------- Frost Dark ---------- */
+html.docs-dark-mode {
+  background-color: #141517;
+  color-scheme: dark;
+
+  --full-contrast: #fff;
+  --primary-contrast: #f2f4f7;
+  --secondary-contrast: #d5d8de;
+  --tertiary-contrast: #b4b8c0;
+  --quaternary-contrast: #8f949c;
+  --quinary-contrast: #4b5058;
+  --senary-contrast: #2b2f36;
+  --septenary-contrast: #22252a;
+  --octonary-contrast: #1c1e22;
+  --page-background: #141517;
+  --sec-nav-bg: #191b1e;
+
+  --bright-blue: #7fa9df;
+  --electric-violet: #7fa9df;
+  --vivid-pink: #8ab4f8;
+  --subtle-purple: color-mix(in srgb, #7fa9df 14%, #1c1e22 86%);
+
+  --symbolic-purple: color-mix(in srgb, oklch(42.86% 0.29 266.4), #fff 65%);
+  --symbolic-blue: color-mix(in srgb, oklch(42.45% 0.223 263.38), #fff 65%);
+  --symbolic-pink: color-mix(in srgb, oklch(63.67% 0.254 13.47), #fff 65%);
+  --symbolic-green: color-mix(in srgb, oklch(48% 0.16 145), #fff 65%);
+  --symbolic-cyan: color-mix(in srgb, oklch(67.05% 0.121 181.34), #fff 65%);
+  --symbolic-teal: color-mix(in srgb, oklch(57.59% 0.083 230.58), #fff 65%);
+  --symbolic-brown: color-mix(in srgb, oklch(49.06% 0.128 46.41), #fff 65%);
+  --symbolic-lime: color-mix(in srgb, oklch(70.33% 0.208 135.67), #fff 65%);
+
+  --pink-to-purple-vertical-gradient: linear-gradient(180deg, #8ab4f8 0%, #6590c2 100%);
+  --red-to-pink-to-purple-horizontal-gradient: linear-gradient(90deg, #8ab4f8 0%, #6590c2 100%);
+
+  --twoslash-popup-bg: #141922;
+  --twoslash-popup-shadow: 0 12px 32px rgba(0, 0, 0, 0.48);
+
+  --get-fg: #3fb950;
+  --get-bg: #12261c;
+  --post-fg: #79c0ff;
+  --post-bg: #12213a;
+  --put-fg: #d29922;
+  --put-bg: #2a1f0d;
+  --del-fg: #ff7b72;
+  --del-bg: #2d1517;
+}
+
+/* ---------- Console Brand Overrides (warm paper / warm black, 0px corners) ---------- */
+html[data-brand="console"] {
+  --inter-font: "IBM Plex Sans", "PingFang SC", var(--fallback-font-stack);
+  --inter-tight-font: "IBM Plex Sans", "PingFang SC", var(--fallback-font-stack);
+  --card-radius: 0px;
+}
+
+html[data-brand="console"].docs-light-mode {
+  background-color: #fbfafa;
+  --bright-blue: #003ee9;
+  --electric-violet: #e32a01;
+  --vivid-pink: #e32a01;
+  --page-background: #fbfafa;
+  --sec-nav-bg: #fbfafa;
+  --octonary-contrast: #fbfafa;
+  --septenary-contrast: #f4f2f2;
+  --senary-contrast: #e6e3e3;
+  --quinary-contrast: #bdb8b8;
+  --quaternary-contrast: #5f5c5c;
+  --tertiary-contrast: #383535;
+  --secondary-contrast: #282525;
+  --primary-contrast: #1d1d1f;
+  --subtle-purple: #f0eeee;
+  --pink-to-purple-vertical-gradient: linear-gradient(180deg, #e32a01 0%, #e32a01 100%);
+  --red-to-pink-to-purple-horizontal-gradient: linear-gradient(90deg, #e32a01 0%, #003ee9 100%);
+}
+
+html[data-brand="console"].docs-dark-mode {
+  background-color: #131010;
+  --bright-blue: #79a6ff;
+  --electric-violet: #ff6b4a;
+  --vivid-pink: #ff6b4a;
+  --page-background: #131010;
+  --sec-nav-bg: #131010;
+  --octonary-contrast: #181414;
+  --septenary-contrast: #1f1b1b;
+  --senary-contrast: #2e2929;
+  --quinary-contrast: #524c4c;
+  --quaternary-contrast: #968f8f;
+  --tertiary-contrast: #b8b2b2;
+  --secondary-contrast: #d8d2d2;
+  --primary-contrast: #f4f2f2;
+  --subtle-purple: #1f1b1b;
+  --pink-to-purple-vertical-gradient: linear-gradient(180deg, #ff6b4a 0%, #ff6b4a 100%);
+  --red-to-pink-to-purple-horizontal-gradient: linear-gradient(90deg, #ff6b4a 0%, #79a6ff 100%);
+}
