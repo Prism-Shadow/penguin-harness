@@ -59,6 +59,7 @@ export const zh = {
     next: "下一页",
     notFound: "页面不存在",
     backHome: "返回文档首页",
+    apiReference: "API 参考",
   },
 
   search: {

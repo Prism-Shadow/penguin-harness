@@ -17,9 +17,9 @@ description: One-line summary rendered under the title
 
 Navigation (sections, order, prev/next) is defined once in `src/lib/nav.ts`; a vitest check (`test/content.test.ts`) keeps nav and content in sync — every navigated slug must have both language files with a title, and no orphan files may exist. Internal links are written as absolute doc paths (`[Core Interfaces](/interfaces)`).
 
-## API References
+## API Reference
 
-`references/` is an internal static API-reference generator owned by this package (not a separate workspace package). It extracts kernel exports, modules, components, interfaces, HTTP routes, CLI commands, and contribution slots directly from the repository AST and verifies executable Twoslash doc-samples.
+`references/` is an internal static API-reference generator owned by this package (not a separate workspace package). It extracts kernel exports, modules, components, interfaces, HTTP routes, CLI commands, and contribution slots directly from the repository AST and verifies executable Twoslash doc-samples. Deployed at <https://penguin.ooo/docs/reference/>.
 
 ```bash
 pnpm --filter @prismshadow/penguin-docs references:verify-samples
@@ -38,7 +38,7 @@ pnpm --filter @prismshadow/penguin-docs test
 
 ## Deployment
 
-Deployed to GitHub Pages together with the landing page and the component gallery as one artifact: `scripts/build-site.mjs` (repo root) builds landing with `BASE_PATH=<base>`, docs with `BASE_PATH=<base>docs/` and the gallery with `BASE_PATH=<base>gallery/`, then copies this package's `dist/` into the landing dist under `docs/` (and the gallery's under `gallery/`). `.github/workflows/pages.yml` runs it on pushes to main touching any of the three packages.
+Deployed to GitHub Pages together with the landing page, API reference and component gallery as one artifact: `scripts/build-site.mjs` (repo root) builds landing with `BASE_PATH=<base>`, docs with `BASE_PATH=<base>docs/`, the static API reference (`build:references`) and the gallery with `BASE_PATH=<base>gallery/`, then copies this package's `dist/` into the landing dist under `docs/`, `references/dist/references/` under `docs/reference/` and the gallery's under `gallery/`. `.github/workflows/pages.yml` runs it on pushes to main touching site or API source packages.
 
 ```bash
 BASE_PATH=/ pnpm build:site                        # assemble locally

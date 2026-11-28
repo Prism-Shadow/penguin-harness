@@ -1,15 +1,16 @@
 /**
  * Build the whole public site as one deployable tree: the landing page at the root, the docs
- * site under docs/ and the component gallery under gallery/. Used by the Pages workflow and for
- * local preview:
+ * site under docs/, the generated TypeScript API reference under docs/reference/ and the
+ * component gallery under gallery/. Used by the Pages workflow and for local preview:
  *
  *   BASE_PATH=/<repo>/ pnpm build:site     # CI (GitHub Pages project subpath)
  *   pnpm build:site                        # local (base "/")
  *   pnpm --filter @prismshadow/penguin-landing preview   # serve the assembled tree
  *
- * Each package builds with its own BASE_PATH (landing: <base>, docs: <base>docs/, gallery:
- * <base>gallery/), then the docs and gallery dists are copied into the landing dist under docs/
- * and gallery/. The result is a single artifact — one GitHub Pages deployment hosts all three.
+ * Each Vite package builds with its own BASE_PATH (landing: <base>, docs: <base>docs/, gallery:
+ * <base>gallery/), then the docs, API reference and gallery dists are copied into the landing
+ * dist under docs/, docs/reference/ and gallery/. The result is a single artifact — one GitHub
+ * Pages deployment hosts all of them.
  *
  * The landing's Plugins pages read every plugin's built ifaces.json. The gallery builds from
  * Web App source and imports the server's browser-safe exports. Prepare the server's workspace
@@ -18,7 +19,7 @@
  */
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,6 +39,7 @@ const run = (cmd, BASE_PATH, extra = {}) => {
 run('pnpm --filter "@prismshadow/penguin-server^..." --filter "./plugins/**" build');
 run("pnpm --filter @prismshadow/penguin-landing build", base);
 run("pnpm --filter @prismshadow/penguin-docs build", `${base}docs/`);
+run("pnpm --filter @prismshadow/penguin-docs build:references");
 run("pnpm --filter @prismshadow/penguin-server build", undefined, { PENGUIN_BUILD_JS_ONLY: "1" });
 run("pnpm --filter @prismshadow/penguin-ui-gallery build", `${base}gallery/`);
 
@@ -111,10 +113,34 @@ for (const [pkg, dir] of [
   cpSync(join(pkgDir(pkg), "dist"), target, { recursive: true });
 }
 
-// sitemap.xml goes in last, because only here do all three dists exist: it is the one file
-// that has to name routes from every site. It is also the only way a crawler learns those
-// routes — the pages ship an empty <div id="root"> and build their navigation in JS, so
-// following links is not an option.
+// Mount the static API reference site at `<base>docs/reference/`. Its pages use purely
+// relative links (`./`, `../`), so mounting it after `straysIn("docs", ...)` works at any
+// BASE_PATH without rebasing, and filtering out `.penguin-refs-generated` keeps internal
+// generator metadata out of the deployed artifact.
+const referenceSrc = join(pkgDir("docs"), "references", "dist", "references");
+const referenceTarget = join(landingDist, "docs", "reference");
+rmSync(referenceTarget, { recursive: true, force: true });
+cpSync(referenceSrc, referenceTarget, {
+  recursive: true,
+  filter: (src) => basename(src) !== ".penguin-refs-generated",
+});
+
+/** Routes under `/docs/reference/` derived directly from the copied HTML index files. */
+function referenceRoutes(dir) {
+  return filesIn(dir)
+    .filter((file) => basename(file) === "index.html")
+    .map((file) => {
+      const relDir = dirname(relative(dir, file)).split(sep).join("/");
+      return relDir === "." ? "/docs/reference/" : `/docs/reference/${relDir}/`;
+    })
+    .sort()
+    .map((route) => ({ route }));
+}
+
+// sitemap.xml goes in last, because only here do all dists exist: it is the one file that
+// has to name routes from every site. It is also the only way a crawler learns SPA routes —
+// those pages ship an empty <div id="root"> and build their navigation in JS, so following
+// links is not an option.
 // Imported dynamically after `core` and `plugins` have been built above, because `site-routes.mjs`
 // transitively imports `@prismshadow/penguin-core/plugin-index` from core's built `dist/`.
 const { absoluteUrl, blogRoutes, docsRoutes, galleryRoutes, hubRoutes, pageRoutes, rfcRoutes } =
@@ -127,6 +153,7 @@ const routes = [
   ...rfcRoutes(),
   ...hubRoutes(),
   ...docsRoutes(),
+  ...referenceRoutes(referenceTarget),
   ...galleryRoutes(),
 ];
 const sitemap = [
@@ -146,6 +173,6 @@ const sitemap = [
 writeFileSync(join(landingDist, "sitemap.xml"), sitemap);
 
 console.log(
-  `\n[build-site] assembled site at ${landingDist} (docs under /docs/, gallery under /gallery/)`,
+  `\n[build-site] assembled site at ${landingDist} (docs under /docs/, reference under /docs/reference/, gallery under /gallery/)`,
 );
 console.log(`[build-site] wrote sitemap.xml (${routes.length} URLs)`);
