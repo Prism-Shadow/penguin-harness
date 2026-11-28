@@ -6,7 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine } from "@prismshadow/penguin-core/plugin";
 import { migrateWorkbenchesIntoState } from "./migrate-state.js";
 import { readFolder } from "./store.js";
 
@@ -106,7 +106,7 @@ const running = new Map<string, Promise<void>>();
  * move into Agent State (./migrate-state.ts). Any caller may await it before touching the
  * workbenches, concurrently with others.
  */
-export function migrateWorkbenches(agentDir: string, engine: AgentStateEngine): Promise<void> {
+export function migrateWorkbenches(agentDir: string, engine: GitEngine): Promise<void> {
   const key = path.resolve(agentDir);
   const inFlight = running.get(key);
   if (inFlight) return inFlight;

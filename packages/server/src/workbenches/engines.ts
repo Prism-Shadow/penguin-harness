@@ -1,11 +1,11 @@
 /**
- * The engines a plugin may contribute to the Agent State repository (./repo.ts), and which one
+ * The Git engines a plugin may contribute to the Agent State repository (./repo.ts), and which one
  * records versions now.
  *
- * A contribution to `AgentStateHistoryModule.engines` is `{ id, name }` in the manifest and an
- * `AgentStateEngineSource` bound by the contributor: a function the module calls once per App,
- * handing it a directory under the data root to keep files in (`<root>/cache/<contribution id>/`)
- * and a log line. The answer may take a while (a plugin that fetches its program first), and a
+ * A contribution to `AgentStateHistoryModule.engines` is `{ id, name }` in the manifest and a
+ * `GitEngineSource` bound by the contributor: a function the module calls once per App, handing it
+ * a directory under the data root to keep files in (`<root>/cache/<contribution id>/`) and a log
+ * line. The answer may take a while (a plugin that probes or fetches its program first), and a
  * source that fails answers with nothing: either way the deployment has no engine from it, and
  * asking for the repository is an error, said with every contribution's reason. The first
  * contribution that is ready wins, in contribution order.
@@ -22,12 +22,12 @@ import {
   type ClassCtx,
   type Slot,
 } from "@prismshadow/penguin-core/kernel";
-import type { AgentStateEngine, AgentStateEngineSource } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine, GitEngineSource } from "@prismshadow/penguin-core/plugin";
 import type { Log, Paths } from "../hmr/capabilities.js";
 
 export interface AgentStateEnginesSlots {
   /** One engine: its name here, its source bound by the contributor. */
-  engines: Slot<{ name: string }, AgentStateEngineSource>;
+  engines: Slot<{ name: string }, GitEngineSource>;
 }
 
 /** Which engine records Agent State versions. */
@@ -37,25 +37,25 @@ export abstract class AgentStateEngines {
    * The first contributed engine that is ready. An error when none is — no contribution, one
    * that failed, or one that has not answered yet: nothing records versions without it.
    */
-  abstract current(): AgentStateEngine;
+  abstract current(): GitEngine;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export class EngineChoice implements AgentStateEngines {
-  private readonly ready = new Map<string, AgentStateEngine>();
+  private readonly ready = new Map<string, GitEngine>();
   /** Why a contribution has no engine, said again if asking for the repository is an error. */
   private readonly without = new Map<string, string>();
   private readonly order: string[] = [];
 
   constructor(
-    contributions: ReadonlyArray<{ id: string; name: string; source: AgentStateEngineSource }>,
+    contributions: ReadonlyArray<{ id: string; name: string; source: GitEngineSource }>,
     opts: { root: string; log: (line: string) => void },
   ) {
     for (const { id, name, source } of contributions) {
       this.order.push(id);
       const say = (line: string) => opts.log(`[agent-state] ${name}: ${line}`);
-      let answer: ReturnType<AgentStateEngineSource>;
+      let answer: ReturnType<GitEngineSource>;
       try {
         answer = source({
           cacheDir: path.join(opts.root, "cache", id),
@@ -84,7 +84,7 @@ export class EngineChoice implements AgentStateEngines {
     }
   }
 
-  current(): AgentStateEngine {
+  current(): GitEngine {
     for (const id of this.order) {
       const engine = this.ready.get(id);
       if (engine !== undefined) return engine;
@@ -107,7 +107,7 @@ export class AgentStateHistoryModule {
       (contributions.engines ?? []).map((c) => ({
         id: c.id,
         name: c.data.name as string,
-        source: c.code as AgentStateEngineSource,
+        source: c.code as GitEngineSource,
       })),
       { root: this.paths.root, log: (line) => this.log.line(line) },
     );

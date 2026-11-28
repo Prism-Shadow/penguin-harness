@@ -10,37 +10,34 @@
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AgentStateEngine, AgentStateEngineSource } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine, GitEngineSource } from "@prismshadow/penguin-core/plugin";
 import { EngineChoice } from "../src/workbenches/engines.js";
 
 const ROOT = path.join(path.sep, "data");
 /** An engine that is never driven: choosing it is all these tests ask. */
-const named = (name: string): AgentStateEngine => ({
+const named = (name: string): GitEngine => ({
   name,
-  commit: async () => {
-    throw new Error("not driven");
-  },
-  readObjects: async () => {
+  open: async () => {
     throw new Error("not driven");
   },
 });
 
 /** A source whose answer the test gives when it likes. */
 function deferred() {
-  let answer!: (engine: AgentStateEngine | null) => void;
+  let answer!: (engine: GitEngine | null) => void;
   const asked: string[] = [];
-  const source: AgentStateEngineSource = (host) => {
+  const source: GitEngineSource = (host) => {
     asked.push(host.cacheDir);
-    return new Promise<AgentStateEngine>((resolve) => {
-      answer = (engine) => resolve(engine as AgentStateEngine);
+    return new Promise<GitEngine>((resolve) => {
+      answer = (engine) => resolve(engine as GitEngine);
     });
   };
-  return { source, asked, answer: (e: AgentStateEngine | null) => answer(e) };
+  return { source, asked, answer: (e: GitEngine | null) => answer(e) };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function choose(...sources: Array<[string, AgentStateEngineSource]>) {
+function choose(...sources: Array<[string, GitEngineSource]>) {
   const logged: string[] = [];
   const choice = new EngineChoice(
     sources.map(([id, source]) => ({ id, name: id.split(".")[0]!, source })),

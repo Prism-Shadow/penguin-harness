@@ -12,8 +12,8 @@
  * which one wrote.
  */
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
-import type { AgentStateEngineSource, Plugin } from "@prismshadow/penguin-core/plugin";
-import { openGixEngine } from "./engine.js";
+import type { GitEngineSource, Plugin } from "@prismshadow/penguin-core/plugin";
+import { openGixGitEngine } from "./git-engine.js";
 
 export { gixEngine, openGixEngine } from "./engine.js";
 export { gixGitEngine, openGixGitEngine } from "./git-engine.js";
@@ -41,10 +41,10 @@ export { loadNative } from "./binary.js";
   },
 })
 export class AgentStateGix {
-  @Bind("agent-state-gix.engine") engine!: AgentStateEngineSource;
+  @Bind("agent-state-gix.engine") engine!: GitEngineSource;
 
   setup() {
-    this.engine = (host) => openGixEngine(host);
+    this.engine = (host) => openGixGitEngine(host);
   }
 }
 

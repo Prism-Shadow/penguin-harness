@@ -1,34 +1,17 @@
 /**
- * A real engine for the server's own Agent State suites: the native-Git plugin's engine over
- * this host's `git` program. (The plugin ships its own Git builds in production; a test host
- * has the one on PATH.) Null when the host has none, and a suite that needs an engine skips.
+ * A real `GitEngine` for the server's own Agent State suites: the pure-plumbing Git CLI engine
+ * over this host's `git` program. Null when the host has no `git`, and suites that need an engine skip.
  */
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import which from "which";
-import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
-import { gitEngine } from "@penguinharness/agent-state-git";
+import type { GitEngine } from "@prismshadow/penguin-core/plugin";
+import { gitclGitEngine, probeGit } from "@penguinharness/agent-state-gitcl";
 
-const run = promisify(execFile);
+let engine: Promise<GitEngine | null> | undefined;
 
-let engine: Promise<AgentStateEngine | null> | undefined;
-
-export function gitEngineForTests(): Promise<AgentStateEngine | null> {
+export function gitEngineForTests(): Promise<GitEngine | null> {
   engine ??= (async () => {
-    const program = await which("git", { nothrow: true });
-    if (program === null) return null;
-    let version: string;
-    let execPath: string;
-    try {
-      version =
-        /^git version (\S+)/.exec(
-          (await run(program, ["version"], { windowsHide: true })).stdout,
-        )?.[1] ?? "git";
-      execPath = (await run(program, ["--exec-path"], { windowsHide: true })).stdout.trim();
-    } catch {
-      return null;
-    }
-    return gitEngine({ program, execPath }, version, "system");
+    const found = await probeGit();
+    if (found === null) return null;
+    return gitclGitEngine(found.git, found.version);
   })();
   return engine;
 }

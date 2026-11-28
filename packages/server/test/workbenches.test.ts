@@ -96,7 +96,7 @@ import type {
 } from "../src/api/types.js";
 import nodeFs from "node:fs";
 import git from "isomorphic-git";
-import type { AgentStateEngine, AgentStateEngineSource } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine, GitEngineSource } from "@prismshadow/penguin-core/plugin";
 import { PluginHost } from "../src/plugin/host.js";
 import {
   apiClient,
@@ -1391,19 +1391,37 @@ describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
     { skip: liveEngine === null },
     async () => {
       const calls: string[] = [];
-      const engine: AgentStateEngine = {
+      const engine: GitEngine = {
         name: "recording",
-        commit: (c) => {
-          calls.push("commit");
-          return liveEngine!.commit(c);
-        },
-        readObjects: (at, oids) => {
-          calls.push("readObjects");
-          return liveEngine!.readObjects(at, oids);
+        open: async (gitdir) => {
+          const inner = await liveEngine!.open(gitdir);
+          return {
+            resolveHead: () => {
+              calls.push("resolveHead");
+              return inner.resolveHead();
+            },
+            listTree: (cid, pfx, opts) => {
+              calls.push("listTree");
+              return inner.listTree(cid, pfx, opts);
+            },
+            walkHistory: (opts) => {
+              calls.push("walkHistory");
+              return inner.walkHistory(opts);
+            },
+            extractTree: (opts) => {
+              calls.push("extractTree");
+              return inner.extractTree(opts);
+            },
+            commit: (c) => {
+              calls.push("commit");
+              return inner.commit(c);
+            },
+            close: () => inner.close(),
+          };
         },
       };
       let cacheDir = "";
-      const source: AgentStateEngineSource = (host) => {
+      const source: GitEngineSource = (host) => {
         cacheDir = host.cacheDir;
         return engine;
       };
@@ -1434,7 +1452,7 @@ describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
         await waitFor(() => logged.some((line) => line.includes("recording records Agent State")));
 
         const demo = await demoOf(owner);
-        expect(calls).toEqual(["commit"]);
+        expect(calls.filter((c) => c === "commit")).toEqual(["commit"]);
         await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
         await owner.post(`${BASE}/demo/reload`);
         expect(
@@ -1448,7 +1466,8 @@ describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
         // repository's business, not the contract.
         expect(calls.filter((c) => c === "commit")).toEqual(["commit", "commit", "commit"]);
         expect(calls[calls.length - 1]).toBe("commit");
-        expect(calls).toContain("readObjects");
+        expect(calls).toContain("extractTree");
+        expect(calls).toContain("walkHistory");
         const gitdir = path.join(agentDir(t.root, PROJECT, AGENT), "agent_state.git");
         const tip = await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
         const { commit } = await git.readCommit({ fs: nodeFs, gitdir, oid: tip });

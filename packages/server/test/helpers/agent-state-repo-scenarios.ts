@@ -44,7 +44,7 @@ import os from "node:os";
 import path from "node:path";
 import git from "isomorphic-git";
 import type * as Vitest from "vitest";
-import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine } from "@prismshadow/penguin-core/plugin";
 import {
   AgentStateRepo,
   agentStateRepoDir,
@@ -98,7 +98,7 @@ export interface ScenarioEngine {
   /** Names the run: the plugin's engine's own name. */
   label: string;
   /** The engine under test, asked for when a repository is opened. */
-  engine: () => AgentStateEngine;
+  engine: () => GitEngine;
 }
 
 export function agentStateRepoScenarios(t: TestApi, scenario: ScenarioEngine): void {

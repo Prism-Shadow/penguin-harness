@@ -132,7 +132,7 @@ import {
   readFolder,
   readLoadedSource,
   readState,
-  restoreSource,
+  isSourcePath, restoreSource, restoreSourceFromDir,
   STATE_FILE,
   UI_DIR,
   workbenchesDir,
@@ -702,13 +702,23 @@ export class WorkbenchService implements Workbenches {
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
-    const files = await this.fromRepo(key(projectId, agentId, workbenchId), () =>
-      this.repo(projectId, agentId).filesAt(repoPath(workbenchId), revision),
-    );
-    if (!files) throw new WorkbenchNotFound("no such version");
-    // The load this triggers records the restored files as the newest version; a workbench
-    // that does not run takes the files only, and records them when it next loads.
-    await restoreSource(folder, files);
+    let found = true;
+    await restoreSourceFromDir(folder, async (incoming) => {
+      const extracted = await this.fromRepo(key(projectId, agentId, workbenchId), () =>
+        this.repo(projectId, agentId).extractAt(repoPath(workbenchId), revision, incoming, {
+          validatePath: (fileRel) => {
+            if (!isSourcePath(fileRel))
+              throw new Error(`that version holds ${fileRel}, which is not workbench source`);
+          },
+        }),
+      );
+      if (extracted === null) {
+        found = false;
+        throw new WorkbenchNotFound("no such version");
+      }
+      return extracted;
+    });
+    if (!found) throw new WorkbenchNotFound("no such version");
     return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
   }
 

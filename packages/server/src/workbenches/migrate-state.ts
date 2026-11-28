@@ -36,7 +36,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
+import type { GitEngine } from "@prismshadow/penguin-core/plugin";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import { isWorkbenchId, readFolder, readLoadedSource, type WorkbenchFolder } from "./store.js";
 
@@ -53,7 +53,7 @@ export interface StateMigrationOptions {
   /** The old folders were just written by the server itself, so none needs to settle. */
   settled?: boolean;
   /** The deployment's Agent State engine, which records the imported versions (./repo.ts). */
-  engine: AgentStateEngine;
+  engine: GitEngine;
 }
 
 /** One version a `versions.json` lists, readable, with the time it was recorded. */
