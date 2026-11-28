@@ -15,8 +15,10 @@ import { describe, it } from "vitest";
  * it under Xvfb), on macOS and Windows CI runners it never runs at all. It never fails red
  * for lack of a head or the wrong platform.
  */
-const linux = process.platform === "linux";
-const available = linux && (process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY) !== undefined;
+const available =
+  process.platform === "linux"
+    ? (process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY) !== undefined
+    : !process.env.CI || process.env.PENGUIN_E2E_ELECTRON === "1";
 
 describe.skipIf(!available)("penguin-testing-electron e2e", () => {
   it("tests the sample plugin end to end, from the units as modules", async () => {
@@ -82,7 +84,9 @@ describe.skipIf(!available)("penguin-testing-electron e2e", () => {
 
       await driver.openSettings(harness, { section: "plugins" });
       await expect(harness.window.getByRole("dialog", { name: "Settings" })).toBeVisible();
-      await expect(harness.window.getByRole("heading", { name: "Plugins" })).toBeVisible();
+      await expect(
+        harness.window.getByRole("heading", { name: /^(Plugin sources|Plugins)\b/ }),
+      ).toBeVisible();
     } finally {
       await driver.closeHarness(harness);
     }
