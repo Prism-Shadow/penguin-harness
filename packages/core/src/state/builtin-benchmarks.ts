@@ -41,6 +41,34 @@ export async function writeBuiltinBenchmark(
   benchDir: string,
   bench: BuiltinBenchmark,
 ): Promise<void> {
-  await fs.cp(bench.directory, benchDir, { recursive: true });
+  await copyTree(bench.directory, benchDir);
   await fs.writeFile(path.join(benchDir, "scoreboard.yaml"), "evaluations: []\n", "utf8");
+}
+
+/** Files in flight at once: enough to hide per-file latency, few enough to stay clear of EMFILE. */
+const COPY_CONCURRENCY = 32;
+
+/**
+ * Copies the directories and regular files under `from` into `to`, many files at a time. A
+ * package holds up to thousands of small files, and `fs.cp` visits them one after another, so on
+ * a filesystem with slow metadata (macOS CI) one catalogue copy outgrew a test's timeout. The
+ * packages hold nothing else: the build stages only files and directories.
+ */
+async function copyTree(from: string, to: string): Promise<void> {
+  await fs.mkdir(to, { recursive: true });
+  const files: string[] = [];
+  const entries = await fs.readdir(from, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    const rel = path.relative(from, path.join(entry.parentPath, entry.name));
+    if (entry.isDirectory()) await fs.mkdir(path.join(to, rel), { recursive: true });
+    else if (entry.isFile()) files.push(rel);
+  }
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < files.length) {
+      const rel = files[next++]!;
+      await fs.copyFile(path.join(from, rel), path.join(to, rel));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(COPY_CONCURRENCY, files.length) }, worker));
 }
