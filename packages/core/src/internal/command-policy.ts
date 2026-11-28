@@ -38,6 +38,10 @@
  * The getter is still consulted per decision, which is what hands the tool calls after a
  * mid-run rotation the new context's policy without any reload machinery.
  *
+ * The policy is off unless its config says `enabled: true`: a config that does not say so —
+ * the block absent, a block without the key, or no policy handed to the Session at all — applies
+ * no rule, whatever its list holds.
+ *
  * The rules are **data, not code**: every rule (name / pattern / description / enabled / action) is
  * project-editable, and the factory set (state/command-policy-defaults.ts) is *seeded* into
  * new projects' config the same way model presets are — copied in at creation, never
@@ -135,15 +139,16 @@ function compileRule(rule: CommandPolicyRule): RegExp | null {
 /**
  * Evaluates one command against the policy: an enabled `deny` rule that matches wins over any
  * `ask` rule that matches, wherever the two sit in the list (see the header); within one
- * action the first match in list order is the one reported. Returns null when the policy is
- * disabled or nothing matches. An absent config or an absent `rules` list means the factory
- * set (a project from before the block was seeded, or an SDK embedder passing no policy).
+ * action the first match in list order is the one reported. Returns null when nothing matches
+ * or the policy is not switched on — only `enabled: true` is on, so an absent config (an SDK
+ * embedder passing no policy) or one without the key matches nothing. An absent `rules` list
+ * means the factory set (a project from before the block was seeded).
  */
 export function evaluateCommandPolicy(
   cmd: string,
   policy?: CommandPolicyConfig,
 ): CommandPolicyVeto | null {
-  if (policy?.enabled === false) return null;
+  if (policy?.enabled !== true) return null;
   const variants = commandVariants(cmd);
   if (variants[0] === "") return null;
   let ask: CommandPolicyVeto | null = null;
@@ -214,9 +219,9 @@ export type CommandPolicySource = () => CommandPolicyConfig | undefined;
  * it (allow-all would wave it through); a host callback that reads no second argument decides
  * it as for any call. Any other call goes to `approve` with the context it came with, so a
  * reason a child's wrapper attached survives the parent's. The `source` getter is consulted
- * at every decision (no source, or a source yielding nothing, applies the factory rule set); a
- * source that cannot be read fails toward the factory rules rather than waving the call
- * through.
+ * at every decision; no source, or a source yielding no policy switched on, applies no rule. A
+ * source that throws is a failure rather than a policy left off, so it fails toward the factory
+ * rules, switched on, rather than waving the call through.
  */
 export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySource): ApproveFn {
   return async (toolCall, context) => {
@@ -224,7 +229,7 @@ export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySour
     try {
       policy = source?.();
     } catch {
-      policy = undefined;
+      policy = { enabled: true };
     }
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
     if (veto?.action === "deny") return "forbidden";

@@ -27,16 +27,22 @@ import type {
   SubagentRunner,
 } from "../src/interfaces/index.js";
 
-/** Shorthand: the matched rule name, or null. */
+/** A policy switched on, with no rules list of its own: the factory set applies. */
+const ON: CommandPolicyConfig = { enabled: true };
+
+/** Shorthand: the matched rule name, or null, with `policy` switched on unless it says off. */
 function hit(cmd: string, policy?: CommandPolicyConfig): string | null {
-  return evaluateCommandPolicy(cmd, policy)?.rule ?? null;
+  return evaluateCommandPolicy(cmd, { ...ON, ...policy })?.rule ?? null;
 }
 
 /**
  * A Project's own rule that refuses `rm -rf`. Every factory rule asks, so a refusal is always
  * something a Project chose.
  */
-const DENY_RM: CommandPolicyConfig = { rules: [{ name: "no-rm-rf", pattern: "rm -rf" }] };
+const DENY_RM: CommandPolicyConfig = {
+  enabled: true,
+  rules: [{ name: "no-rm-rf", pattern: "rm -rf" }],
+};
 
 describe("command policy factory rules", () => {
   it("catches rm with recursive+force in every spelling", () => {
@@ -240,9 +246,15 @@ describe("command policy Windows counterparts", () => {
 });
 
 describe("command policy config semantics", () => {
-  it("factory set applies when no config or no rules list is given", () => {
+  it("is off unless the config says enabled: true, whatever its rules", () => {
+    for (const unset of [undefined, {}, { rules: DENY_RM.rules }, { enabled: false }]) {
+      expect(evaluateCommandPolicy("rm -rf /", unset)).toBeNull();
+    }
+    expect(evaluateCommandPolicy("rm -rf /", DENY_RM)?.rule).toBe("no-rm-rf");
+  });
+
+  it("factory set applies when the policy is on with no rules list", () => {
     expect(hit("rm -rf /")).toBe("rm-recursive-force");
-    expect(hit("rm -rf /", {})).toBe("rm-recursive-force");
   });
 
   it("enabled=false disables the whole policy", () => {
@@ -304,7 +316,7 @@ describe("command policy config semantics", () => {
   });
 
   it("a hit reports the matched rule's name", () => {
-    const veto = evaluateCommandPolicy("rm -rf /");
+    const veto = evaluateCommandPolicy("rm -rf /", ON);
     expect(veto).not.toBeNull();
     expect(veto?.rule).toBe("rm-recursive-force");
   });
@@ -312,52 +324,48 @@ describe("command policy config semantics", () => {
 
 describe("vetoForToolCall", () => {
   const json = (args: unknown) => JSON.stringify(args);
+  /** The gate under the policy switched on. */
+  const veto = (tool: string, argsJson: string) => vetoForToolCall(tool, argsJson, ON);
 
   it("evaluates both tools that reach a shell, each on its own argument", () => {
-    expect(vetoForToolCall("exec_command", json({ cmd: "rm -rf /" }))?.rule).toBe(
-      "rm-recursive-force",
-    );
-    expect(vetoForToolCall("exec_command", json({ cmd: "ls" }))).toBeNull();
+    expect(veto("exec_command", json({ cmd: "rm -rf /" }))?.rule).toBe("rm-recursive-force");
+    expect(veto("exec_command", json({ cmd: "ls" }))).toBeNull();
     // Typing into an already-running shell is the same reach: `exec_command {cmd:"bash"}`
     // matches nothing, so guarding only the launch left the guardrail one launch deep.
-    expect(
-      vetoForToolCall("input_command", json({ process_id: "p1", chars: "rm -rf /\n" }))?.rule,
-    ).toBe("rm-recursive-force");
-    expect(vetoForToolCall("input_command", json({ process_id: "p1", chars: "yes\n" }))).toBeNull();
+    expect(veto("input_command", json({ process_id: "p1", chars: "rm -rf /\n" }))?.rule).toBe(
+      "rm-recursive-force",
+    );
+    expect(veto("input_command", json({ process_id: "p1", chars: "yes\n" }))).toBeNull();
     // Other tools carry no shell text; even a same-shaped argument is not evaluated. An MCP
     // server's shell is a different surface this policy deliberately does not reach into.
-    expect(vetoForToolCall("write_file", json({ cmd: "rm -rf /" }))).toBeNull();
-    expect(vetoForToolCall("mcp__server__shell", json({ cmd: "rm -rf /" }))).toBeNull();
+    expect(veto("write_file", json({ cmd: "rm -rf /" }))).toBeNull();
+    expect(veto("mcp__server__shell", json({ cmd: "rm -rf /" }))).toBeNull();
   });
 
   it("screens the shell text under exec_command's `command` alias, reading it as the tool does", () => {
     // The alias is what the tool runs, so it is what the policy sees — a launch is never
     // waved through for arriving under the other accepted name.
-    expect(vetoForToolCall("exec_command", json({ command: "rm -rf /" }))?.rule).toBe(
-      "rm-recursive-force",
-    );
+    expect(veto("exec_command", json({ command: "rm -rf /" }))?.rule).toBe("rm-recursive-force");
     // Both present: `cmd` is the one the tool runs, and the one screened.
-    expect(vetoForToolCall("exec_command", json({ cmd: "ls", command: "rm -rf /" }))).toBeNull();
-    expect(vetoForToolCall("exec_command", json({ cmd: "rm -rf /", command: "ls" }))?.rule).toBe(
+    expect(veto("exec_command", json({ cmd: "ls", command: "rm -rf /" }))).toBeNull();
+    expect(veto("exec_command", json({ cmd: "rm -rf /", command: "ls" }))?.rule).toBe(
       "rm-recursive-force",
     );
   });
 
   it("exempts the lone Ctrl-C, which the tool turns into SIGINT rather than typed text", () => {
     const interrupt = String.fromCharCode(3);
-    expect(
-      vetoForToolCall("input_command", json({ process_id: "p1", chars: interrupt })),
-    ).toBeNull();
+    expect(veto("input_command", json({ process_id: "p1", chars: interrupt }))).toBeNull();
   });
 
   it("treats malformed arguments as the tool's own validation problem, not a hit", () => {
-    expect(vetoForToolCall("exec_command", json({}))).toBeNull();
-    expect(vetoForToolCall("exec_command", json({ cmd: 42 }))).toBeNull();
-    expect(vetoForToolCall("input_command", json({ process_id: "p1" }))).toBeNull();
-    expect(vetoForToolCall("input_command", json({ process_id: "p1", chars: "" }))).toBeNull();
-    expect(vetoForToolCall("exec_command", "not json at all")).toBeNull();
-    expect(vetoForToolCall("exec_command", json([1, 2, 3]))).toBeNull();
-    expect(vetoForToolCall("exec_command", json(null))).toBeNull();
+    expect(veto("exec_command", json({}))).toBeNull();
+    expect(veto("exec_command", json({ cmd: 42 }))).toBeNull();
+    expect(veto("input_command", json({ process_id: "p1" }))).toBeNull();
+    expect(veto("input_command", json({ process_id: "p1", chars: "" }))).toBeNull();
+    expect(veto("exec_command", "not json at all")).toBeNull();
+    expect(veto("exec_command", json([1, 2, 3]))).toBeNull();
+    expect(veto("exec_command", json(null))).toBeNull();
   });
 });
 
@@ -412,7 +420,7 @@ describe("command policy factory rules ask", () => {
     // Text matching cannot tell a rehearsal from the real thing: one click, by design.
     ["npm publish --dry-run", "package-publish"],
   ])("puts `%s` to a person (%s)", (cmd, rule) => {
-    expect(evaluateCommandPolicy(cmd)).toEqual({ rule, action: "ask" });
+    expect(evaluateCommandPolicy(cmd, ON)).toEqual({ rule, action: "ask" });
   });
 
   it.each([
@@ -436,13 +444,14 @@ describe("command policy factory rules ask", () => {
     "pnpm install",
     "npm pack",
   ])("lets `%s` through to the approval mode", (cmd) => {
-    expect(evaluateCommandPolicy(cmd)).toBeNull();
+    expect(evaluateCommandPolicy(cmd, ON)).toBeNull();
   });
 });
 
 describe("deny and ask rules together", () => {
   it("a deny hit outranks an ask hit wherever the two sit in the list", () => {
     const policy: CommandPolicyConfig = {
+      enabled: true,
       rules: [
         { name: "ask-sudo", pattern: "\\bsudo\\b", action: "ask" },
         { name: "no-rm", pattern: "rm -rf" },
@@ -457,6 +466,7 @@ describe("deny and ask rules together", () => {
 
   it("among ask rules the first match in list order names the decision", () => {
     const policy: CommandPolicyConfig = {
+      enabled: true,
       rules: [
         { name: "ask-git", pattern: "\\bgit\\b", action: "ask" },
         { name: "ask-push", pattern: "\\bpush\\b", action: "ask" },
@@ -467,6 +477,7 @@ describe("deny and ask rules together", () => {
 
   it("a switched-off ask rule asks nothing", () => {
     const policy: CommandPolicyConfig = {
+      enabled: true,
       rules: [{ name: "ask-git", pattern: "\\bgit\\b", action: "ask", enabled: false }],
     };
     expect(evaluateCommandPolicy("git push", policy)).toBeNull();
@@ -496,12 +507,18 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
   });
 
   it("passes everything else straight through, decision included", async () => {
-    const guarded = withCommandPolicy(async () => "allow");
+    const guarded = withCommandPolicy(
+      async () => "allow",
+      () => ON,
+    );
     expect(await guarded(call("ls -la") as never)).toBe("allow");
     // A non-exec tool is not the policy's business, even with a command-shaped argument.
     expect(await guarded(call("rm -rf /", "write_file") as never)).toBe("allow");
 
-    const denying = withCommandPolicy(async () => "deny");
+    const denying = withCommandPolicy(
+      async () => "deny",
+      () => ON,
+    );
     expect(await denying(call("ls") as never)).toBe("deny");
   });
 
@@ -548,34 +565,37 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
     expect(await guarded(call("rm -rf /") as never)).toBe("forbidden");
   });
 
-  it("with no project policy, a destructive command goes to a person instead of being refused", async () => {
+  it("with no policy switched on, a destructive command goes by mode; an unreadable source asks by the factory rules", async () => {
     const seen: (ApprovalContext | undefined)[] = [];
     // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
     const host: ApproveFn = async (_tc, context) => {
       seen.push(context);
       return context?.reason === undefined ? "allow" : "deny";
     };
-    // No source, and a source that cannot be read, both fall to the factory rules — which ask.
-    const guarded = withCommandPolicy(host);
+    // No source, and a stored list that never says `enabled = true`: no rule applies.
+    const none = withCommandPolicy(host);
+    const unset = withCommandPolicy(host, () => ({ rules: [...DEFAULT_COMMAND_POLICY_RULES] }));
+    // A source that throws is a failure, not a policy left off: the factory rules ask.
     const failing = withCommandPolicy(host, () => {
       throw new Error("unreadable");
     });
 
-    expect(await guarded(call("rm -rf /") as never)).toBe("deny");
+    expect(await none(call("rm -rf /") as never)).toBe("allow");
+    expect(await unset(call("rm -rf /") as never)).toBe("allow");
     expect(await failing(call("mkfs.ext4 /dev/sdb1") as never)).toBe("deny");
-    expect(seen).toEqual([
-      { reason: { kind: "policy", rule: "rm-recursive-force" } },
-      { reason: { kind: "policy", rule: "mkfs" } },
-    ]);
+    expect(seen).toEqual([undefined, undefined, { reason: { kind: "policy", rule: "mkfs" } }]);
   });
 
   it("hands an ask hit to the callback with the policy reason, and an ordinary call with none", async () => {
     const seen: (ApprovalContext | undefined)[] = [];
     // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
-    const guarded = withCommandPolicy(async (_tc, context) => {
-      seen.push(context);
-      return context?.reason === undefined ? "allow" : "deny";
-    });
+    const guarded = withCommandPolicy(
+      async (_tc, context) => {
+        seen.push(context);
+        return context?.reason === undefined ? "allow" : "deny";
+      },
+      () => ON,
+    );
 
     expect(await guarded(call("gh pr merge 12") as never)).toBe("deny");
     expect(await guarded(call("gh pr view 12") as never)).toBe("allow");
@@ -589,7 +609,7 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
       asked.push(tc.payload.tool_call_id);
       return "allow";
     };
-    const guarded = withCommandPolicy(legacy);
+    const guarded = withCommandPolicy(legacy, () => ON);
 
     expect(await guarded(call("gh pr merge 12") as never)).toBe("allow");
     expect(asked).toEqual(["c1"]);
@@ -602,10 +622,16 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
       return "allow";
     };
     // A child Session wraps the callback it was forwarded, which is the parent's wrapper.
-    const child = withCommandPolicy(withCommandPolicy(host));
+    const child = withCommandPolicy(
+      withCommandPolicy(host, () => ON),
+      () => ON,
+    );
     expect(await child(call("git push --force origin feat") as never)).toBe("allow");
     // A parent whose own rules match nothing passes the child's reason on untouched.
-    const underQuietParent = withCommandPolicy(withCommandPolicy(host, () => ({ rules: [] })));
+    const underQuietParent = withCommandPolicy(
+      withCommandPolicy(host, () => ({ enabled: true, rules: [] })),
+      () => ON,
+    );
     expect(await underQuietParent(call("npm publish") as never)).toBe("allow");
 
     expect(reasons).toEqual(["git-push-force", "package-publish"]);
@@ -700,7 +726,7 @@ describe("Session applies the policy at the approval boundary", () => {
     ).toBe(true);
   });
 
-  it("a project policy switched off lets the same command through to execution", async () => {
+  it("a project policy that never says enabled = true lets the same command through to execution", async () => {
     let approveCalls = 0;
     let executedCmd: string | null = null;
     let turn = 0;
@@ -733,7 +759,7 @@ describe("Session applies the policy at the approval boundary", () => {
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
-      commandPolicy: () => ({ enabled: false }),
+      commandPolicy: () => ({ rules: DENY_RM.rules }),
     });
 
     for await (const _ of session.run([userText("clean up")], {
@@ -782,13 +808,14 @@ describe("Session applies the policy at the approval boundary", () => {
         },
         toolPermission: () => undefined,
       };
-      // No commandPolicy in the config: the factory rule set applies, its ask rules included.
+      // Switched on with no rules list: the factory rule set applies, its ask rules included.
       const session = new Session({
         meta: meta(),
         bootstrap: async () => ({ llm }),
         environment,
         imagesDir: path.join(tmp, "images"),
         modelHasVision: true,
+        commandPolicy: () => ON,
       });
 
       const all: AmspRecord[] = [];
@@ -837,6 +864,7 @@ describe("Session applies the policy at the approval boundary", () => {
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
       commandPolicy: () => ({
+        enabled: true,
         rules: [
           { name: "ask-publish", pattern: "\\bpublish\\b", action: "ask" },
           ...DENY_RM.rules!,
@@ -897,6 +925,7 @@ describe("Session applies the policy at the approval boundary", () => {
           environment: childEnvironment,
           imagesDir: path.join(tmp, "child-images"),
           modelHasVision: true,
+          commandPolicy: () => ON,
         });
         return {
           sessionId: "session-child",
@@ -945,6 +974,7 @@ describe("Session applies the policy at the approval boundary", () => {
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
+      commandPolicy: () => ON,
     });
 
     const reasons: string[] = [];

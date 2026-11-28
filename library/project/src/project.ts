@@ -123,7 +123,7 @@ export type UtilityCompletion =
  * name them, so the types live with the contract. */
 
 export interface CommandPolicyDto {
-  /** Effective master switch; an absent stored value reads as true (the policy defaults on). */
+  /** Effective master switch: on only for a stored `enabled = true`; anything else reads as off. */
   enabled: boolean;
   /** The effective rule list — the factory set when the project predates seeding and has none stored. */
   rules: CommandPolicyRuleDto[];

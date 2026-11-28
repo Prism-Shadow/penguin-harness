@@ -3,7 +3,8 @@
  * block, kept next to the other seeded data (default-config.ts):
  * `defaultProjectConfig` copies them into every new project, and the enforcement side
  * reads the same constant as its "absent = factory set" fallback. Data only, no
- * matching — so nothing here can drag the tool chain into the state module.
+ * matching — so nothing here can drag the tool chain into the state module. They guard
+ * only a Project whose policy is switched on (`enabled = true`); a new Project's is off.
  *
  * Kept deliberately small, and every entry asks: a hit is put to a person, whatever the
  * approval mode, rather than refused. The first entries are commands whose verbatim

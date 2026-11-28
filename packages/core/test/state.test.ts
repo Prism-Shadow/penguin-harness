@@ -68,6 +68,7 @@ import {
   type SystemConfig,
 } from "../src/state/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
+import { evaluateCommandPolicy } from "../src/internal/command-policy.js";
 import { seedProject, seededProjectConfig } from "./seeded-project.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
@@ -1436,9 +1437,11 @@ describe("project-config round trip", () => {
 });
 
 describe("command_policy (sandbox command policy block)", () => {
-  it("the default config seeds the factory rules (model-presets philosophy)", () => {
+  it("the default config seeds the factory rules (model-presets philosophy), switched off", () => {
     const cfg = defaultProjectConfig();
     expect(cfg.command_policy?.rules).toEqual(DEFAULT_COMMAND_POLICY_RULES);
+    // A new Project's policy matches nothing until a person switches it on.
+    expect(evaluateCommandPolicy("rm -rf /", cfg.command_policy)).toBeNull();
     // Seeding copies the list: mutating a seeded config must not touch the constant.
     cfg.command_policy!.rules!.pop();
     expect(defaultProjectConfig().command_policy?.rules).toEqual(DEFAULT_COMMAND_POLICY_RULES);
@@ -1483,7 +1486,7 @@ describe("command_policy (sandbox command policy block)", () => {
       file,
       [
         "[command_policy]",
-        'enabled = "off"', // wrong type -> dropped -> defaults to enabled
+        'enabled = "on"', // wrong type -> dropped -> reads as off, like an absent key
         "[[command_policy.rules]]",
         'name = "ok-rule"',
         'pattern = "\\\\bcurl\\\\b"',

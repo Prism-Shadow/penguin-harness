@@ -1077,14 +1077,14 @@ export interface CommandPolicyRuleDto {
 
 /**
  * Per-Project sandbox command policy: rules for shell commands, evaluated ahead of the
- * approval mode (a `deny` hit is refused and an `ask` hit is put to a person even under
- * allow-all). Serves as the GET response and the PUT response. The PUT request body carries
- * `enabled?` plus the full `rules` list (required — a PUT always materializes the list into
- * the config, model-presets style); per-rule `enabled` may be omitted there and defaults to
- * on, per-rule `action` likewise and defaults to `deny`. Owner-only to write; any member may
- * read. A PUT with a pattern this server's engine cannot compile answers 400
- * `invalid_rule_pattern`, whose `details` name the rule (`rule`), its 0-based place in the
- * list (`index`) and the engine's reason (`reason`).
+ * approval mode while the policy is switched on (a `deny` hit is refused and an `ask` hit is put
+ * to a person even under allow-all). Serves as the GET response and the PUT response. The PUT
+ * request body carries `enabled?` (omitted = off) plus the full `rules` list (required — a PUT
+ * always materializes the list into the config, model-presets style); per-rule `enabled` may be
+ * omitted there and defaults to on, per-rule `action` likewise and defaults to `deny`.
+ * Owner-only to write; any member may read. A PUT with a pattern this server's engine cannot
+ * compile answers 400 `invalid_rule_pattern`, whose `details` name the rule (`rule`), its
+ * 0-based place in the list (`index`) and the engine's reason (`reason`).
  */
 
 /**

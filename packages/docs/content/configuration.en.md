@@ -96,7 +96,7 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 | `vision_model` | pair | — | The vision model that reads images for text-only models (`read_file` hands images to it); a paired reference |
 | `[tools]` | table | — | The models bound to the tools plugins offer, one `key = { provider = "…", model_id = "…" }` line per binding; the keys are the plugins'. Set in Project settings; removing a model unbinds it |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
-| `[command_policy]` | table | Factory set | Ask and deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
+| `[command_policy]` | table | Off, with the factory set | Ask and deny rules for shell commands, applied ahead of the approval mode once switched on; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
 | `[providers.<id>]` | table | — | A group's connection, which its models follow; see [Group connections](#group-connections) |
 | `[[models]]` | array of tables | — | The available model entries |
@@ -233,9 +233,11 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 
 The `[command_policy]` block is the Project's guardrail for shell commands: a list of rules applied at the approval boundary itself. A rule either refuses a matching command (`deny`) or holds it until a person allows it (`ask`).
 
+The policy applies only while the block says `enabled = true`. A block without the key, or no block at all, is off. A new Project starts with the factory rules in place and the policy off.
+
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `enabled` | boolean | On | Master switch; stored only as `enabled = false` |
+| `enabled` | boolean | Off | Master switch. Only `enabled = true` turns the policy on; every save writes it as `true` or `false` |
 | `[[command_policy.rules]]` | array of tables | The factory set | The rules. A stored empty list means no rules; an absent list means the factory set |
 
 Each rule has these keys:
@@ -270,7 +272,7 @@ pattern = "git push [^;|&]*--force"
 enabled = false
 ```
 
-Manage the policy on the **Security policy** tab of **Project settings** in the Web App. Only the Project owner can edit it; members see the effective policy.
+Manage the policy on the **Security policy** tab of **Project settings** in the Web App, and turn on **Enable policy** there to put the rules into effect. Only the Project owner can edit it; members see the effective policy.
 
 ### Enforcement
 
@@ -337,7 +339,7 @@ The command policy is an **accident guardrail, not a security boundary**. This i
 - **Commands not on the list are not covered.** `shred`, `wipefs`, `find -delete`, `git clean -xfd` and `chmod -R 000 /` match no factory rule. Add your own rules for what your Project cares about.
 - **It is not a filesystem permission.** A tool that writes arbitrary paths can still rewrite the config file itself, and the change takes effect at the next rotation.
 
-What the policy does buy: a destructive one-liner does not run without a person's go-ahead, through either tool that reaches a shell, in POSIX or Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary, a process that cannot reach the rest of the filesystem whatever it runs, the mechanism is confinement (bubblewrap, dsh), a separate layer this policy complements rather than replaces.
+What the policy does buy, once switched on: a destructive one-liner does not run without a person's go-ahead, through either tool that reaches a shell, in POSIX or Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary, a process that cannot reach the rest of the filesystem whatever it runs, the mechanism is confinement (bubblewrap, dsh), a separate layer this policy complements rather than replaces.
 
 ## Agent config
 

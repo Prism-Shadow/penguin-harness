@@ -190,8 +190,8 @@ export interface SessionConfig {
    * the next rotation. `run` wraps the injected approval callback with it — the refusal
    * happens at the approval boundary, above every approval mode and below no Human
    * implementation.
-   * Absent, or a source yielding nothing = the factory rule set applies;
-   * `{ enabled: false }` opts out. Docs: /docs/configuration § "Command policy".
+   * Only a policy that says `enabled: true` applies: absent, a source yielding nothing, or a
+   * policy without the key applies no rule. Docs: /docs/configuration § "Command policy".
    */
   commandPolicy?: CommandPolicySource;
 }

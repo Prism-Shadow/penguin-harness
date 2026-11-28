@@ -1020,7 +1020,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     await this.writeRaw(projectId, {
       name,
       // The factory command-policy rules are seeded exactly like the model presets:
-      // copied in at creation, owned by the project from then on.
+      // copied in at creation, owned by the project from then on — with the policy off.
       ...(preset.command_policy !== undefined ? { command_policy: preset.command_policy } : {}),
       ...(preset.providers !== undefined ? { providers: preset.providers } : {}),
       models: preset.models,
@@ -1202,11 +1202,11 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   /**
    * Sandbox command policy (`[command_policy]`): read leniently, mirroring core's
-   * loadProjectConfig tolerance — a non-boolean `enabled` reads as true (the default), a
-   * rule missing name or pattern is dropped, and an absent (or non-array) `rules` value
-   * serves the factory set: a project from before the block was seeded behaves as the
-   * defaults until its first saved edit materializes them. The factory set also rides
-   * along as `defaultRules` for the settings UI's "restore defaults".
+   * loadProjectConfig tolerance — the switch is on only for a stored `enabled = true` (absent,
+   * or a non-boolean, reads as off), a rule missing name or pattern is dropped, and an absent
+   * (or non-array) `rules` value serves the factory set: a project from before the block was
+   * seeded reads as the defaults until its first saved edit materializes them. The factory set
+   * also rides along as `defaultRules` for the settings UI's "restore defaults".
    */
   async getCommandPolicy(projectId: string): Promise<CommandPolicyDto> {
     const raw = await this.readRaw(projectId);
@@ -1214,7 +1214,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     // never disagree with what the Environment snapshot will enforce.
     const policy = parseCommandPolicy(raw.command_policy);
     return {
-      enabled: policy?.enabled !== false,
+      enabled: policy?.enabled === true,
       rules: toCommandPolicyRuleDtos(effectiveCommandPolicyRules(policy)),
       defaultRules: toCommandPolicyRuleDtos(DEFAULT_COMMAND_POLICY_RULES),
     };
@@ -1223,10 +1223,11 @@ export class ProjectConfigService implements ProjectConfigStore {
   /**
    * Replaces the `[command_policy]` block (declarative PUT, validated at the route). A PUT
    * always materializes the full rule list into the file — model-presets style: once
-   * written, later factory changes never rewrite it — storing per field only what departs
-   * from the defaults (`enabled = false`, a rule's `enabled = false`, a non-empty
-   * description, a rule's `action = "ask"`). Read-modify-write like setChatDefaults,
-   * preserving every other key. Returns the block as re-read.
+   * written, later factory changes never rewrite it — and always writes the master switch,
+   * `enabled = true` or `false` (an omitted one is off), so a policy switched on stays on
+   * whatever the rules are. Per rule it stores only what departs from the defaults (a rule's
+   * `enabled = false`, a non-empty description, a rule's `action = "ask"`). Read-modify-write
+   * like setChatDefaults, preserving every other key. Returns the block as re-read.
    */
   async setCommandPolicy(
     projectId: string,
@@ -1242,8 +1243,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     },
   ): Promise<CommandPolicyDto> {
     const raw = await this.readRaw(projectId);
-    const block: RawTable = {};
-    if (req.enabled === false) block.enabled = false;
+    const block: RawTable = { enabled: req.enabled === true };
     block.rules = req.rules.map((r) => ({
       name: r.name,
       pattern: r.pattern,

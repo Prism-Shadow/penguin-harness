@@ -210,7 +210,7 @@ type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask
 | 未注入回调 | 引擎拒绝一切（保守默认） |
 | 子 Agent | 子 Agent 继承父级的审批回调，调用时会带上 `origin` 标记，审批策略因此覆盖整棵委托树 |
 
-`"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中 `deny` 规则的命令不会问到宿主，直接得到 `"forbidden"`。命中 `ask` 规则的命令会带着 `{ reason: { kind: "policy", rule } }` 交给回调：宿主不能只按审批模式作答，而要交给人决定（服务端在 `deny-all` 以外的所有模式下都这样做）。其余调用照旧不带第二个参数。引擎本身始终只传调用本身，从不读取这个原因。
+`"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调；策略打开时，命中 `deny` 规则的命令不会问到宿主，直接得到 `"forbidden"`。命中 `ask` 规则的命令会带着 `{ reason: { kind: "policy", rule } }` 交给回调：宿主不能只按审批模式作答，而要交给人决定（服务端在 `deny-all` 以外的所有模式下都这样做）。其余调用照旧不带第二个参数。引擎本身始终只传调用本身，从不读取这个原因。
 
 第二个参数是可选的，按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。子 Session 无需额外转发：它继承的回调就是父 Session 的策略包装，子 Session 给出的原因随调用一起经过它。
 

@@ -781,6 +781,7 @@ describe("Session pre-tool-use hooks", () => {
     let approvals = 0;
     const stream = await collect(
       session(llm, [{ name: "opener", run: async () => ({ decision: "allow" }) }], {
+        enabled: true,
         rules: [{ name: "no-rm", pattern: "^rm " }],
       }),
       async () => {
@@ -800,6 +801,7 @@ describe("Session pre-tool-use hooks", () => {
     const llm = toolLLM("gh pr merge 7");
     const asked: string[] = [];
     const s = session(llm, [{ name: "opener", run: async () => ({ decision: "allow" }) }], {
+      enabled: true,
       rules: [{ name: "ask-merge", pattern: "^gh pr merge", action: "ask" }],
     });
     const stream: AmspRecord[] = [];

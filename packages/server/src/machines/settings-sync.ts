@@ -28,9 +28,11 @@ export interface LocalSettings {
 }
 
 /**
- * The two blocks of a Project's config, read as this server enforces them: a policy the file
- * does not store is the factory set (core's one fallback), so the machine is handed the rules
- * this Project runs under rather than its own idea of the defaults.
+ * The two blocks of a Project's config, read as this server enforces them: the switch is on
+ * only for a stored `enabled = true`, and a rule list the file does not store is the factory set
+ * (core's one fallback), so the machine is handed the switch and the rules this Project runs
+ * under rather than its own idea of the defaults. The far side's PUT writes the switch as
+ * handed.
  */
 export function localSettings(
   config: Pick<ProjectConfig, "command_policy" | "default_chat">,
@@ -39,7 +41,7 @@ export function localSettings(
   const chat = config.default_chat ?? {};
   return {
     commandPolicy: {
-      enabled: policy?.enabled !== false,
+      enabled: policy?.enabled === true,
       rules: effectiveCommandPolicyRules(policy).map((rule) => ({
         name: rule.name,
         pattern: rule.pattern,
