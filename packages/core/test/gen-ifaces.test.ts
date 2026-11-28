@@ -18,6 +18,14 @@
  *   the host's key, of the host interface its module requires.
  * - Given the same program built without `--sources`, the other package's default export is not
  *   taken for this package's plugin declaration: the build passes and the declaration is its own.
+ * - Given overlapping source projects, re-exports keep both package keys and a slot's
+ *   code interface is present, including nested anonymous objects with methods.
+ * - Given conflicting source aliases, generation refuses the ambiguous inputs without
+ *   writing a table; an invalid tsconfig is also reported before any output is written.
+ * - Given two targets with identically named modules, reading the other target's types
+ *   does not put its runtime module into a table restricted to the configured roots.
+ * - Given CLI contributions from its own package and the server, invoking generation
+ *   from either package or repository root emits the same imports and command order.
  */
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import fs from "node:fs";
@@ -71,6 +79,145 @@ const lineOf = (source: string, needle: string): number =>
 const HEADER = `import { Component } from "@prismshadow/penguin-core/plugin";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 `;
+
+describe("a table built from overlapping source projects", () => {
+  it("emits the same command table from the repository and package directories", () => {
+    const component = (name: string) => `
+declare function Component(meta: unknown): any;
+@Component({ contributes: { "CliCommandsModule.commands": [{ id: "${name}" }] } })
+export class ${name} {}
+`;
+    const dir = plugin({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { target: "es2022", module: "nodenext", noLib: true, types: [] },
+        include: ["packages/cli/src", "packages/server/src/cli"],
+      }),
+      "packages/cli/src/local.ts": component("LocalCommand"),
+      "packages/server/src/cli/remote.ts": component("ServerCommand"),
+    });
+    const table = path.join(dir, "packages/cli/src/commands.ts");
+    const args = [
+      BIN,
+      "--project",
+      path.join(dir, "tsconfig.json"),
+      "--out",
+      path.join(dir, "ifaces.json"),
+      "--components-out",
+      table,
+    ];
+    const first = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8" });
+    expect(first.status, first.stderr).toBe(0);
+    const text = fs.readFileSync(table, "utf8");
+    const second = spawnSync(process.execPath, args, {
+      cwd: path.join(dir, "packages/cli"),
+      encoding: "utf8",
+    });
+    expect(second.status, second.stderr).toBe(0);
+    expect(fs.readFileSync(table, "utf8")).toBe(text);
+    expect(text).toContain('from "@prismshadow/penguin-server/cli"');
+    expect(text).toContain('from "./local.js"');
+  });
+
+  it("collects a target's modules while reading another target's types", () => {
+    const dir = plugin({
+      "src/index.ts": `
+import type { Other } from "../other/index.js";
+declare function Module(meta: unknown): any;
+declare function Interface(): any;
+@Module({ contributes: { "Example.items": [{ id: "selected" }] } })
+export class SharedName {}
+@Interface()
+export abstract class Contract { abstract read(): Other }
+`,
+      "other/index.ts": `
+declare function Module(meta: unknown): any;
+@Module({ contributes: { "Example.items": [{ id: "other-target" }] } })
+export class SharedName {}
+export interface Other { value: string }
+`,
+    });
+    const run = spawnSync(
+      process.execPath,
+      [BIN, "--project", "tsconfig.json", "--out", "ifaces.json", "--root-modules"],
+      { cwd: dir, encoding: "utf8" },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const table = JSON.parse(fs.readFileSync(path.join(dir, "ifaces.json"), "utf8"));
+    expect(Object.keys(table.modules)).toEqual(["SharedName"]);
+    expect(table.modules.SharedName.contributes).toEqual({ "Example.items": [{ id: "selected" }] });
+    expect(
+      table.types[table.ifaces["@example/demo#Contract"].methods.read.returns.data.$ref],
+    ).toEqual({ value: "string" });
+  });
+
+  it("keeps re-exports and every interface reached through slot code", () => {
+    const dir = plugin({
+      "src/index.ts": 'export { Catalog, type CatalogSlots } from "../other/src/index.js";',
+      "other/package.json": JSON.stringify({ name: "@example/other", type: "module" }),
+      "other/tsconfig.json": JSON.stringify({ extends: "../tsconfig.json", include: ["src"] }),
+      "other/src/index.ts": `
+declare function Interface(): any;
+interface Slot<D, C> { data: D; code: C }
+interface Handler { invoke(): number }
+@Interface()
+export abstract class Catalog {
+  abstract value(): { label: string; run(): number };
+}
+export interface CatalogSlots { commands: Slot<{ title: string }, Handler> }
+`,
+    });
+    const run = spawnSync(
+      process.execPath,
+      [
+        BIN,
+        "--project",
+        "tsconfig.json",
+        "--project",
+        "other/tsconfig.json",
+        "--out",
+        "ifaces.json",
+      ],
+      { cwd: dir, encoding: "utf8" },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const table = JSON.parse(fs.readFileSync(path.join(dir, "ifaces.json"), "utf8"));
+    const own = table.ifaces["@example/other#Catalog"];
+    expect(table.ifaces["@example/demo#Catalog"]).toEqual(own);
+    expect(own.methods.value.returns.object.run.fn.returns).toEqual({ data: "number" });
+    const handler = table.ifaces[own.slots.commands.code.iface];
+    expect(handler.methods.invoke.returns).toEqual({ data: "number" });
+  });
+
+  it.each(["alias", "config"])(
+    "refuses an ambiguous or invalid %s before writing output",
+    (kind) => {
+      const dir = plugin({
+        "src/index.ts": "export {};",
+        "first.json": JSON.stringify({
+          extends: "./tsconfig.json",
+          compilerOptions: {
+            paths: { "@example/dependency": ["./src/first.ts"] },
+          },
+        }),
+        "second.json": JSON.stringify({
+          extends: "./tsconfig.json",
+          compilerOptions:
+            kind === "alias"
+              ? { paths: { "@example/dependency": ["./src/second.ts"] } }
+              : { target: "invalid-target" },
+        }),
+      });
+      const run = spawnSync(
+        process.execPath,
+        [BIN, "--project", "first.json", "--project", "second.json", "--out", "ifaces.json"],
+        { cwd: dir, encoding: "utf8" },
+      );
+      expect(run.status).not.toBe(0);
+      expect(run.stderr).toContain(kind === "alias" ? "conflicting paths" : "target");
+      expect(fs.existsSync(path.join(dir, "ifaces.json"))).toBe(false);
+    },
+  );
+});
 
 describe("a plugin whose contributions are written out", () => {
   const source = `${HEADER}

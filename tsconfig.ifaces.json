@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "paths": {
+      "@prismshadow/penguin-core": ["./packages/core/src/index.ts"],
+      "@prismshadow/penguin-core/*": ["./packages/core/src/*"],
+      "@prismshadow/penguin-core/context-limits": ["./packages/core/src/llm/context-limits.ts"],
+      "@prismshadow/penguin-core/model-connection": [
+        "./packages/core/src/state/model-connection.ts"
+      ],
+      "@prismshadow/penguin-server": ["./packages/server/src/index.ts"],
+      "@prismshadow/penguin-server/*": ["./packages/server/src/*"],
+      "@prismshadow/penguin-server/api": ["./packages/server/src/api/types.ts"],
+      "@prismshadow/penguin-server/cli-shim": ["./packages/server/src/services/cli-shim.ts"]
+    }
+  }
+}

@@ -266,7 +266,9 @@ if (
           // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
           shell: process.platform === "win32",
           // The server's declarations take most of its build and nothing at runtime reads
-          // them; the other packages' configs ignore this.
+          // them; the other packages' configs ignore this. Core keeps its declarations even
+          // in a runtime build: the packages built after it here (hmr, the CLI, the library)
+          // bundle against them from its dist.
           env: { ...process.env, PENGUIN_BUILD_JS_ONLY: "1" },
         });
         // The preinstalled plugins' server modules (the agent browser's among them) load from the

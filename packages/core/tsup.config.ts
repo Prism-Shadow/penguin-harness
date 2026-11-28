@@ -37,6 +37,9 @@ export default defineConfig({
   // static export of core; it has no dependency of its own and holds no state, so the copy in
   // core's dist and the one a host imports beside it are the same pure functions.
   noExternal: ["@prismshadow/amsp", "@prismshadow/skills"],
+  // Declarations stay on in every build: the packages built after core in a runtime build
+  // (hmr, the CLI, the library) bundle against them from its dist, and a fresh checkout has
+  // no earlier declarations to fall back on.
   dts: true,
   clean: true,
   sourcemap: true,
